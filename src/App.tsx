@@ -99,6 +99,7 @@ export default function App() {
             <X size={18} />
           </div>
         </div>
+      </div>
       )}
 
       <div className="flex-1 relative flex min-h-0">
