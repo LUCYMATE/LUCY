@@ -1,4 +1,4 @@
-import { LogOut, Settings } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { Chat } from './Chat';
 import { useState } from 'react';
 import { SettingsModal } from './SettingsModal';
@@ -7,7 +7,7 @@ export function MyraOS() {
   const [showSettings, setShowSettings] = useState(false);
 
   return (
-    <div className="flex h-full w-full gap-6 relative max-w-7xl mx-auto p-4 sm:p-6 min-h-0">
+    <div className="flex h-full w-full gap-4 sm:gap-6 relative max-w-[1600px] mx-auto p-4 sm:p-6 min-h-0">
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
         <section className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -17,7 +17,8 @@ export function MyraOS() {
         </section>
       </main>
 
-      <aside className="w-20 sm:w-64 shrink-0 flex flex-col gap-4">
+      {/* Navigation (originally on left, now shifted to right) */}
+      <aside className="w-16 sm:w-64 shrink-0 flex flex-col gap-4">
         <div className="flex flex-col items-center sm:items-start glass rounded-3xl p-4 sm:p-6 h-full gap-8">
            <div className="flex items-center gap-3 w-full justify-center sm:justify-start">
              <div className="w-3 h-3 rounded-full bg-pink-500 ai-glow shrink-0"></div>

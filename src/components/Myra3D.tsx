@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useGLTF, useAnimations, Environment, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -199,9 +199,11 @@ export function Myra3D({ isSpeaking, isThinking, isListening }: { isSpeaking: bo
         <ambientLight intensity={1.2} />
         <directionalLight position={[0, 2, 2]} intensity={2.5} />
         <spotLight position={[0, 4, 3]} angle={0.4} penumbra={1} intensity={1.5} castShadow />
-        <Environment preset="city" />
-        <ChestFramer />
-        <Model isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} />
+        <Suspense fallback={null}>
+          <Environment preset="city" />
+          <ChestFramer />
+          <Model isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} />
+        </Suspense>
       </Canvas>
     </div>
   );
