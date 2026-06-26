@@ -1,0 +1,39 @@
+[[permission]]
+identifier = "allow-start-native-mic"
+description = "Allows starting native microphone capture"
+commands.allow = ["start_native_mic"]
+
+[[permission]]
+identifier = "allow-stop-native-mic"
+description = "Allows stopping native microphone capture"
+commands.allow = ["stop_native_mic"]
+
+[[permission]]
+identifier = "allow-check-microphone-permission"
+description = "Allows checking OS microphone permission state"
+commands.allow = ["check_microphone_permission"]
+
+[[permission]]
+identifier = "allow-open-microphone-privacy-settings"
+description = "Allows opening OS microphone privacy settings"
+commands.allow = ["open_microphone_privacy_settings"]
+
+[[permission]]
+identifier = "allow-get-system-stats"
+description = "Allows reading system CPU and memory stats"
+commands.allow = ["get_system_stats"]
+
+[[permission]]
+identifier = "allow-open-external-url"
+description = "Allows opening external URLs"
+commands.allow = ["open_external_url"]
+
+[[permission]]
+identifier = "allow-move-and-click-mouse"
+description = "Allows moving and clicking the mouse"
+commands.allow = ["move_and_click_mouse"]
+
+[[permission]]
+identifier = "allow-type-string"
+description = "Allows typing text via keyboard simulation"
+commands.allow = ["type_string"]
