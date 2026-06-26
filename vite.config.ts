@@ -8,4 +8,7 @@ export default defineConfig({
     tailwindcss(),
     react()
   ],
+  optimizeDeps: {
+    include: ['three', '@react-three/fiber', '@react-three/drei', 'framer-motion', 'lucide-react']
+  }
 });

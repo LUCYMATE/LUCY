@@ -58,7 +58,10 @@ export function MyraOS({ isMiniMode = false }: { isMiniMode?: boolean }) {
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
         <section className="flex-1 flex flex-col min-w-0 min-h-0">
-          <div className={`glass rounded-[40px] flex-1 relative overflow-hidden flex flex-col min-h-0 ${isMiniMode ? '!rounded-xl' : ''}`}>
+          <div 
+            className={`glass rounded-[40px] flex-1 relative overflow-hidden flex flex-col min-h-0 ${isMiniMode ? '!rounded-xl' : ''}`}
+            data-tauri-drag-region={isMiniMode ? true : undefined}
+          >
             <Chat isMiniMode={isMiniMode} />
           </div>
         </section>

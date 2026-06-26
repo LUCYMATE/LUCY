@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { motion } from 'framer-motion';
+import { motion, useDragControls } from 'framer-motion';
 import { Send, Activity, Mic, MicOff, Volume2, VolumeX, Trash2, Download } from 'lucide-react';
 const Myra3D = lazy(() => import('./Myra3D').then(module => ({ default: module.Myra3D })));
 import { GeminiLive } from '../lib/gemini-live';
@@ -37,6 +37,8 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
     if (!val || ['Small', 'Medium', 'Large'].includes(val)) return '100';
     return val;
   });
+  
+  const dragControls = useDragControls();
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -162,7 +164,12 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
         setIsListening(false);
         setIsSpeaking(false);
         setIsThinking(false);
-        setAvatarSize(localStorage.getItem('myra_avatar_size') || 'Medium');
+        const val = localStorage.getItem('myra_avatar_size') || '100';
+        if (['Small', 'Medium', 'Large'].includes(val)) {
+          setAvatarSize('100');
+        } else {
+          setAvatarSize(val);
+        }
         modelBubbleIdRef.current = '';
         
         setTimeout(() => {
@@ -364,6 +371,7 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
                 className="flex-1 h-20 mx-4 cursor-pointer hover:bg-white/5 rounded-2xl transition-colors flex items-center justify-center"
                 onClick={() => window.dispatchEvent(new CustomEvent('myra-restore'))}
                 title="Click to expand window"
+                data-tauri-drag-region
               >
                 {isListening ? (
                   <AudioVisualizer analyser={inputAnalyser} isActive={isListening} type="input" />
@@ -389,18 +397,35 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
               {createPortal(
                 <motion.div 
                   drag 
+                  dragControls={dragControls}
+                  dragListener={false}
                   dragConstraints={typeof window !== 'undefined' ? { left: -window.innerWidth, right: window.innerWidth, top: -window.innerHeight, bottom: window.innerHeight } : undefined}
                   dragElastic={0.1}
                   dragMomentum={false}
-                  className="absolute z-[9999] cursor-grab active:cursor-grabbing flex items-center justify-center w-64 h-96 bottom-10 right-10"
+                  className="absolute z-[50] flex flex-col items-center justify-end bottom-10 right-10"
                   style={{
-                    pointerEvents: isHoveringModel ? 'auto' : 'none',
-                    scale: parseInt(avatarSize) / 100
+                    pointerEvents: 'none',
+                    width: `${256 * (parseInt(avatarSize) / 100)}px`,
+                    height: `${384 * (parseInt(avatarSize) / 100)}px`
                   }}
                 >
-                  <Suspense fallback={null}>
-                    <Myra3D isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} onHoverChange={setIsHoveringModel} />
-                  </Suspense>
+                  <div className="absolute inset-0 pb-4 pointer-events-none">
+                    <Suspense fallback={null}>
+                      <Myra3D isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} onHoverChange={setIsHoveringModel} />
+                    </Suspense>
+                  </div>
+                  {/* Invisible Drag Area over the model body */}
+                  <div 
+                    onPointerDown={(e) => dragControls.start(e)}
+                    className="absolute inset-x-12 top-1/4 bottom-1/3 cursor-grab active:cursor-grabbing pointer-events-auto z-[60]"
+                    title="Drag Avatar"
+                  />
+                  {/* Drag Handle */}
+                  <div 
+                    onPointerDown={(e) => dragControls.start(e)}
+                    className="w-12 h-1.5 bg-white/20 rounded-full cursor-grab active:cursor-grabbing hover:bg-white/50 transition-colors pointer-events-auto z-[60] shrink-0"
+                    title="Drag Avatar"
+                  />
                 </motion.div>,
                 document.body
               )}

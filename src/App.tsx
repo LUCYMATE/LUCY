@@ -1,22 +1,47 @@
 import { MyraOS } from './components/MyraOS';
 import { Minus, Square, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
 
 export default function App() {
   const [isMiniMode, setIsMiniMode] = useState(false);
+  const normalSizeRef = useRef<{width: number, height: number} | null>(null);
+  const wasMaximizedRef = useRef<boolean>(false);
 
   const minimize = async () => {
     try {
       const win = getCurrentWindow();
       if (!isMiniMode) {
+        // Save the current size before minimizing
+        const isMax = await win.isMaximized();
+        wasMaximizedRef.current = isMax;
+        
+        if (isMax) {
+          await win.unmaximize();
+        } else {
+          const size = await win.outerSize();
+          const factor = await win.scaleFactor();
+          const logical = size.toLogical(factor);
+          normalSizeRef.current = { width: logical.width, height: logical.height };
+        }
+
+        await win.setMinSize(new LogicalSize(250, 100)); // Minimum limit for mini mode
+        await win.setMaxSize(new LogicalSize(600, 300)); // Maximum limit for mini mode
         await win.setAlwaysOnTop(true);
         await win.setSize(new LogicalSize(300, 150));
         setIsMiniMode(true);
       } else {
+        await win.setMaxSize(null);
+        await win.setMinSize(new LogicalSize(800, 600)); // Minimum limit for normal mode
         await win.setAlwaysOnTop(false);
-        await win.setSize(new LogicalSize(1000, 700));
+        if (wasMaximizedRef.current) {
+          await win.maximize();
+        } else if (normalSizeRef.current) {
+          await win.setSize(new LogicalSize(normalSizeRef.current.width, normalSizeRef.current.height));
+        } else {
+          await win.setSize(new LogicalSize(1000, 700));
+        }
         setIsMiniMode(false);
       }
     } catch (e) {
@@ -53,8 +78,16 @@ export default function App() {
       if (isMiniMode) {
         try {
           const win = getCurrentWindow();
+          await win.setMaxSize(null);
+          await win.setMinSize(new LogicalSize(800, 600));
           await win.setAlwaysOnTop(false);
-          await win.setSize(new LogicalSize(1000, 700));
+          if (wasMaximizedRef.current) {
+            await win.maximize();
+          } else if (normalSizeRef.current) {
+            await win.setSize(new LogicalSize(normalSizeRef.current.width, normalSizeRef.current.height));
+          } else {
+            await win.setSize(new LogicalSize(1000, 700));
+          }
           setIsMiniMode(false);
         } catch (e) {
           console.warn(e);
@@ -70,8 +103,11 @@ export default function App() {
   }, [isMiniMode]);
 
   return (
-    <div className="h-screen w-screen bg-[#020617] relative overflow-hidden text-white font-sans flex flex-col">
-      <div className="mesh-bg"></div>
+    <div 
+      className="h-screen w-screen bg-[#020617] relative overflow-hidden text-white font-sans flex flex-col"
+      data-tauri-drag-region={isMiniMode ? true : undefined}
+    >
+      <div className="mesh-bg" data-tauri-drag-region={isMiniMode ? true : undefined}></div>
       
       {/* Custom Titlebar */}
       {!isMiniMode && (
@@ -102,7 +138,7 @@ export default function App() {
       </div>
       )}
 
-      <div className="flex-1 relative flex min-h-0">
+      <div className="flex-1 relative flex min-h-0" data-tauri-drag-region={isMiniMode ? true : undefined}>
         <MyraOS isMiniMode={isMiniMode} />
       </div>
     </div>
