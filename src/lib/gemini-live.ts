@@ -30,8 +30,15 @@ export class GeminiLive {
     try {
       const ai = new GoogleGenAI({ apiKey });
       
+      const savedModel = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
+      const savedVoice = localStorage.getItem('myra_voice') || 'Aoede';
+      const savedInstruction = localStorage.getItem('myra_system_instruction') || 
+        'You are a helpful voice assistant. Keep replies conversational, concise, and natural for back-and-forth spoken chat.';
+
+      logger.add('info', 'Connecting', `Model: ${savedModel}, Voice: ${savedVoice}`);
+      
       const session = await ai.live.connect({
-        model: 'gemini-3.1-flash-live-preview',
+        model: savedModel,
         callbacks: {
           onopen: () => {
             logger.add('success', 'Setup Complete', 'Gemini Live system is fully connected and ready for input.');
@@ -104,12 +111,11 @@ export class GeminiLive {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: 'Aoede',
+                voiceName: savedVoice,
               },
             },
           },
-          systemInstruction:
-            'You are a helpful voice assistant. Keep replies conversational, concise, and natural for back-and-forth spoken chat.',
+          systemInstruction: savedInstruction,
         },
       } as any);
 

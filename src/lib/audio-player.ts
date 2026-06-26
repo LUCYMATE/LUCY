@@ -2,15 +2,51 @@
 // Per docs: "Audio output always uses a sample rate of 24kHz"
 export class AudioPlayer {
   private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private gainNode: GainNode | null = null;
   private nextPlayTime = 0;
+  private muted = false;
 
   start() {
     this.audioContext = new AudioContext({ sampleRate: 24000 }); // 24kHz — Gemini output rate
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 256;
+    
+    this.gainNode = this.audioContext.createGain();
+    this.muted = localStorage.getItem('myra_muted') === 'true';
+    this.gainNode.gain.value = this.muted ? 0 : 1;
+
+    // Connect: source -> gainNode -> analyser -> destination
+    this.gainNode.connect(this.analyser);
+    this.analyser.connect(this.audioContext.destination);
+    
     this.nextPlayTime = this.audioContext.currentTime;
   }
 
-  playChunk(pcmBase64: string): number {
+  getAnalyser(): AnalyserNode | null {
+    return this.analyser;
+  }
+
+  setMuted(muted: boolean) {
+    this.muted = muted;
+    localStorage.setItem('myra_muted', String(muted));
+    if (this.gainNode) {
+      this.gainNode.gain.value = muted ? 0 : 1;
+    }
+  }
+
+  isMuted(): boolean {
+    return this.muted;
+  }
+
+  getRemainingTime(): number {
     if (!this.audioContext) return 0;
+    const now = this.audioContext.currentTime;
+    return Math.max(0, this.nextPlayTime - now);
+  }
+
+  playChunk(pcmBase64: string): number {
+    if (!this.audioContext || !this.gainNode) return 0;
 
     if (this.audioContext.state === 'suspended') {
       this.audioContext.resume().catch(err => console.warn('Failed to resume AudioContext:', err));
@@ -38,7 +74,7 @@ export class AudioPlayer {
 
     const source = this.audioContext.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.audioContext.destination);
+    source.connect(this.gainNode);
 
     const now = this.audioContext.currentTime;
     if (this.nextPlayTime < now + 0.05) {
@@ -55,6 +91,8 @@ export class AudioPlayer {
       this.audioContext.close();
       this.audioContext = null;
     }
+    this.analyser = null;
+    this.gainNode = null;
     this.nextPlayTime = 0;
   }
 }

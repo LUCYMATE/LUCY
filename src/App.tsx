@@ -1,14 +1,26 @@
 import { MyraOS } from './components/MyraOS';
 import { Minus, Square, X } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { LogicalSize } from '@tauri-apps/api/dpi';
 
 export default function App() {
+  const [isMiniMode, setIsMiniMode] = useState(false);
+
   const minimize = async () => {
     try {
-      await getCurrentWindow().minimize();
+      const win = getCurrentWindow();
+      if (!isMiniMode) {
+        await win.setAlwaysOnTop(true);
+        await win.setSize(new LogicalSize(300, 150));
+        setIsMiniMode(true);
+      } else {
+        await win.setAlwaysOnTop(false);
+        await win.setSize(new LogicalSize(1000, 700));
+        setIsMiniMode(false);
+      }
     } catch (e) {
-      console.warn("Minimize only works in Tauri apps");
+      console.warn("Minimize resizing only works in Tauri apps", e);
     }
   };
 
@@ -72,7 +84,7 @@ export default function App() {
       </div>
 
       <div className="flex-1 relative flex min-h-0">
-        <MyraOS />
+        <MyraOS isMiniMode={isMiniMode} />
       </div>
     </div>
   );

@@ -5,8 +5,13 @@ export class AudioRecorder {
   private audioContext: AudioContext | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
+  private analyser: AnalyserNode | null = null;
 
   public onData: ((data: Int16Array) => void) | null = null;
+
+  getAnalyser(): AnalyserNode | null {
+    return this.analyser;
+  }
 
   async start() {
     try {
@@ -40,6 +45,8 @@ export class AudioRecorder {
       logger.add('info', 'Mic Initialization', 'Connecting audio nodes...');
       
       this.source = this.audioContext.createMediaStreamSource(this.stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 256;
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-worklet');
       
       this.workletNode.port.onmessage = (event) => {
@@ -48,6 +55,7 @@ export class AudioRecorder {
         }
       };
       
+      this.source.connect(this.analyser);
       this.source.connect(this.workletNode);
       this.workletNode.connect(this.audioContext.destination);
 
@@ -70,6 +78,10 @@ export class AudioRecorder {
     if (this.source) {
       this.source.disconnect();
       this.source = null;
+    }
+    if (this.analyser) {
+      this.analyser.disconnect();
+      this.analyser = null;
     }
     if (this.audioContext) {
       this.audioContext.close();

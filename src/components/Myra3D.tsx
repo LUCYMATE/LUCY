@@ -14,21 +14,20 @@ function ChestFramer() {
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
       
-      // Calculate chest position (roughly 25% from the center towards the top)
-      const chestY = center.y + size.y * 0.25;
+      // Focus on the center of the bounding box
+      const targetY = center.y;
       
-      // Calculate distance to frame the upper body nicely
-      // The smaller the multiplier, the closer the camera
-      const distance = center.z + size.y * 0.8;
+      // Calculate distance to frame the full body (increase multiplier)
+      const distance = center.z + size.y * 1.5;
       
       // Position the camera
-      camera.position.set(center.x, chestY, distance);
+      camera.position.set(center.x, targetY, distance);
       
       // Update camera
       camera.updateProjectionMatrix();
 
       // Update target
-      setTarget([center.x, chestY, center.z]);
+      setTarget([center.x, targetY, center.z]);
     }, 100);
     
     return () => clearTimeout(timeout);
