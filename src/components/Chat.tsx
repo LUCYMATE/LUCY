@@ -301,7 +301,10 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
     <div className="flex flex-col h-full min-h-0 bg-transparent">
       {!initialized ? (
         /* ── Splash Screen ──────────────────────────────────────── */
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-1000">
+        <div 
+          className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-1000"
+          data-tauri-drag-region
+        >
           <div className="w-32 h-32 rounded-full bg-pink-500/10 flex items-center justify-center mb-8 relative">
             <div className="absolute inset-0 bg-pink-500/20 blur-xl rounded-full animate-pulse" />
             <Activity className="w-12 h-12 text-pink-500 relative z-10" />

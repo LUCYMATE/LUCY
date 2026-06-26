@@ -9,32 +9,16 @@ export default function App() {
   const normalSizeRef = useRef<{width: number, height: number} | null>(null);
   const wasMaximizedRef = useRef<boolean>(false);
 
-  const minimize = async () => {
+  const restoreWindow = async () => {
+    const safe = async (p: Promise<any>) => {
+      try { await p; } catch (e) { console.warn('Tauri API error:', e); }
+    };
     try {
       const win = getCurrentWindow();
-      if (!isMiniMode) {
-        // Save the current size before minimizing
-        const isMax = await win.isMaximized();
-        wasMaximizedRef.current = isMax;
-        
-        if (isMax) {
-          await win.unmaximize();
-        } else {
-          const size = await win.outerSize();
-          const factor = await win.scaleFactor();
-          const logical = size.toLogical(factor);
-          normalSizeRef.current = { width: logical.width, height: logical.height };
-        }
+      await safe(win.setMaxSize(null));
+      await safe(win.setAlwaysOnTop(false));
 
-        await win.setMinSize(new LogicalSize(250, 100)); // Minimum limit for mini mode
-        await win.setMaxSize(new LogicalSize(600, 300)); // Maximum limit for mini mode
-        await win.setAlwaysOnTop(true);
-        await win.setSize(new LogicalSize(300, 150));
-        setIsMiniMode(true);
-      } else {
-        await win.setMaxSize(null);
-        await win.setMinSize(new LogicalSize(800, 600)); // Minimum limit for normal mode
-        await win.setAlwaysOnTop(false);
+      try {
         if (wasMaximizedRef.current) {
           await win.maximize();
         } else if (normalSizeRef.current) {
@@ -42,10 +26,55 @@ export default function App() {
         } else {
           await win.setSize(new LogicalSize(1000, 700));
         }
-        setIsMiniMode(false);
+      } catch (e) {
+        console.warn("Could not restore size", e);
+      }
+
+      await safe(win.setMinSize(new LogicalSize(800, 600)));
+      setIsMiniMode(false);
+    } catch (e) {
+      console.warn("Fallback: window api totally failed", e);
+      setIsMiniMode(false); // Always apply UI state
+    }
+  };
+
+  const minimize = async () => {
+    // Helper to safely execute Tauri commands without breaking the flow
+    const safe = async (p: Promise<any>) => {
+      try { await p; } catch (e) { console.warn('Tauri API error:', e); }
+    };
+
+    try {
+      const win = getCurrentWindow();
+      if (!isMiniMode) {
+        try {
+          const isMax = await win.isMaximized();
+          wasMaximizedRef.current = isMax;
+          if (isMax) {
+            await win.unmaximize();
+          } else {
+            const size = await win.outerSize();
+            const factor = await win.scaleFactor();
+            const logical = size.toLogical(factor);
+            normalSizeRef.current = { width: logical.width, height: logical.height };
+          }
+        } catch (e) {
+          console.warn("Could not read window size", e);
+        }
+
+        await safe(win.setMaxSize(null)); // clear max first
+        await safe(win.setMinSize(new LogicalSize(250, 90)));
+        await safe(win.setAlwaysOnTop(true));
+        await safe(win.setSize(new LogicalSize(350, 100)));
+        await safe(win.setMaxSize(new LogicalSize(600, 150))); // set max after shrinking
+
+        setIsMiniMode(true);
+      } else {
+        await restoreWindow();
       }
     } catch (e) {
-      console.warn("Minimize resizing only works in Tauri apps", e);
+      console.warn("Fallback: window api totally failed", e);
+      setIsMiniMode(!isMiniMode); // Always apply UI state
     }
   };
 
@@ -66,7 +95,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Show the window smoothly after a short delay to ensure React has fully rendered the UI
     const timer = setTimeout(async () => {
       try {
         await getCurrentWindow().show();
@@ -74,33 +102,18 @@ export default function App() {
         // Not running in Tauri or permission missing
       }
     }, 300);
-    const handleRestore = async () => {
-      if (isMiniMode) {
-        try {
-          const win = getCurrentWindow();
-          await win.setMaxSize(null);
-          await win.setMinSize(new LogicalSize(800, 600));
-          await win.setAlwaysOnTop(false);
-          if (wasMaximizedRef.current) {
-            await win.maximize();
-          } else if (normalSizeRef.current) {
-            await win.setSize(new LogicalSize(normalSizeRef.current.width, normalSizeRef.current.height));
-          } else {
-            await win.setSize(new LogicalSize(1000, 700));
-          }
-          setIsMiniMode(false);
-        } catch (e) {
-          console.warn(e);
-        }
-      }
+    
+    const onRestore = () => {
+      restoreWindow();
     };
-    window.addEventListener('myra-restore', handleRestore);
+    
+    window.addEventListener('myra-restore', onRestore);
 
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('myra-restore', handleRestore);
+      window.removeEventListener('myra-restore', onRestore);
     };
-  }, [isMiniMode]);
+  }, []);
 
   return (
     <div 

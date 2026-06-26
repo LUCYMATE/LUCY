@@ -54,7 +54,10 @@ export function MyraOS({ isMiniMode = false }: { isMiniMode?: boolean }) {
   }, [isTauri]);
 
   return (
-    <div className="flex h-full w-full gap-4 sm:gap-6 relative max-w-[1600px] mx-auto p-4 sm:p-6 min-h-0">
+    <div 
+      className={`flex h-full w-full gap-4 sm:gap-6 relative max-w-[1600px] mx-auto min-h-0 ${isMiniMode ? 'p-2' : 'p-4 sm:p-6'}`}
+      data-tauri-drag-region={isMiniMode ? true : undefined}
+    >
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
         <section className="flex-1 flex flex-col min-w-0 min-h-0">
