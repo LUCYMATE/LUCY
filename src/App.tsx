@@ -2,12 +2,13 @@ import { MyraOS } from './components/MyraOS';
 import { Minus, Square, X } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { LogicalSize } from '@tauri-apps/api/dpi';
+import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
 
 export default function App() {
   const [isMiniMode, setIsMiniMode] = useState(false);
   const normalSizeRef = useRef<{width: number, height: number} | null>(null);
-  const wasMaximizedRef = useRef<boolean>(false);
+  const normalPosRef = useRef<{x: number, y: number} | null>(null);
+  const miniPosRef = useRef<{x: number, y: number} | null>(null);
 
   const restoreWindow = async () => {
     const safe = async (p: Promise<any>) => {
@@ -15,19 +16,34 @@ export default function App() {
     };
     try {
       const win = getCurrentWindow();
+      
+      // Save mini mode position before restoring
+      try {
+        const pos = await win.outerPosition();
+        const factor = await win.scaleFactor();
+        const logicalPos = pos.toLogical(factor);
+        miniPosRef.current = { x: logicalPos.x, y: logicalPos.y };
+      } catch (e) {
+        console.warn("Could not save mini position", e);
+      }
+
       await safe(win.setMaxSize(null));
       await safe(win.setAlwaysOnTop(false));
 
       try {
-        if (wasMaximizedRef.current) {
-          await win.maximize();
-        } else if (normalSizeRef.current) {
+        // Always restore the normal size first so the OS remembers the correct unmaximized size
+        if (normalSizeRef.current) {
           await win.setSize(new LogicalSize(normalSizeRef.current.width, normalSizeRef.current.height));
         } else {
           await win.setSize(new LogicalSize(1000, 700));
         }
+
+        // Restore normal position
+        if (normalPosRef.current) {
+          await win.setPosition(new LogicalPosition(normalPosRef.current.x, normalPosRef.current.y));
+        }
       } catch (e) {
-        console.warn("Could not restore size", e);
+        console.warn("Could not restore size and position", e);
       }
 
       await safe(win.setMinSize(new LogicalSize(800, 600)));
@@ -49,22 +65,32 @@ export default function App() {
       if (!isMiniMode) {
         try {
           const isMax = await win.isMaximized();
-          wasMaximizedRef.current = isMax;
           if (isMax) {
             await win.unmaximize();
-          } else {
-            const size = await win.outerSize();
-            const factor = await win.scaleFactor();
-            const logical = size.toLogical(factor);
-            normalSizeRef.current = { width: logical.width, height: logical.height };
-          }
+          } 
+          
+          const size = await win.outerSize();
+          const pos = await win.outerPosition();
+          const factor = await win.scaleFactor();
+          
+          const logicalSize = size.toLogical(factor);
+          const logicalPos = pos.toLogical(factor);
+          
+          normalSizeRef.current = { width: logicalSize.width, height: logicalSize.height };
+          normalPosRef.current = { x: logicalPos.x, y: logicalPos.y };
         } catch (e) {
-          console.warn("Could not read window size", e);
+          console.warn("Could not read window size/pos", e);
         }
 
         await safe(win.setMaxSize(null)); // clear max first
         await safe(win.setMinSize(new LogicalSize(250, 90)));
         await safe(win.setAlwaysOnTop(true));
+        
+        // Restore mini position if we have one
+        if (miniPosRef.current) {
+          await safe(win.setPosition(new LogicalPosition(miniPosRef.current.x, miniPosRef.current.y)));
+        }
+        
         await safe(win.setSize(new LogicalSize(350, 100)));
         await safe(win.setMaxSize(new LogicalSize(600, 150))); // set max after shrinking
 

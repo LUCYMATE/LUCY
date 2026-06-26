@@ -357,7 +357,7 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
 
           {/* ── Content Area ─────────────────────────────────────────── */}
           {isMiniMode ? (
-            <div className="flex-1 flex items-center justify-between px-6 bg-transparent" data-tauri-drag-region>
+            <div className="flex-1 flex items-center justify-between px-6 bg-transparent">
               <button
                 type="button"
                 onClick={toggleMic}
@@ -374,7 +374,6 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
                 className="flex-1 h-20 mx-4 cursor-pointer hover:bg-white/5 rounded-2xl transition-colors flex items-center justify-center"
                 onClick={() => window.dispatchEvent(new CustomEvent('myra-restore'))}
                 title="Click to expand window"
-                data-tauri-drag-region
               >
                 {isListening ? (
                   <AudioVisualizer analyser={inputAnalyser} isActive={isListening} type="input" />
