@@ -41,14 +41,16 @@ export class GeminiLive {
           },
           onmessage: (message: any) => {
             try {
-              const parts = message?.serverContent?.modelTurn?.parts ?? [];
+              const serverContent = message?.serverContent ?? message?.server_content;
+              const modelTurn = serverContent?.modelTurn ?? serverContent?.model_turn;
+              const parts = modelTurn?.parts ?? [];
               
               if (parts.length > 0) {
                  this.onThinking?.(false);
               }
 
               for (const part of parts) {
-                const inlineData = part?.inlineData;
+                const inlineData = part?.inlineData ?? part?.inline_data;
                 if (inlineData?.data) {
                   this.onAudio?.(inlineData.data);
                 }
@@ -58,17 +60,19 @@ export class GeminiLive {
                 }
               }
 
-              const outputText = message?.serverContent?.outputTranscription?.text;
+              const outputTranscription = serverContent?.outputTranscription ?? serverContent?.output_transcription;
+              const outputText = outputTranscription?.text;
               if (outputText) {
                 this.onTranscript?.(outputText, false);
               }
 
-              const inputText = message?.serverContent?.inputTranscription?.text;
+              const inputTranscription = serverContent?.inputTranscription ?? serverContent?.input_transcription;
+              const inputText = inputTranscription?.text;
               if (inputText) {
                 this.onTranscript?.(inputText, true);
               }
 
-              if (message?.serverContent?.turnComplete) {
+              if (serverContent?.turnComplete || serverContent?.turn_complete) {
                 logger.add('info', 'Turn Complete', 'Model finished generating its response.');
                 console.log('[GeminiLive] turnComplete');
               }
@@ -97,8 +101,6 @@ export class GeminiLive {
           responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          input_audio_transcription: {},
-          output_audio_transcription: {},
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {

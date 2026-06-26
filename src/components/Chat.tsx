@@ -110,23 +110,24 @@ export function Chat() {
       setIsThinking(false);
       if (isInput) {
         // User's mic was transcribed — add as user bubble
+        modelBubbleIdRef.current = ''; // Reset so the next model response starts in a fresh bubble!
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(), role: 'user', text,
         }]);
       } else {
         // Model output transcript — append to current model bubble
-        setMessages(prev => {
-          const existingId = modelBubbleIdRef.current;
-          if (existingId) {
-            return prev.map(m =>
+        let existingId = modelBubbleIdRef.current;
+        if (!existingId) {
+          existingId = crypto.randomUUID();
+          modelBubbleIdRef.current = existingId;
+          setMessages(prev => [...prev, { id: existingId, role: 'model', text }]);
+        } else {
+          setMessages(prev =>
+            prev.map(m =>
               m.id === existingId ? { ...m, text: m.text + text } : m
-            );
-          } else {
-            const newId = crypto.randomUUID();
-            modelBubbleIdRef.current = newId;
-            return [...prev, { id: newId, role: 'model', text }];
-          }
-        });
+            )
+          );
+        }
       }
     };
 
@@ -140,6 +141,7 @@ export function Chat() {
       setIsMicPending(true);
       try {
         logger.add('info', 'User Action', 'Toggled microphone ON');
+        modelBubbleIdRef.current = ''; // Reset so the next model response starts in a fresh bubble!
         await recorderRef.current?.start();
         if (recorderRef.current) {
           recorderRef.current.onData = (pcm16) => {
@@ -263,30 +265,7 @@ export function Chat() {
                 </div>
               ))}
 
-              {/* Thinking spinner */}
-              {isThinking && (
-                <div className="flex justify-start">
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-2xl rounded-bl-none bg-pink-500/10 border border-pink-500/20 backdrop-blur-md">
-                    <div className="w-5 h-5 rounded-full border-t-2 border-r-2 border-pink-400 animate-spin" />
-                    <span className="text-xs text-pink-300 font-mono">thinking…</span>
-                  </div>
-                </div>
-              )}
 
-              {/* Speaking indicator */}
-              {isSpeaking && !isThinking && (
-                <div className="flex justify-start">
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-2xl rounded-bl-none bg-purple-500/10 border border-purple-500/20 backdrop-blur-md">
-                    <div className="flex gap-1">
-                      {[0, 1, 2].map(i => (
-                        <div key={i} className="w-1 rounded-full bg-purple-400 animate-bounce"
-                          style={{ height: '16px', animationDelay: `${i * 0.15}s` }} />
-                      ))}
-                    </div>
-                    <span className="text-xs text-purple-300 font-mono">speaking…</span>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* ── Input Dock ────────────────────────────────────────── */}
