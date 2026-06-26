@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 // Check if we are running in Tauri
 export const isTauriApp = (): boolean => {
-  return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined;
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 };
 
 const isTauri = isTauriApp;
