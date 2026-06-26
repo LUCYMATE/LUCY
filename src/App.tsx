@@ -49,16 +49,34 @@ export default function App() {
         // Not running in Tauri or permission missing
       }
     }, 300);
-    return () => clearTimeout(timer);
-  }, []);
+    const handleRestore = async () => {
+      if (isMiniMode) {
+        try {
+          const win = getCurrentWindow();
+          await win.setAlwaysOnTop(false);
+          await win.setSize(new LogicalSize(1000, 700));
+          setIsMiniMode(false);
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+    };
+    window.addEventListener('myra-restore', handleRestore);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('myra-restore', handleRestore);
+    };
+  }, [isMiniMode]);
 
   return (
     <div className="h-screen w-screen bg-[#020617] relative overflow-hidden text-white font-sans flex flex-col">
       <div className="mesh-bg"></div>
       
       {/* Custom Titlebar */}
-      <div 
-        data-tauri-drag-region 
+      {!isMiniMode && (
+        <div 
+          data-tauri-drag-region 
         className="h-8 flex shrink-0 justify-end items-center select-none z-50 bg-black/20 backdrop-blur-sm"
       >
         <div className="flex h-full">
@@ -81,7 +99,7 @@ export default function App() {
             <X size={18} />
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex-1 relative flex min-h-0">
         <MyraOS isMiniMode={isMiniMode} />

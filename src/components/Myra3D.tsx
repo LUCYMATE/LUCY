@@ -18,7 +18,7 @@ function ChestFramer() {
       const targetY = center.y;
       
       // Calculate distance to frame the full body (increase multiplier)
-      const distance = center.z + size.y * 1.5;
+      const distance = center.z + size.y * 1.15;
       
       // Position the camera
       camera.position.set(center.x, targetY, distance);
@@ -36,7 +36,7 @@ function ChestFramer() {
   return <OrbitControls target={target} enableZoom={false} enablePan={false} enableRotate={false} makeDefault />;
 }
 
-function Model({ isSpeaking, isThinking, isListening }: { isSpeaking: boolean, isThinking?: boolean, isListening?: boolean }) {
+function Model({ isSpeaking, isThinking, isListening, onHoverChange }: { isSpeaking: boolean, isThinking?: boolean, isListening?: boolean, onHoverChange?: (hover: boolean) => void }) {
   // Load the GLTF model. It's safe to assume it's at /myra.glb
   const { scene, materials, animations } = useGLTF('/myra.glb');
   const group = useRef<THREE.Group>(null);
@@ -183,7 +183,12 @@ function Model({ isSpeaking, isThinking, isListening }: { isSpeaking: boolean, i
   });
 
   return (
-    <group ref={group} dispose={null}>
+    <group 
+      ref={group} 
+      dispose={null}
+      onPointerOver={(e) => { e.stopPropagation(); onHoverChange?.(true); }}
+      onPointerOut={() => onHoverChange?.(false)}
+    >
       <primitive object={scene} />
     </group>
   );
@@ -191,17 +196,21 @@ function Model({ isSpeaking, isThinking, isListening }: { isSpeaking: boolean, i
 
 useGLTF.preload('/myra.glb');
 
-export function Myra3D({ isSpeaking, isThinking, isListening }: { isSpeaking: boolean, isThinking?: boolean, isListening?: boolean }) {
+export function Myra3D({ isSpeaking, isThinking, isListening, onHoverChange }: { isSpeaking: boolean, isThinking?: boolean, isListening?: boolean, onHoverChange?: (hover: boolean) => void }) {
   return (
     <div className="absolute inset-0 pointer-events-none z-[100]">
-      <Canvas camera={{ position: [0, 0.2, 3], fov: 45 }} gl={{ alpha: true }}>
+      <Canvas 
+        camera={{ position: [0, 0.2, 3], fov: 45 }} 
+        gl={{ alpha: true }}
+        eventSource={typeof document !== 'undefined' ? document.body : undefined}
+      >
         <ambientLight intensity={1.2} />
         <directionalLight position={[0, 2, 2]} intensity={2.5} />
         <spotLight position={[0, 4, 3]} angle={0.4} penumbra={1} intensity={1.5} castShadow />
         <Suspense fallback={null}>
           <Environment preset="city" />
           <ChestFramer />
-          <Model isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} />
+          <Model isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} onHoverChange={onHoverChange} />
         </Suspense>
       </Canvas>
     </div>

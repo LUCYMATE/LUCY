@@ -14,7 +14,11 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
 
   const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview');
   const [selectedVoice, setSelectedVoice] = useState<string>(() => localStorage.getItem('myra_voice') || 'Aoede');
-  const [avatarSize, setAvatarSize] = useState<string>(() => localStorage.getItem('myra_avatar_size') || 'Medium');
+  const [avatarSize, setAvatarSize] = useState<string>(() => {
+    const val = localStorage.getItem('myra_avatar_size');
+    if (!val || ['Small', 'Medium', 'Large'].includes(val)) return '100';
+    return val;
+  });
   const [systemInstruction, setSystemInstruction] = useState<string>(() => localStorage.getItem('myra_system_instruction') || 'You are a helpful voice assistant. Keep replies conversational, concise, and natural for back-and-forth spoken chat.');
   const [changed, setChanged] = useState(false);
 
@@ -155,19 +159,26 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                 <p className="text-xs text-white/40 mt-2">Select the vocal synthesis avatar voice style.</p>
               </div>
 
-              {/* Avatar Size Dropdown */}
+              {/* Avatar Size Slider */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
-                <label className="block text-sm font-medium text-white mb-2">Avatar Size</label>
-                <select
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-medium text-white">Avatar Size</label>
+                  <span className="text-sm font-mono text-pink-400">{avatarSize}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="50"
+                  max="200"
                   value={avatarSize}
                   onChange={(e) => handleAvatarSizeChange(e.target.value)}
-                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
-                >
-                  <option value="Small">Small</option>
-                  <option value="Medium">Medium (Default)</option>
-                  <option value="Large">Large</option>
-                </select>
-                <p className="text-xs text-white/40 mt-2">Adjust the size of the 3D avatar on screen.</p>
+                  className="w-full h-2 bg-black/40 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                />
+                <div className="flex justify-between text-xs text-white/40 mt-2">
+                  <span>50%</span>
+                  <span>100% (Default)</span>
+                  <span>200%</span>
+                </div>
+                <p className="text-xs text-white/40 mt-3">Adjust the size of the 3D avatar on screen.</p>
               </div>
 
               {/* System Instructions Textarea */}

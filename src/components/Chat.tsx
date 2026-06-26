@@ -31,7 +31,12 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem('myra_muted') === 'true');
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
-  const [avatarSize, setAvatarSize] = useState(() => localStorage.getItem('myra_avatar_size') || 'Medium');
+  const [isHoveringModel, setIsHoveringModel] = useState(false);
+  const [avatarSize, setAvatarSize] = useState(() => {
+    const val = localStorage.getItem('myra_avatar_size');
+    if (!val || ['Small', 'Medium', 'Large'].includes(val)) return '100';
+    return val;
+  });
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -340,95 +345,130 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
           </div>
           )}
 
-          {/* ── Chat Area ─────────────────────────────────────────── */}
-          <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden" ref={containerRef}>
-            {/* 3D avatar floating widget (Portaled to body to float over everything) */}
-            {createPortal(
-              <motion.div 
-                drag 
-                dragConstraints={typeof window !== 'undefined' ? { left: -window.innerWidth, right: window.innerWidth, top: -window.innerHeight, bottom: window.innerHeight } : undefined}
-                dragElastic={0.1}
-                dragMomentum={false}
-                className={`absolute z-[9999] cursor-grab active:cursor-grabbing flex items-center justify-center ${
-                  avatarSize === 'Small' ? 'w-48 h-64' :
-                  avatarSize === 'Large' ? 'w-96 h-[500px]' :
-                  'w-64 h-96'
-                } ${isMiniMode ? 'right-0 top-0 bottom-0 left-0 m-auto' : 'bottom-10 right-10'}`}
+          {/* ── Content Area ─────────────────────────────────────────── */}
+          {isMiniMode ? (
+            <div className="flex-1 flex items-center justify-between px-6 bg-transparent" data-tauri-drag-region>
+              <button
+                type="button"
+                onClick={toggleMic}
+                disabled={isMicPending}
+                className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all ${isListening
+                    ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
+                    : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
+                  } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                <Suspense fallback={null}>
-                  <Myra3D isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} />
-                </Suspense>
-              </motion.div>,
-              document.body
-            )}
+                {isListening ? <Mic className="w-5 h-5" /> : (isMicPending ? <Activity className="w-5 h-5 animate-spin" /> : <MicOff className="w-5 h-5" />)}
+              </button>
 
-            {/* Messages */}
-            {!isMiniMode && (
-              <div
-                className="flex-1 overflow-y-auto p-6 space-y-4 z-10 relative pointer-events-auto"
-                ref={scrollRef}
+              <div 
+                className="flex-1 h-20 mx-4 cursor-pointer hover:bg-white/5 rounded-2xl transition-colors flex items-center justify-center"
+                onClick={() => window.dispatchEvent(new CustomEvent('myra-restore'))}
+                title="Click to expand window"
               >
-              {messages.map((m) => (
-                <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-5 py-3 ${m.role === 'user'
-                      ? 'bg-white/10 text-white rounded-br-none backdrop-blur-md'
-                      : 'bg-pink-500/10 border border-pink-500/20 text-pink-50 rounded-bl-none backdrop-blur-md'
-                    }`}>
-                    <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap">
-                      {m.text}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            )}
-
-            {/* Visualizer Panel */}
-            <div className={`w-full px-6 flex items-center justify-center relative overflow-hidden z-10 shrink-0 ${isMiniMode ? 'h-full flex-1' : 'h-12'}`}>
-              <div className="w-full h-full max-w-xl">
                 {isListening ? (
                   <AudioVisualizer analyser={inputAnalyser} isActive={isListening} type="input" />
                 ) : (
                   <AudioVisualizer analyser={outputAnalyser} isActive={isSpeaking} type="output" />
                 )}
               </div>
-            </div>
 
-            {/* ── Input Dock ────────────────────────────────────────── */}
-            <div className="p-6 shrink-0 z-10 relative">
-              <form
-                onSubmit={(e) => { e.preventDefault(); handleSendText(); }}
-                className="flex items-center gap-4 w-full"
+              <button
+                type="button"
+                onClick={toggleMute}
+                className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMuted
+                    ? 'bg-red-600/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.5)]'
+                    : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
+                  }`}
               >
-                {/* Mic button */}
-                <button
-                  type="button"
-                  onClick={toggleMic}
-                  disabled={isMicPending}
-                  title={isListening ? 'Stop microphone' : 'Start microphone'}
-                  className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all ${isListening
-                      ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
-                      : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
-                    } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+            </div>
+          ) : (
+            <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden" ref={containerRef}>
+              {/* 3D avatar floating widget (Portaled to body to float over everything) */}
+              {createPortal(
+                <motion.div 
+                  drag 
+                  dragConstraints={typeof window !== 'undefined' ? { left: -window.innerWidth, right: window.innerWidth, top: -window.innerHeight, bottom: window.innerHeight } : undefined}
+                  dragElastic={0.1}
+                  dragMomentum={false}
+                  className="absolute z-[9999] cursor-grab active:cursor-grabbing flex items-center justify-center w-64 h-96 bottom-10 right-10"
+                  style={{
+                    pointerEvents: isHoveringModel ? 'auto' : 'none',
+                    scale: parseInt(avatarSize) / 100
+                  }}
                 >
-                  {isListening ? <Mic className="w-5 h-5" /> : (isMicPending ? <Activity className="w-5 h-5 animate-spin" /> : <MicOff className="w-5 h-5" />)}
-                </button>
+                  <Suspense fallback={null}>
+                    <Myra3D isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} onHoverChange={setIsHoveringModel} />
+                  </Suspense>
+                </motion.div>,
+                document.body
+              )}
 
-                {/* Mute button */}
-                <button
-                  type="button"
-                  onClick={toggleMute}
-                  title={isMuted ? "Unmute Myra's voice" : "Mute Myra's voice"}
-                  className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMuted
-                      ? 'bg-red-600/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.5)]'
-                      : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
-                    }`}
+              {/* Messages */}
+              <div
+                className="flex-1 overflow-y-auto p-6 space-y-4 z-10 relative pointer-events-auto"
+                ref={scrollRef}
+              >
+                {messages.map((m) => (
+                  <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] rounded-2xl px-5 py-3 ${m.role === 'user'
+                        ? 'bg-white/10 text-white rounded-br-none backdrop-blur-md'
+                        : 'bg-pink-500/10 border border-pink-500/20 text-pink-50 rounded-bl-none backdrop-blur-md'
+                      }`}>
+                      <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap">
+                        {m.text}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Visualizer Panel */}
+              <div className="w-full px-6 flex items-center justify-center relative overflow-hidden z-10 shrink-0 h-12">
+                <div className="w-full h-full max-w-xl">
+                  {isListening ? (
+                    <AudioVisualizer analyser={inputAnalyser} isActive={isListening} type="input" />
+                  ) : (
+                    <AudioVisualizer analyser={outputAnalyser} isActive={isSpeaking} type="output" />
+                  )}
+                </div>
+              </div>
+
+              {/* ── Input Dock ────────────────────────────────────────── */}
+              <div className="p-6 shrink-0 z-10 relative">
+                <form
+                  onSubmit={(e) => { e.preventDefault(); handleSendText(); }}
+                  className="flex items-center gap-4 w-full"
                 >
-                  {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                </button>
+                  {/* Mic button */}
+                  <button
+                    type="button"
+                    onClick={toggleMic}
+                    disabled={isMicPending}
+                    title={isListening ? 'Stop microphone' : 'Start microphone'}
+                    className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all ${isListening
+                        ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
+                        : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
+                      } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {isListening ? <Mic className="w-5 h-5" /> : (isMicPending ? <Activity className="w-5 h-5 animate-spin" /> : <MicOff className="w-5 h-5" />)}
+                  </button>
 
-                {/* Text input (Hidden in mini mode) */}
-                {!isMiniMode && (
+                  {/* Mute button */}
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    title={isMuted ? "Unmute Myra's voice" : "Mute Myra's voice"}
+                    className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMuted
+                        ? 'bg-red-600/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.5)]'
+                        : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
+                      }`}
+                  >
+                    {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                  </button>
+
+                  {/* Text input */}
                   <div className="flex-1 bg-black/40 backdrop-blur-lg border border-white/10 rounded-2xl h-14 flex items-center px-4 gap-4">
                     <input
                       type="text"
@@ -445,10 +485,10 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
                       <Send className="w-4 h-4" />
                     </button>
                   </div>
-                )}
-              </form>
+                </form>
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </div>
