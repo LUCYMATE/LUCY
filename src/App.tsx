@@ -71,7 +71,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="flex-1 relative flex p-6 min-h-0">
+      <div className="flex-1 relative flex min-h-0">
         <MyraOS />
       </div>
     </div>

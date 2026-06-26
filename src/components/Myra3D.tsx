@@ -37,7 +37,7 @@ function ChestFramer() {
   return <OrbitControls target={target} enableZoom={false} enablePan={false} enableRotate={false} makeDefault />;
 }
 
-function Model({ isSpeaking, isThinking }: { isSpeaking: boolean, isThinking?: boolean }) {
+function Model({ isSpeaking, isThinking, isListening }: { isSpeaking: boolean, isThinking?: boolean, isListening?: boolean }) {
   // Load the GLTF model. It's safe to assume it's at /myra.glb
   const { scene, materials, animations } = useGLTF('/myra.glb');
   const group = useRef<THREE.Group>(null);
@@ -166,10 +166,19 @@ function Model({ isSpeaking, isThinking }: { isSpeaking: boolean, isThinking?: b
            if (headRef.current) headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, 0, 0.1);
         }
       }
-      if (isThinking && !isSpeaking) {
+      if (isListening && !isSpeaking) {
+        if (headRef.current) {
+          // Keep it to a small attentive head rotation while actual mic audio is arriving.
+          headRef.current.rotation.y = THREE.MathUtils.lerp(headRef.current.rotation.y, -0.12, 0.08);
+          headRef.current.rotation.x = THREE.MathUtils.lerp(headRef.current.rotation.x, 0.01, 0.08);
+          headRef.current.rotation.z = THREE.MathUtils.lerp(headRef.current.rotation.z, 0, 0.08);
+        }
+      } else if (isThinking && !isSpeaking) {
          group.current.rotation.y = Math.sin(state.clock.elapsedTime * 2) * 0.2;
       } else {
          group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, 0, 0.05);
+        group.current.rotation.z = THREE.MathUtils.lerp(group.current.rotation.z, 0, 0.05);
+        group.current.rotation.x = THREE.MathUtils.lerp(group.current.rotation.x, 0, 0.05);
       }
     }
   });
@@ -183,7 +192,7 @@ function Model({ isSpeaking, isThinking }: { isSpeaking: boolean, isThinking?: b
 
 useGLTF.preload('/myra.glb');
 
-export function Myra3D({ isSpeaking, isThinking }: { isSpeaking: boolean, isThinking?: boolean }) {
+export function Myra3D({ isSpeaking, isThinking, isListening }: { isSpeaking: boolean, isThinking?: boolean, isListening?: boolean }) {
   return (
     <div className="absolute inset-0 pointer-events-none z-[100]">
       <Canvas camera={{ position: [0, 0.2, 3], fov: 45 }} gl={{ alpha: true }}>
@@ -192,7 +201,7 @@ export function Myra3D({ isSpeaking, isThinking }: { isSpeaking: boolean, isThin
         <spotLight position={[0, 4, 3]} angle={0.4} penumbra={1} intensity={1.5} castShadow />
         <Environment preset="city" />
         <ChestFramer />
-        <Model isSpeaking={isSpeaking} isThinking={isThinking} />
+        <Model isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} />
       </Canvas>
     </div>
   );

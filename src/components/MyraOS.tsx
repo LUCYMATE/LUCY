@@ -7,11 +7,11 @@ export function MyraOS() {
   const [showSettings, setShowSettings] = useState(false);
 
   return (
-    <div className="flex h-full w-full gap-6 relative max-w-7xl mx-auto p-4 sm:p-6">
+    <div className="flex h-full w-full gap-6 relative max-w-7xl mx-auto p-4 sm:p-6 min-h-0">
       {/* Main Workspace */}
-      <main className="flex-1 flex flex-col min-w-0 h-full">
-        <section className="flex-1 flex flex-col min-w-0">
-          <div className="glass rounded-[40px] flex-1 relative overflow-hidden flex flex-col">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
+        <section className="flex-1 flex flex-col min-w-0 min-h-0">
+          <div className="glass rounded-[40px] flex-1 relative overflow-hidden flex flex-col min-h-0">
             <Chat />
           </div>
         </section>

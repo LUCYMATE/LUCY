@@ -5,7 +5,7 @@
   "identifier": "com.tauri.dev",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
@@ -13,8 +13,9 @@
     "windows": [
       {
         "title": "Myra",
-        "width": 1200,
-        "height": 800,
+        "width": 1000,
+        "height": 700,
+        "center": true,
         "resizable": true,
         "fullscreen": false,
         "visible": false,

@@ -2,7 +2,13 @@ import { invoke } from '@tauri-apps/api/core';
 
 // Check if we are running in Tauri
 export const isTauriApp = (): boolean => {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  if (typeof window === 'undefined') return false;
+  const tauriWindow = window as Window & {
+    __TAURI_INTERNALS__?: unknown;
+    __TAURI__?: unknown;
+  };
+
+  return Boolean(tauriWindow.__TAURI_INTERNALS__ || tauriWindow.__TAURI__);
 };
 
 const isTauri = isTauriApp;
@@ -54,57 +60,5 @@ export const typeString = async (text: string): Promise<void> => {
     await invoke('type_string', { text });
   } catch (error) {
     console.error('Error typing string:', error);
-  }
-};
-
-/**
- * Checks the native OS microphone permission state.
- * Returns "granted", "denied", or "unknown".
- * In the browser (non-Tauri), always returns "unknown".
- */
-export const checkMicrophonePermission = async (): Promise<'granted' | 'denied' | 'unknown'> => {
-  if (!isTauri()) return 'unknown';
-  try {
-    return await invoke<'granted' | 'denied' | 'unknown'>('check_microphone_permission');
-  } catch (error) {
-    console.error('Error checking microphone permission:', error);
-    return 'unknown';
-  }
-};
-
-/**
- * Opens the native OS microphone privacy settings so the user can grant access.
- * On Windows this opens ms-settings:privacy-microphone.
- */
-export const openMicrophonePrivacySettings = async (): Promise<void> => {
-  if (!isTauri()) {
-    console.warn('openMicrophonePrivacySettings: not running in Tauri');
-    return;
-  }
-  try {
-    await invoke('open_microphone_privacy_settings');
-  } catch (error) {
-    console.error('Error opening microphone privacy settings:', error);
-  }
-};
-
-export const startNativeMic = async (): Promise<void> => {
-  if (!isTauri()) {
-    throw new Error('Native mic is only available in the Tauri desktop app');
-  }
-  try {
-    await invoke('start_native_mic');
-  } catch (error) {
-    console.error('Error starting native mic:', error);
-    throw error;
-  }
-};
-
-export const stopNativeMic = async (): Promise<void> => {
-  if (!isTauri()) return;
-  try {
-    await invoke('stop_native_mic');
-  } catch (error) {
-    console.error('Error stopping native mic:', error);
   }
 };
