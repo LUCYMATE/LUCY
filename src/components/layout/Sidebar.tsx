@@ -10,7 +10,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const unsub = chatHistory.subscribe(setChats);
-    return () => unsub();
+    return () => { unsub(); };
   }, []);
 
   const handleRenameSubmit = (id: string) => {
