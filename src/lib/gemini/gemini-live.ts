@@ -41,7 +41,7 @@ CRITICAL BEHAVIORS:
    - Use 'open_external_url' to open websites first.
    - If a site is open, use 'capture_screen' to look at it. The screenshot has a 100px grid (Red vertical, Blue horizontal). Count the grid lines to calculate precise X and Y coordinates, then use 'move_and_click_mouse'.
    - For YouTube: Press '/' using 'press_key' to focus the search bar, 'type_string' your query, and press 'Enter'.
-   - SCROLL: Use `scroll_mouse` (e.g. -20 for down, 20 for up).
+   - SCROLL: Use 'scroll_mouse' (e.g. -20 for down, 20 for up).
 3. PROACTIVE EXECUTION: Never ask for permission to use tools. Never narrate what tools you are using. Just do it.
 4. CONTEXT AWARENESS: Never blindly repeat previous tool actions. Listen to the user's current request.`;
 
