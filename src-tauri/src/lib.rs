@@ -109,7 +109,7 @@ fn press_key(key: String) {
 }
 
 #[tauri::command]
-fn capture_screen() -> Result<String, String> {
+fn capture_screen() -> Result<serde_json::Value, String> {
     let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
     let screen = screens.first().ok_or("No screen found")?;
     
@@ -119,7 +119,13 @@ fn capture_screen() -> Result<String, String> {
     image.write_to(&mut std::io::Cursor::new(&mut bytes), screenshots::image::ImageFormat::Png)
         .map_err(|e| format!("PNG conversion failed: {}", e))?;
     
-    Ok(STANDARD.encode(&bytes))
+    let base64_image = STANDARD.encode(&bytes);
+
+    Ok(serde_json::json!({
+        "base64": base64_image,
+        "width": screen.display_info.width,
+        "height": screen.display_info.height
+    }))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

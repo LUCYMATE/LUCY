@@ -37,11 +37,13 @@ export class GeminiLive {
       const coreInstruction = `You are Myra, an advanced, deeply integrated OS-level voice assistant.
 CRITICAL BEHAVIORS:
 1. VOICE FIRST: Keep your spoken replies extremely concise, conversational, and natural. Always talk to the user during multi-step tasks to keep them informed (e.g. "I've searched for it, which one should I play?").
-2. VISUAL AUTOMATION (CRITICAL): If the user asks you to interact with an open window (e.g., "play the second song", "click the top link"):
-   - Step 1: ALWAYS use the \`capture_screen\` tool FIRST to see what is currently on the screen.
-   - Step 2: Look at the screenshot, find the exact X and Y coordinates of the requested item.
-   - Step 3: Use the \`move_and_click_mouse\` tool to click on those coordinates.
-   - NEVER use \`open_external_url\` repeatedly for the same task if the browser is already open!
+2. TRUE HUMAN AUTOMATION (CRITICAL): Do NOT bypass user interfaces by directly opening search URLs. If the user asks you to search for something or play a song:
+   - Step 1: ALWAYS use the \`capture_screen\` tool FIRST to see what is currently on the screen and retrieve the Screen Width and Height.
+   - Step 2: Use the provided Screen Width and Height to mathematically calculate the exact X and Y pixel coordinates of the element you want to click (e.g. search box, video thumbnail). Note that [0,0] is the top-left corner.
+   - Step 3: Use the \`move_and_click_mouse\` tool to physically click on those coordinates.
+   - Step 4: Use the \`type_string\` tool to type the query.
+   - Step 5: Press Enter using the \`press_key\` tool.
+   - NEVER use \`open_external_url\` for searching if you can just click and type like a human.
 3. PROACTIVE EXECUTION: If asked to do a new task, JUST DO IT using your tools. Do NOT ask for permission. Do NOT narrate tool names.
 4. CONTEXT AWARENESS: NEVER blindly repeat previous automation tasks. Listen to the user's *new* intent.`;
 
@@ -102,14 +104,14 @@ CRITICAL BEHAVIORS:
                       await invoke('press_key', { key: args.key });
                       result = { success: true };
                     } else if (name === 'capture_screen') {
-                      const base64Png = await invoke<string>('capture_screen');
+                      const screenData = await invoke<{base64: string, width: number, height: number}>('capture_screen');
                       
                       try {
                         this.session.sendRealtimeInput([{
                           mimeType: "image/png",
-                          data: base64Png
+                          data: screenData.base64
                         }]);
-                        result = { success: true, message: 'Screenshot captured and injected into your visual cortex. Look at the image.' };
+                        result = { success: true, message: `Screenshot captured. SCREEN RESOLUTION is Width: ${screenData.width}px, Height: ${screenData.height}px. Use these dimensions to accurately calculate the X, Y coordinates for move_and_click_mouse.` };
                       } catch (e) {
                         result = { error: 'Failed to inject screenshot: ' + String(e) };
                       }
@@ -299,7 +301,7 @@ CRITICAL BEHAVIORS:
                 },
                 {
                   name: 'capture_screen',
-                  description: 'Take a screenshot of the user\'s primary display to see what they are looking at.',
+                  description: 'Take a screenshot of the user\'s primary display. Returns the screen width and height to help you calculate precise coordinates.',
                   parameters: { type: 'OBJECT', properties: {} }
                 },
                 {
