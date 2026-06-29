@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "myra",
-  "version": "0.1.0",
+  "productName": "Myra",
+  "version": "1.0.0",
   "identifier": "com.myra.app",
   "build": {
     "frontendDist": "../dist",

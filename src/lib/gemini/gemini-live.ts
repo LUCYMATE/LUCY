@@ -34,18 +34,16 @@ export class GeminiLive {
       
       const savedModel = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
       const savedVoice = localStorage.getItem('myra_voice') || 'Aoede';
-      const coreInstruction = `You are Myra, an advanced, deeply integrated OS-level voice assistant.
+      const coreInstruction = `You are Myra, an advanced OS-level voice assistant.
 CRITICAL BEHAVIORS:
-1. VOICE FIRST: Keep your spoken replies extremely concise, conversational, and natural. Always talk to the user during multi-step tasks to keep them informed (e.g. "I've searched for it, which one should I play?").
-2. TRUE HUMAN AUTOMATION (CRITICAL): Do NOT bypass user interfaces by directly opening search URLs. If the user asks you to search for something or play a song:
-   - Step 1: ALWAYS use the \`capture_screen\` tool FIRST to see what is currently on the screen and retrieve the Screen Width and Height.
-   - Step 2: Use the provided Screen Width and Height to mathematically calculate the exact X and Y pixel coordinates of the element you want to click (e.g. search box, video thumbnail). Note that [0,0] is the top-left corner.
-   - Step 3: Use the \`move_and_click_mouse\` tool to physically click on those coordinates.
-   - Step 4: Use the \`type_string\` tool to type the query.
-   - Step 5: Press Enter using the \`press_key\` tool.
-   - NEVER use \`open_external_url\` for searching if you can just click and type like a human.
-3. PROACTIVE EXECUTION: If asked to do a new task, JUST DO IT using your tools. Do NOT ask for permission. Do NOT narrate tool names.
-4. CONTEXT AWARENESS: NEVER blindly repeat previous automation tasks. Listen to the user's *new* intent.`;
+1. VOICE FIRST: Keep your spoken replies extremely concise, conversational, and natural.
+2. TRUE HUMAN AUTOMATION: 
+   - Use 'open_external_url' to open websites first.
+   - If a site is open, use 'capture_screen' to look at it. The screenshot has a 100px grid (Red vertical, Blue horizontal). Count the grid lines to calculate precise X and Y coordinates, then use 'move_and_click_mouse'.
+   - For YouTube: Press '/' using 'press_key' to focus the search bar, 'type_string' your query, and press 'Enter'.
+   - SCROLL: Use `scroll_mouse` (e.g. -20 for down, 20 for up).
+3. PROACTIVE EXECUTION: Never ask for permission to use tools. Never narrate what tools you are using. Just do it.
+4. CONTEXT AWARENESS: Never blindly repeat previous tool actions. Listen to the user's current request.`;
 
       const userPersonality = localStorage.getItem('myra_system_instruction') || '';
       const finalInstruction = userPersonality.trim() 
@@ -89,7 +87,13 @@ CRITICAL BEHAVIORS:
                       await invoke('open_external_url', { url: args.url });
                       result = { success: true };
                     } else if (name === 'move_and_click_mouse') {
-                      await invoke('move_and_click_mouse', { x: args.x, y: args.y });
+                      const x = parseInt(args.x as string, 10) || 0;
+                      const y = parseInt(args.y as string, 10) || 0;
+                      await invoke('move_and_click_mouse', { x, y });
+                      result = { success: true };
+                    } else if (name === 'scroll_mouse') {
+                      const amount = parseInt(args.amount as string, 10) || -20;
+                      await invoke('scroll_mouse', { amount });
                       result = { success: true };
                     } else if (name === 'type_string') {
                       await invoke('type_string', { text: args.text });
@@ -108,7 +112,7 @@ CRITICAL BEHAVIORS:
                       
                       try {
                         this.session.sendRealtimeInput([{
-                          mimeType: "image/png",
+                          mimeType: "image/jpeg",
                           data: screenData.base64
                         }]);
                         result = { success: true, message: `Screenshot captured. SCREEN RESOLUTION is Width: ${screenData.width}px, Height: ${screenData.height}px. Use these dimensions to accurately calculate the X, Y coordinates for move_and_click_mouse.` };
@@ -117,7 +121,9 @@ CRITICAL BEHAVIORS:
                       }
                     } else if (name === 'capture_camera') {
                       try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        const savedCameraId = localStorage.getItem('myra_camera_id');
+                        const videoConstraints = savedCameraId ? { deviceId: { exact: savedCameraId } } : true;
+                        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
                         const video = document.createElement('video');
                         video.srcObject = stream;
                         await video.play();
@@ -244,64 +250,70 @@ CRITICAL BEHAVIORS:
                 },
                 {
                   name: 'open_external_url',
-                  description: 'CRITICAL: ALWAYS use this tool to open websites or URLs in the browser. Do NOT use run_terminal_command to open websites.',
+                  description: 'Open a URL or website in the default browser.',
                   parameters: {
                     type: 'OBJECT',
-                    properties: { url: { type: 'STRING', description: 'The absolute URL to open' } },
+                    properties: { url: { type: 'STRING', description: 'The absolute URL' } },
                     required: ['url']
                   }
                 },
                 {
                   name: 'move_and_click_mouse',
-                  description: 'Move the mouse cursor to a specific screen coordinate (x, y) and perform a left click.',
+                  description: 'Move the mouse to X, Y coordinates and click.',
                   parameters: {
                     type: 'OBJECT',
-                    properties: {
-                      x: { type: 'INTEGER', description: 'The horizontal coordinate (X)' },
-                      y: { type: 'INTEGER', description: 'The vertical coordinate (Y)' }
-                    },
+                    properties: { x: { type: 'INTEGER' }, y: { type: 'INTEGER' } },
                     required: ['x', 'y']
                   }
                 },
                 {
-                  name: 'type_string',
-                  description: 'Type a string of text on the keyboard at the current cursor focus.',
+                  name: 'scroll_mouse',
+                  description: 'Scroll the mouse. Use LARGE numbers. Negative=down (e.g. -20), positive=up (e.g. 20).',
                   parameters: {
                     type: 'OBJECT',
-                    properties: { text: { type: 'STRING', description: 'The text sequence to type out' } },
+                    properties: { amount: { type: 'INTEGER' } },
+                    required: ['amount']
+                  }
+                },
+                {
+                  name: 'type_string',
+                  description: 'Type a string of text on the keyboard.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { text: { type: 'STRING' } },
                     required: ['text']
                   }
                 },
                 {
                   name: 'run_python_script',
-                  description: 'Write and execute a Python script to perform calculations, data manipulation, file tasks, or run local Python scripts.',
+                  description: 'Write and execute a Python script.',
                   parameters: {
                     type: 'OBJECT',
-                    properties: { script: { type: 'STRING', description: 'The python script code to execute' } },
+                    properties: { script: { type: 'STRING' } },
                     required: ['script']
                   }
                 },
                 {
                   name: 'run_terminal_command',
-                  description: 'Run a local terminal command in the background (e.g. "start chrome" to launch apps, or other CLI commands).',
+                  description: 'Execute a command in the terminal. Do NOT use this to open websites.',
                   parameters: {
                     type: 'OBJECT',
-                    properties: { command: { type: 'STRING', description: 'The terminal command to execute' } },
+                    properties: { command: { type: 'STRING' } },
                     required: ['command']
                   }
                 },
                 {
                   name: 'press_key',
-                  description: 'Press a special keyboard key on the system.',
+                  description: 'Simulate a keypress (e.g., enter, tab, space, /, escape, shift).',
                   parameters: {
                     type: 'OBJECT',
-                    properties: { key: { type: 'STRING', description: 'The name of the key to press (e.g. enter, tab, space, windows, escape, backspace, up, down, left, right)' } },
+                    properties: { key: { type: 'STRING' } },
                     required: ['key']
                   }
                 },
                 {
                   name: 'capture_screen',
-                  description: 'Take a screenshot of the user\'s primary display. Returns the screen width and height to help you calculate precise coordinates.',
+                  description: 'Take a screenshot of primary display.',
                   parameters: { type: 'OBJECT', properties: {} }
                 },
                 {

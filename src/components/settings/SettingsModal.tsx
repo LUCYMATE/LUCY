@@ -11,6 +11,9 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [activeTab, setActiveTab] = useState('general');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedMic, setSelectedMic] = useState<string>('');
+  
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<string>('');
 
   const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview');
   const [selectedVoice, setSelectedVoice] = useState<string>(() => localStorage.getItem('myra_voice') || 'Aoede');
@@ -26,18 +29,31 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
     async function loadDevices() {
       try {
         // Request permissions first to get labels
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         const allDevices = await navigator.mediaDevices.enumerateDevices();
+        
+        // Microphones
         const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
         setDevices(audioInputs);
-        
-        const savedId = localStorage.getItem('myra_mic_id');
-        if (savedId && audioInputs.some(d => d.deviceId === savedId)) {
-          setSelectedMic(savedId);
+        const savedMicId = localStorage.getItem('myra_mic_id');
+        if (savedMicId && audioInputs.some(d => d.deviceId === savedMicId)) {
+          setSelectedMic(savedMicId);
         } else if (audioInputs.length > 0) {
           setSelectedMic(audioInputs[0].deviceId);
           localStorage.setItem('myra_mic_id', audioInputs[0].deviceId);
         }
+
+        // Cameras
+        const videoInputs = allDevices.filter(d => d.kind === 'videoinput');
+        setVideoDevices(videoInputs);
+        const savedCamId = localStorage.getItem('myra_camera_id');
+        if (savedCamId && videoInputs.some(d => d.deviceId === savedCamId)) {
+          setSelectedCamera(savedCamId);
+        } else if (videoInputs.length > 0) {
+          setSelectedCamera(videoInputs[0].deviceId);
+          localStorage.setItem('myra_camera_id', videoInputs[0].deviceId);
+        }
+        
       } catch (e) {
         logger.add('error', 'Settings', 'Failed to enumerate devices: ' + String(e));
       }
@@ -51,6 +67,14 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
     localStorage.setItem('myra_mic_id', val);
     setChanged(true);
     logger.add('success', 'Settings', 'Microphone changed to ' + val);
+  };
+
+  const handleCameraChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setSelectedCamera(val);
+    localStorage.setItem('myra_camera_id', val);
+    setChanged(true);
+    logger.add('success', 'Settings', 'Camera changed to ' + val);
   };
 
   const handleModelChange = (val: string) => {
@@ -111,7 +135,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
               onClick={() => setActiveTab('audio')}
               className={`px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 ${activeTab === 'audio' ? 'bg-white/15 text-white shadow-inner' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
             >
-              Audio
+              Devices
             </button>
           </div>
           <div className="mt-auto">
@@ -221,6 +245,36 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                        {devices.map(device => (
                          <option key={device.deviceId} value={device.deviceId}>
                            {device.label || `Microphone ${device.deviceId.slice(0, 5)}...`}
+                         </option>
+                       ))}
+                     </select>
+                   )}
+                 </div>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors mb-4">
+                 <div className="flex items-center gap-4 mb-4">
+                   <div className="p-3 rounded-xl bg-purple-500/20 text-purple-400">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.53 21.34A10.53 10.53 0 0 0 21.34 14.53"></path><path d="m22 22-5.5-5.5"></path><circle cx="11" cy="11" r="8"></circle></svg>
+                   </div>
+                   <div>
+                     <h4 className="text-lg font-medium text-white">Camera Input</h4>
+                     <p className="text-sm text-white/50">Select your preferred camera device</p>
+                   </div>
+                 </div>
+                 
+                 <div className="bg-black/20 p-4 rounded-xl border border-white/5">
+                   {videoDevices.length === 0 ? (
+                     <p className="text-sm text-white/60">Loading cameras or no permissions...</p>
+                   ) : (
+                     <select 
+                       value={selectedCamera} 
+                       onChange={handleCameraChange}
+                       className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500"
+                     >
+                       {videoDevices.map(device => (
+                         <option key={device.deviceId} value={device.deviceId}>
+                           {device.label || `Camera ${device.deviceId.slice(0, 5)}...`}
                          </option>
                        ))}
                      </select>

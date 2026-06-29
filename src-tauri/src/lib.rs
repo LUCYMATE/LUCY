@@ -41,6 +41,12 @@ fn move_and_click_mouse(x: i32, y: i32) {
 }
 
 #[tauri::command]
+fn scroll_mouse(amount: i32) {
+    let mut enigo = Enigo::new();
+    enigo.mouse_scroll_y(amount);
+}
+
+#[tauri::command]
 fn type_string(text: String) {
     let mut enigo = Enigo::new();
     enigo.key_sequence(&text);
@@ -113,11 +119,36 @@ fn capture_screen() -> Result<serde_json::Value, String> {
     let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
     let screen = screens.first().ok_or("No screen found")?;
     
-    let image = screen.capture().map_err(|e| format!("Capture failed: {}", e))?;
+    let mut img = screen.capture().map_err(|e| format!("Capture failed: {}", e))?;
     
+    let width = img.width();
+    let height = img.height();
+    let grid_spacing = 100;
+    
+    // Draw 100px grid overlay
+    for x in (0..width).step_by(grid_spacing as usize) {
+        for y in 0..height {
+            let pixel = img.get_pixel_mut(x, y);
+            // Subtle Red for vertical
+            pixel[0] = 255; 
+            pixel[1] = pixel[1].saturating_sub(50);
+            pixel[2] = pixel[2].saturating_sub(50);
+        }
+    }
+    for y in (0..height).step_by(grid_spacing as usize) {
+        for x in 0..width {
+            let pixel = img.get_pixel_mut(x, y);
+            // Subtle Blue for horizontal
+            pixel[0] = pixel[0].saturating_sub(50);
+            pixel[1] = pixel[1].saturating_sub(50);
+            pixel[2] = 255;
+        }
+    }
+
     let mut bytes = Vec::new();
-    image.write_to(&mut std::io::Cursor::new(&mut bytes), screenshots::image::ImageFormat::Png)
-        .map_err(|e| format!("PNG conversion failed: {}", e))?;
+    let dynamic_img = screenshots::image::DynamicImage::ImageRgba8(img);
+    dynamic_img.write_to(&mut std::io::Cursor::new(&mut bytes), screenshots::image::ImageFormat::Jpeg)
+        .map_err(|e| format!("JPEG conversion failed: {}", e))?;
     
     let base64_image = STANDARD.encode(&bytes);
 
@@ -149,6 +180,7 @@ pub fn run() {
             get_system_stats,
             open_external_url,
             move_and_click_mouse,
+            scroll_mouse,
             type_string,
             run_python_script,
             run_terminal_command,
