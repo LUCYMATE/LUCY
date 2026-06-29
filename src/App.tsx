@@ -1,11 +1,15 @@
-import { MyraOS } from './components/MyraOS';
-import { Minus, Square, X } from 'lucide-react';
+import { MyraOS } from './components/layout/MyraOS';
+import { Sidebar } from './components/layout/Sidebar';
+import { TitleBar } from './components/layout/TitleBar';
+import { Minus, Square, X, Menu } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
 
 export default function App() {
   const [isMiniMode, setIsMiniMode] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  
   const normalSizeRef = useRef<{width: number, height: number} | null>(null);
   const normalPosRef = useRef<{x: number, y: number} | null>(null);
   const miniPosRef = useRef<{x: number, y: number} | null>(null);
@@ -150,31 +154,17 @@ export default function App() {
       
       {/* Custom Titlebar */}
       {!isMiniMode && (
-        <div 
-          data-tauri-drag-region 
-        className="h-8 flex shrink-0 justify-end items-center select-none z-50 bg-black/20 backdrop-blur-sm"
-      >
-        <div className="flex h-full">
-          <div 
-            className="w-12 h-full flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer text-white/70 hover:text-white"
-            onClick={minimize}
-          >
-            <Minus size={16} />
-          </div>
-          <div 
-            className="w-12 h-full flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer text-white/70 hover:text-white"
-            onClick={toggleMaximize}
-          >
-            <Square size={14} />
-          </div>
-          <div 
-            className="w-12 h-full flex items-center justify-center hover:bg-red-500 transition-colors cursor-pointer text-white/70 hover:text-white"
-            onClick={close}
-          >
-            <X size={18} />
-          </div>
-        </div>
-      </div>
+        <TitleBar 
+          onOpenMenu={() => setSidebarOpen(true)}
+          onMinimize={minimize}
+          onMaximize={toggleMaximize}
+          onClose={close}
+        />
+      )}
+
+      {/* ── Sliding Sidebar Overlay ── */}
+      {!isMiniMode && sidebarOpen && (
+        <Sidebar onClose={() => setSidebarOpen(false)} />
       )}
 
       <div className="flex-1 relative flex min-h-0" data-tauri-drag-region={isMiniMode ? true : undefined}>

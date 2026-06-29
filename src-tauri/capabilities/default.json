@@ -26,6 +26,11 @@
     "allow-get-system-stats",
     "allow-open-external-url",
     "allow-move-and-click-mouse",
-    "allow-type-string"
+    "allow-type-string",
+    "allow-run-python-script",
+    "allow-run-terminal-command",
+    "allow-press-key",
+    "allow-capture-screen",
+    "global-shortcut:allow-register"
   ]
 }

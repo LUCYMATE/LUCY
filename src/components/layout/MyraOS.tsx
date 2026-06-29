@@ -1,15 +1,34 @@
 import { Settings } from 'lucide-react';
-import { Chat } from './Chat';
-import { useState, useEffect } from 'react';
-import { SettingsModal } from './SettingsModal';
-import { getSystemStats, isTauriApp } from '../lib/tauriBridge';
+import { Chat } from '../chat/Chat';
+import { useState, useEffect, useRef } from 'react';
+import { SettingsModal } from '../settings/SettingsModal';
+import { getSystemStats, isTauriApp } from '../../lib/system/tauriBridge';
+import { logger, LogEntry } from '../../lib/store/logger';
+
 
 export function MyraOS({ isMiniMode = false }: { isMiniMode?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const [latency, setLatency] = useState<string>('checking...');
   const [cpu, setCpu] = useState<number>(0);
   const [memory, setMemory] = useState<string>('0 / 0 GB');
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const isTauri = isTauriApp();
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = logsContainerRef.current;
+    if (!container) return;
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    if (isNearBottom || logs.length <= 1) {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs]);
+
+  useEffect(() => {
+    const unsubscribe = logger.subscribe(setLogs);
+    return () => { unsubscribe(); };
+  }, []);
 
   useEffect(() => {
     // 1. Latency Ping checks
@@ -74,12 +93,45 @@ export function MyraOS({ isMiniMode = false }: { isMiniMode?: boolean }) {
       {!isMiniMode && (
         <aside className="w-16 sm:w-64 shrink-0 flex flex-col gap-4">
           <div className="flex flex-col items-center sm:items-start glass rounded-3xl p-4 sm:p-6 h-full gap-8">
-           <div className="flex items-center gap-3 w-full justify-center sm:justify-start">
+           <div className="flex items-center gap-3 w-full justify-center sm:justify-start shrink-0">
              <div className="w-3 h-3 rounded-full bg-pink-500 ai-glow shrink-0"></div>
              <h1 className="text-xl font-bold tracking-tight text-white hidden sm:block">MYRA</h1>
            </div>
            
-           <div className="flex flex-col gap-6 w-full mt-auto">
+           {/* Activity Logs (only visible on desktop) */}
+           <div className="hidden sm:flex flex-1 overflow-hidden flex-col w-full bg-black/20 rounded-2xl border border-white/5 min-h-0">
+             <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
+               <span className="text-[10px] uppercase tracking-widest text-pink-300 font-medium">Activity Log</span>
+               <span className="flex h-2 w-2 relative">
+                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                 <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500"></span>
+               </span>
+             </div>
+             <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 relative">
+               {logs.length === 0 ? (
+                 <div className="text-white/30 text-xs italic text-center mt-4">Waiting for activity...</div>
+               ) : (
+                 logs.map(log => (
+                   <div key={log.id} className="flex flex-col gap-1 text-xs border-l-2 pl-2 py-1 border-white/10 hover:bg-white/5 transition-colors animate-in slide-in-from-left-2 fade-in duration-300">
+                     <div className="flex items-center gap-1.5 opacity-70">
+                       <span className="font-mono text-[9px]">{new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}</span>
+                       <span className={`text-[10px] font-bold uppercase tracking-wider
+                         ${log.level === 'error' ? 'text-red-400' :
+                           log.level === 'warning' ? 'text-yellow-400' :
+                           log.level === 'success' ? 'text-green-400' : 'text-blue-400'}`
+                       }>{log.level}</span>
+                     </div>
+                     <div className="font-medium text-white/90">{log.action}</div>
+                     <div className="text-white/60 text-[10px] leading-tight break-words">{log.detail}</div>
+                   </div>
+                 ))
+               )}
+               {/* Auto-scroll anchor */}
+               <div className="h-1 shrink-0" ref={logsEndRef} />
+             </div>
+           </div>
+           
+           <div className="flex flex-col gap-6 w-full mt-auto shrink-0">
               <div className="hidden sm:flex flex-col gap-4 bg-white/5 border border-white/10 rounded-2xl p-4 text-left">
                 <div>
                   <p className="text-[10px] uppercase tracking-widest text-pink-300 opacity-60 mb-0.5">Network Latency</p>

@@ -22,8 +22,8 @@ class Logger {
       action,
       detail
     };
-    // Prepend new logs so they appear at the top, limit to 200
-    this.logs = [entry, ...this.logs].slice(0, 200);
+    // Append new logs so they appear at the bottom, limit to 200
+    this.logs = [...this.logs, entry].slice(-200);
     this.notify();
     
     // Also log to console for debugging

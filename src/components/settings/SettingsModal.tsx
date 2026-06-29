@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Settings as SettingsIcon, Volume2, Mic } from 'lucide-react';
-import { logger } from '../lib/logger';
+import { logger } from '../../lib/store/logger';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -181,17 +181,17 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                 <p className="text-xs text-white/40 mt-3">Adjust the size of the 3D avatar on screen.</p>
               </div>
 
-              {/* System Instructions Textarea */}
+              {/* Personality Textarea */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
-                <label className="block text-sm font-medium text-white mb-2">System Instructions</label>
+                <label className="block text-sm font-medium text-white mb-2">Personality & Custom Preferences</label>
                 <textarea
                   value={systemInstruction}
                   onChange={(e) => handleInstructionChange(e.target.value)}
                   rows={4}
                   className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans resize-none"
-                  placeholder="E.g., You are Myra, a helpful AI voice assistant..."
+                  placeholder="E.g., You love making sarcastic jokes, keep answers under 2 sentences, etc."
                 />
-                <p className="text-xs text-white/40 mt-2">System instructions define Myra's base personality, guidelines, and tone.</p>
+                <p className="text-xs text-white/40 mt-2">These instructions add custom personality quirks and preferences on top of Myra's core automation system.</p>
               </div>
             </div>
           )}

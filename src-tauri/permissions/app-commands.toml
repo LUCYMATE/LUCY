@@ -37,3 +37,23 @@ commands.allow = ["move_and_click_mouse"]
 identifier = "allow-type-string"
 description = "Allows typing text via keyboard simulation"
 commands.allow = ["type_string"]
+
+[[permission]]
+identifier = "allow-run-python-script"
+description = "Allows running local python scripts"
+commands.allow = ["run_python_script"]
+
+[[permission]]
+identifier = "allow-run-terminal-command"
+description = "Allows running terminal commands"
+commands.allow = ["run_terminal_command"]
+
+[[permission]]
+identifier = "allow-press-key"
+description = "Allows pressing special keyboard keys"
+commands.allow = ["press_key"]
+
+[[permission]]
+identifier = "allow-capture-screen"
+description = "Allows capturing the screen"
+commands.allow = ["capture_screen"]

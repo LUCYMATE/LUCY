@@ -6,6 +6,7 @@ export class AudioPlayer {
   private gainNode: GainNode | null = null;
   private nextPlayTime = 0;
   private muted = false;
+  private activeSources: AudioBufferSourceNode[] = [];
 
   start() {
     this.audioContext = new AudioContext({ sampleRate: 24000 }); // 24kHz — Gemini output rate
@@ -83,10 +84,30 @@ export class AudioPlayer {
     source.start(this.nextPlayTime);
     this.nextPlayTime += buffer.duration;
 
+    this.activeSources.push(source);
+    source.onended = () => {
+      this.activeSources = this.activeSources.filter(s => s !== source);
+    };
+
     return buffer.duration;
   }
 
+  stopCurrentPlayback() {
+    if (this.audioContext) {
+      this.activeSources.forEach(source => {
+        try {
+          source.stop();
+        } catch (e) {
+          // Ignore if already stopped
+        }
+      });
+      this.activeSources = [];
+      this.nextPlayTime = this.audioContext.currentTime;
+    }
+  }
+
   stop() {
+    this.stopCurrentPlayback();
     if (this.audioContext) {
       this.audioContext.close();
       this.audioContext = null;

@@ -1,4 +1,4 @@
-import { logger } from './logger';
+import { logger } from '../store/logger';
 
 export class AudioRecorder {
   private stream: MediaStream | null = null;
