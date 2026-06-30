@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { SettingsModal } from '../settings/SettingsModal';
 import { getSystemStats, isTauriApp } from '../../lib/system/tauriBridge';
 import { logger, LogEntry } from '../../lib/store/logger';
+import { AvatarController } from '../avatar/AvatarController';
 
 
 export function MyraOS({ isMiniMode = false }: { isMiniMode?: boolean }) {
@@ -166,6 +167,7 @@ export function MyraOS({ isMiniMode = false }: { isMiniMode?: boolean }) {
       )}
       
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      <AvatarController isMiniMode={isMiniMode} />
     </div>
   );
 }

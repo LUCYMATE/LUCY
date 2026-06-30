@@ -1,9 +1,6 @@
-import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import { createPortal } from 'react-dom';
-import { motion, useDragControls } from 'framer-motion';
-import { Send, Activity, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Activity, Mic, MicOff, Volume2, VolumeX, Send } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
-const Myra3D = lazy(() => import('../avatar/Myra3D').then(module => ({ default: module.Myra3D })));
 import { GeminiLive } from '../../lib/gemini/gemini-live';
 import { AudioRecorder } from '../../lib/audio/audio-recorder';
 import { AudioPlayer } from '../../lib/audio/audio-player';
@@ -11,6 +8,7 @@ import { logger } from '../../lib/store/logger';
 import { AudioVisualizer } from '../avatar/AudioVisualizer';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { chatHistory } from '../../lib/store/chatHistory';
+import { useAvatarState } from '../../lib/store/avatarState';
 
 type Role = 'user' | 'model';
 interface Message {
@@ -26,33 +24,21 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
   ]);
   const [input, setInput] = useState('');
   const [initialized, setInitialized] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isThinking, setIsThinking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [isMicPending, setIsMicPending] = useState(false);
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle');
   const [statusDetail, setStatusDetail] = useState('');
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem('myra_muted') === 'true');
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
-  const [isHoveringModel, setIsHoveringModel] = useState(false);
-  const [avatarSize, setAvatarSize] = useState(() => {
-    const val = localStorage.getItem('myra_avatar_size');
-    if (!val || ['Small', 'Medium', 'Large'].includes(val)) return '100';
-    return val;
-  });
-  
-  const dragControls = useDragControls();
+
+  const { setSpeaking, setThinking, setListening, setEmotion, isListening, isSpeaking } = useAvatarState();
 
   const containerRef = useRef<HTMLDivElement>(null);
-
   const scrollRef = useRef<HTMLDivElement>(null);
   const geminiRef = useRef<GeminiLive | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
-  // Track the id of the currently-building model transcript bubble
   const modelBubbleIdRef = useRef<string>('');
-  // Timer to detect end of audio stream
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dragStartRef = useRef<{x: number, y: number} | null>(null);
@@ -95,10 +81,10 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
   const resetSpeakingTimer = useCallback((additionalDelaySecs = 0) => {
     stopSpeakingTimer();
     speakTimerRef.current = setTimeout(() => {
-      setIsSpeaking(false);
-      modelBubbleIdRef.current = ''; // close current bubble so next response is fresh
-    }, additionalDelaySecs * 1000 + 500); // add a 500ms buffer
-  }, []);
+      setSpeaking(false);
+      modelBubbleIdRef.current = '';
+    }, additionalDelaySecs * 1000 + 500); 
+  }, [setSpeaking]);
 
   const initSystem = () => {
     logger.add('info', 'System Boot', 'Initializing MyraOS and Gemini connection...');
@@ -125,7 +111,6 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
     player.start();
     setOutputAnalyser(player.getAnalyser());
 
-    // ── State changes ────────────────────────────────────────────
     gemini.onStateChange = (state, detail) => {
       setConnectionState(state);
       setStatusDetail(detail ?? '');
@@ -137,55 +122,60 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
       }
     };
 
-    // ── Thinking indicator ───────────────────────────────────────
     gemini.onThinking = (thinking) => {
-      setIsThinking(thinking);
+      setThinking(thinking);
     };
 
-    // ── Audio playback ───────────────────────────────────────────
     gemini.onAudio = (pcmBase64) => {
-      setIsSpeaking(true);
+      setSpeaking(true);
       player.playChunk(pcmBase64);
       resetSpeakingTimer(player.getRemainingTime());
     };
 
-    // ── Transcripts (text of what model says and hears) ──────────
     gemini.onTranscript = (text, isInput) => {
-      setIsThinking(false);
+      setThinking(false);
       if (isInput) {
-        // User's mic was transcribed — add as user bubble
-        modelBubbleIdRef.current = ''; // Reset so the next model response starts in a fresh bubble!
+        modelBubbleIdRef.current = ''; 
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(), role: 'user', text,
         }]);
       } else {
-        // Model output transcript — append to current model bubble
+        // Parse for emotion tags e.g., [happy]
+        const emotionRegex = /\[(happy|sad|angry|surprised|thinking|neutral)\]/i;
+        const match = text.match(emotionRegex);
+        let cleanText = text;
+        if (match) {
+          const matchedEmotion = match[1].toLowerCase() as any;
+          setEmotion(matchedEmotion);
+          cleanText = text.replace(emotionRegex, '').trim();
+        }
+
+        if (!cleanText) return; // if it was only the tag, don't append empty text yet
+
         let existingId = modelBubbleIdRef.current;
         if (!existingId) {
           existingId = crypto.randomUUID();
           modelBubbleIdRef.current = existingId;
-          setMessages(prev => [...prev, { id: existingId, role: 'model', text }]);
+          setMessages(prev => [...prev, { id: existingId, role: 'model', text: cleanText }]);
         } else {
           setMessages(prev =>
             prev.map(m =>
-              m.id === existingId ? { ...m, text: m.text + text } : m
+              m.id === existingId ? { ...m, text: m.text + cleanText } : m
             )
           );
         }
       }
     };
 
-    // ── Barge-In (Interruption) ───────────────────────────────────
     gemini.onInterrupted = () => {
       player.stopCurrentPlayback();
-      setIsSpeaking(false);
+      setSpeaking(false);
       modelBubbleIdRef.current = '';
     };
 
     gemini.connect(apiKey);
   };
 
-  // Listen for settings changes and reconnect
   useEffect(() => {
     const handleSettingsChanged = () => {
       if (initialized) {
@@ -195,15 +185,9 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
         playerRef.current?.stop();
         setInputAnalyser(null);
         setOutputAnalyser(null);
-        setIsListening(false);
-        setIsSpeaking(false);
-        setIsThinking(false);
-        const val = localStorage.getItem('myra_avatar_size') || '100';
-        if (['Small', 'Medium', 'Large'].includes(val)) {
-          setAvatarSize('100');
-        } else {
-          setAvatarSize(val);
-        }
+        setListening(false);
+        setSpeaking(false);
+        setThinking(false);
         modelBubbleIdRef.current = '';
         
         setTimeout(() => {
@@ -215,18 +199,18 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
     return () => {
       window.removeEventListener('myra-settings-changed', handleSettingsChanged);
     };
-  }, [initialized]);
+  }, [initialized, setListening, setSpeaking, setThinking]);
 
   const toggleMic = async () => {
-    if (isMicPending) return; // Prevent multiple clicks
+    if (isMicPending) return; 
 
     if (!isListening) {
       setIsMicPending(true);
       try {
         logger.add('info', 'User Action', 'Toggled microphone ON');
         playerRef.current?.stopCurrentPlayback();
-        setIsSpeaking(false);
-        modelBubbleIdRef.current = ''; // Reset so the next model response starts in a fresh bubble!
+        setSpeaking(false);
+        modelBubbleIdRef.current = ''; 
         await recorderRef.current?.start();
         if (recorderRef.current) {
           setInputAnalyser(recorderRef.current.getAnalyser());
@@ -234,7 +218,7 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
             geminiRef.current?.sendAudio(pcm16);
           };
         }
-        setIsListening(true);
+        setListening(true);
       } catch (e) {
         console.error('Mic error:', e);
         setMessages(prev => [...prev, {
@@ -249,7 +233,7 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
       logger.add('info', 'User Action', 'Toggled microphone OFF');
       recorderRef.current?.stop();
       setInputAnalyser(null);
-      setIsListening(false);
+      setListening(false);
       setIsMicPending(false);
     }
   };
@@ -347,9 +331,9 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
     setMessages(prev => [...prev, {
       id: crypto.randomUUID(), role: 'user', text: trimmed,
     }]);
-    modelBubbleIdRef.current = ''; // new exchange → fresh bubble
+    modelBubbleIdRef.current = ''; 
     playerRef.current?.stopCurrentPlayback();
-    setIsSpeaking(false);
+    setSpeaking(false);
     geminiRef.current.sendText(trimmed);
     setInput('');
   };
@@ -362,7 +346,7 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
       recorderRef.current?.stop();
       playerRef.current?.stop();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); 
 
   const statusColor =
     connectionState === 'connected' ? 'text-green-400' :
@@ -403,7 +387,6 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
           {/* ── Top Status Bar ────────────────────────────────────── */}
           {!isMiniMode && (
             <div className="shrink-0 p-4 flex justify-end items-center gap-4 border-b border-white/5 bg-black/10">
-            {/* Right side status */}
             <div 
               className={`flex items-center gap-2 text-xs font-mono transition-all ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:opacity-70 hover:scale-105' : ''}`}
               onClick={() => {
@@ -478,43 +461,7 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
             </div>
           ) : (
             <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden" ref={containerRef}>
-              {/* 3D avatar floating widget (Portaled to body to float over everything) */}
-              {createPortal(
-                <motion.div 
-                  drag 
-                  dragControls={dragControls}
-                  dragListener={false}
-                  dragConstraints={typeof window !== 'undefined' ? { left: -window.innerWidth, right: window.innerWidth, top: -window.innerHeight, bottom: window.innerHeight } : undefined}
-                  dragElastic={0.1}
-                  dragMomentum={false}
-                  className="absolute z-[50] flex flex-col items-center justify-end bottom-10 right-10"
-                  style={{
-                    pointerEvents: 'none',
-                    width: `${256 * (parseInt(avatarSize) / 100)}px`,
-                    height: `${384 * (parseInt(avatarSize) / 100)}px`
-                  }}
-                >
-                  <div className="absolute inset-0 pb-4 pointer-events-none">
-                    <Suspense fallback={null}>
-                      <Myra3D isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} onHoverChange={setIsHoveringModel} />
-                    </Suspense>
-                  </div>
-                  {/* Invisible Drag Area over the model body */}
-                  <div 
-                    onPointerDown={(e) => dragControls.start(e)}
-                    className="absolute inset-x-12 top-1/4 bottom-1/3 cursor-grab active:cursor-grabbing pointer-events-auto z-[60]"
-                    title="Drag Avatar"
-                  />
-                  {/* Drag Handle */}
-                  <div 
-                    onPointerDown={(e) => dragControls.start(e)}
-                    className="w-12 h-1.5 bg-white/20 rounded-full cursor-grab active:cursor-grabbing hover:bg-white/50 transition-colors pointer-events-auto z-[60] shrink-0"
-                    title="Drag Avatar"
-                  />
-                </motion.div>,
-                document.body
-              )}
-
+              
               {/* Messages */}
               <div
                 className="flex-1 overflow-y-auto p-6 space-y-4 z-10 relative pointer-events-auto"
@@ -551,7 +498,6 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
                   onSubmit={(e) => { e.preventDefault(); handleSendText(); }}
                   className="flex items-center gap-4 w-full"
                 >
-                  {/* Mic button */}
                   <button
                     type="button"
                     onClick={toggleMic}
@@ -565,7 +511,6 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
                     {isListening ? <Mic className="w-5 h-5" /> : (isMicPending ? <Activity className="w-5 h-5 animate-spin" /> : <MicOff className="w-5 h-5" />)}
                   </button>
 
-                  {/* Mute button */}
                   <button
                     type="button"
                     onClick={toggleMute}
@@ -578,7 +523,6 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
                     {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                   </button>
 
-                  {/* Text input */}
                   <div className="flex-1 bg-black/40 backdrop-blur-lg border border-white/10 rounded-2xl h-14 flex items-center px-4 gap-4">
                     <input
                       type="text"
