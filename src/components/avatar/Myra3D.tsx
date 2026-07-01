@@ -225,8 +225,7 @@ export function Myra3D({ isPetMode }: { isPetMode?: boolean }) {
         <directionalLight position={[0, 5, 2]} intensity={1.0} />
         
         <Suspense fallback={null}>
-          {/* resolution={256} heavily reduces the RAM/VRAM cost of the HDRI map while keeping the high-quality lighting look */}
-          <Environment preset="city" resolution={256} />
+          <Environment preset="city" />
           <SceneManager isPetMode={isPetMode} />
         </Suspense>
       </Canvas>

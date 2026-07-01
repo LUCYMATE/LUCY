@@ -481,7 +481,24 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
               </button>
             </div>
           ) : isPetMode ? (
-            <div className="hidden" />
+            <div className="absolute bottom-6 right-6 pointer-events-auto flex items-center gap-4 bg-black/40 backdrop-blur-md p-3 rounded-full border border-white/10 shadow-2xl">
+              {isListening && (
+                <div className="w-16 h-8">
+                  <AudioVisualizer analyser={inputAnalyser} isActive={isListening} type="input" />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={toggleMic}
+                disabled={isMicPending}
+                className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center border transition-all ${isListening
+                    ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
+                    : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
+                  } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isListening ? <Mic className="w-4 h-4" /> : (isMicPending ? <Activity className="w-4 h-4 animate-spin" /> : <MicOff className="w-4 h-4" />)}
+              </button>
+            </div>
           ) : (
             <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden" ref={containerRef}>
               
