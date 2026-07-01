@@ -9,6 +9,18 @@ export default defineConfig({
     react()
   ],
   optimizeDeps: {
-    include: ['three', '@react-three/fiber', '@react-three/drei', 'framer-motion', 'lucide-react']
+    include: ['three', '@react-three/fiber', '@react-three/drei', 'lucide-react', '@pixiv/three-vrm']
+  },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'three-vendor': ['three', '@react-three/fiber', '@react-three/drei', '@pixiv/three-vrm'],
+          'genai-vendor': ['@google/genai']
+        }
+      }
+    }
   }
 });

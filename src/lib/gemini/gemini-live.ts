@@ -223,24 +223,15 @@ CRITICAL BEHAVIORS:
                 }
               
                 if (functionResponses.length > 0) {
-                  if (typeof this.session.sendToolResponse === 'function') {
-                    this.session.sendToolResponse({ functionResponses });
-                  } else {
-                    this.session.send({ toolResponse: { functionResponses } });
-                  }
+                  this.session.sendToolResponse({ functionResponses });
                   
                   if (deferredMedia.length > 0) {
                     setTimeout(() => {
                       for (const base64 of deferredMedia) {
-                        // Use session.send instead of sendRealtimeInput to avoid media_chunks
-                        this.session.send({
-                          realtimeInput: {
-                            video: {
-                              mimeType: "image/jpeg",
-                              data: base64
-                            }
-                          }
-                        });
+                        this.session.sendRealtimeInput([{
+                          mimeType: "image/jpeg",
+                          data: base64
+                        }]);
                       }
                     }, 50);
                   }
@@ -446,27 +437,15 @@ CRITICAL BEHAVIORS:
     logger.add('info', 'Sending Text', text);
     
     try {
-      if (typeof this.session.sendClientContent === 'function') {
-        this.session.sendClientContent({
-          turns: [{
-            role: 'user',
-            parts: [{ text }]
-          }],
-          turnComplete: true
-        });
-      } else {
-        this.session.send({ parts: [{ text }] });
-      }
+      this.session.sendClientContent({
+        turns: [{
+          role: 'user',
+          parts: [{ text }]
+        }],
+        turnComplete: true
+      });
     } catch (err) {
-      try {
-        this.session.send(text);
-      } catch (e2) {
-        if (this.session.send) {
-           this.session.send({ realtimeInput: { text } });
-        } else {
-           console.error('[GeminiLive] Could not send text', e2);
-        }
-      }
+      console.error('[GeminiLive] Could not send text', err);
     }
   }
 
@@ -483,15 +462,10 @@ CRITICAL BEHAVIORS:
     }
     this.audioChunksSent++;
 
-    // Use session.send to avoid the deprecated media_chunks format
-    this.session.send({
-      realtimeInput: {
-        audio: {
-          mimeType: 'audio/pcm;rate=16000',
-          data: base64,
-        }
-      }
-    });
+    this.session.sendRealtimeInput([{
+      mimeType: 'audio/pcm;rate=16000',
+      data: base64,
+    }]);
   }
 
   // ---------------------------------------------------------------
