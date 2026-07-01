@@ -143,10 +143,12 @@ CRITICAL BEHAVIORS:
                       const screenData = await invoke<{base64: string, width: number, height: number}>('capture_screen');
                       
                       try {
-                        this.session.sendRealtimeInput([{
-                          mimeType: "image/jpeg",
-                          data: screenData.base64
-                        }]);
+                        this.session.sendRealtimeInput({
+                          media: {
+                            mimeType: "image/jpeg",
+                            data: screenData.base64
+                          }
+                        });
                         result = { success: true, message: `Screenshot captured. SCREEN RESOLUTION is Width: ${screenData.width}px, Height: ${screenData.height}px. Use these dimensions to accurately calculate the X, Y coordinates for move_and_click_mouse.` };
                       } catch (e) {
                         result = { error: 'Failed to inject screenshot: ' + String(e) };
@@ -172,10 +174,12 @@ CRITICAL BEHAVIORS:
                         const base64Jpeg = canvas.toDataURL('image/jpeg').split(',')[1];
                         stream.getTracks().forEach(track => track.stop());
 
-                        this.session.sendRealtimeInput([{
-                          mimeType: "image/jpeg",
-                          data: base64Jpeg
-                        }]);
+                        this.session.sendRealtimeInput({
+                          media: {
+                            mimeType: "image/jpeg",
+                            data: base64Jpeg
+                          }
+                        });
                         result = { success: true, message: 'Webcam photo captured and injected into your visual cortex. Look at the image.' };
                       } catch (e) {
                         result = { error: 'Failed to capture webcam: ' + String(e) };

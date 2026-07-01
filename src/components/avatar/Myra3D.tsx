@@ -213,17 +213,18 @@ export function Myra3D({ isPetMode }: { isPetMode?: boolean }) {
   return (
     <div className="w-full h-full pointer-events-none">
       <Canvas
-        dpr={[1, 2]} 
+        dpr={1} 
+        gl={{ powerPreference: "low-power", antialias: false }}
         style={{ pointerEvents: 'none' }}
       >
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
         
-        <ambientLight intensity={1.5} />
-        <directionalLight position={[2, 2, 2]} intensity={2.5} />
-        <directionalLight position={[-2, -2, -2]} intensity={0.5} />
+        <ambientLight intensity={2.0} />
+        <directionalLight position={[2, 2, 2]} intensity={3.0} />
+        <directionalLight position={[-2, -2, -2]} intensity={1.0} />
+        <directionalLight position={[0, 5, 2]} intensity={1.5} />
         
         <Suspense fallback={null}>
-          <Environment preset="studio" />
           <SceneManager isPetMode={isPetMode} />
         </Suspense>
       </Canvas>

@@ -395,9 +395,9 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
         <>
           {/* ── Top Status Bar ────────────────────────────────────── */}
           {!isMiniMode && (
-            <div className={`shrink-0 p-4 flex justify-end items-center gap-4 ${isPetMode ? 'bg-transparent pointer-events-auto' : 'border-b border-white/5 bg-black/10'}`}>
+            <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-auto' : 'justify-end border-b border-white/5 bg-black/10'}`}>
             <div 
-              className={`flex items-center gap-2 text-xs font-mono transition-all ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:opacity-70 hover:scale-105' : ''}`}
+              className={`flex items-center gap-2 font-mono transition-all ${isPetMode ? 'text-[10px] opacity-70 hover:opacity-100' : 'text-xs'} ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-105' : ''}`}
               onClick={() => {
                 if (['disconnected', 'error'].includes(connectionState)) initSystem();
               }}
