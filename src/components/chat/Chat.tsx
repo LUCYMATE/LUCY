@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Activity, Mic, MicOff, Volume2, VolumeX, Send } from 'lucide-react';
+import { Activity, Mic, MicOff, Volume2, VolumeX, Send, X } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { GeminiLive } from '../../lib/gemini/gemini-live';
 import { AudioRecorder } from '../../lib/audio/audio-recorder';
@@ -17,7 +17,7 @@ interface Message {
   text: string;
 }
 
-export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
+export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: boolean, isPetMode?: boolean }) {
   const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
   const [messages, setMessages] = useState<Message[]>([
     { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Myra. How can I assist you?' },
@@ -246,7 +246,14 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
     listen('toggle-mic', () => {
       toggleMicRef.current();
     }).then(f => unlisten = f);
-    return () => { if (unlisten) unlisten(); };
+    
+    const handleWindowToggle = () => toggleMicRef.current();
+    window.addEventListener('myra-toggle-mic', handleWindowToggle);
+    
+    return () => { 
+      if (unlisten) unlisten(); 
+      window.removeEventListener('myra-toggle-mic', handleWindowToggle);
+    };
   }, []);
 
   const toggleMute = () => {
@@ -360,7 +367,7 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
           connectionState === 'disconnected' ? 'DISCONNECTED' : 'IDLE';
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-transparent">
+    <div className={`flex flex-col h-full min-h-0 bg-transparent ${isPetMode ? 'pointer-events-none hidden' : ''}`}>
       {!initialized ? (
         /* ── Splash Screen ──────────────────────────────────────── */
         <div 
@@ -459,6 +466,8 @@ export function Chat({ isMiniMode = false }: { isMiniMode?: boolean }) {
                 {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
               </button>
             </div>
+          ) : isPetMode ? (
+            <div className="hidden" />
           ) : (
             <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden" ref={containerRef}>
               

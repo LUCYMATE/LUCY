@@ -3,16 +3,19 @@ import { Sidebar } from './components/layout/Sidebar';
 import { TitleBar } from './components/layout/TitleBar';
 import { Minus, Square, X, Menu } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
+import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
 
 export default function App() {
   const [isMiniMode, setIsMiniMode] = useState(false);
+  const [isPetMode, setIsPetMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const normalSizeRef = useRef<{width: number, height: number} | null>(null);
   const normalPosRef = useRef<{x: number, y: number} | null>(null);
   const miniPosRef = useRef<{x: number, y: number} | null>(null);
+  const petModePosRef = useRef<{x: number, y: number} | null>(null);
 
   const restoreWindow = async () => {
     const safe = async (p: Promise<any>) => {
@@ -33,6 +36,7 @@ export default function App() {
 
       await safe(win.setMaxSize(null));
       await safe(win.setAlwaysOnTop(false));
+      await safe(win.setIgnoreCursorEvents(false));
 
       try {
         // Always restore the normal size first so the OS remembers the correct unmaximized size
@@ -52,9 +56,11 @@ export default function App() {
 
       await safe(win.setMinSize(new LogicalSize(800, 600)));
       setIsMiniMode(false);
+      setIsPetMode(false);
     } catch (e) {
       console.warn("Fallback: window api totally failed", e);
-      setIsMiniMode(false); // Always apply UI state
+      setIsMiniMode(false); 
+      setIsPetMode(false);
     }
   };
 
@@ -99,12 +105,57 @@ export default function App() {
         await safe(win.setMaxSize(new LogicalSize(600, 150))); // set max after shrinking
 
         setIsMiniMode(true);
+        setIsPetMode(false);
       } else {
         await restoreWindow();
       }
     } catch (e) {
       console.warn("Fallback: window api totally failed", e);
       setIsMiniMode(!isMiniMode); // Always apply UI state
+    }
+  };
+
+  const togglePetMode = async () => {
+    const safe = async (p: Promise<any>) => {
+      try { await p; } catch (e) { console.warn('Tauri API error:', e); }
+    };
+
+    try {
+      const win = getCurrentWindow();
+      if (!isPetMode) {
+        try {
+          const isMax = await win.isMaximized();
+          if (isMax) {
+            await win.unmaximize();
+          }
+          
+          const size = await win.outerSize();
+          const pos = await win.outerPosition();
+          const factor = await win.scaleFactor();
+          
+          const logicalSize = size.toLogical(factor);
+          const logicalPos = pos.toLogical(factor);
+          
+          normalSizeRef.current = { width: logicalSize.width, height: logicalSize.height };
+          normalPosRef.current = { x: logicalPos.x, y: logicalPos.y };
+        } catch (e) {
+          console.warn("Could not read window size/pos", e);
+        }
+
+        await safe(win.setMaxSize(null));
+        await safe(win.maximize());
+        
+        await safe(win.setAlwaysOnTop(true));
+        await safe(win.setIgnoreCursorEvents(true));
+
+        setIsPetMode(true);
+        setIsMiniMode(false);
+      } else {
+        await restoreWindow();
+      }
+    } catch (e) {
+      console.warn("Fallback: window api totally failed", e);
+      setIsPetMode(!isPetMode);
     }
   };
 
@@ -137,38 +188,82 @@ export default function App() {
       restoreWindow();
     };
     
+    const onExitPetMode = () => {
+      restoreWindow();
+    };
+    
     window.addEventListener('myra-restore', onRestore);
+    window.addEventListener('myra-exit-pet-mode', onExitPetMode);
 
     return () => {
       clearTimeout(timer);
       window.removeEventListener('myra-restore', onRestore);
+      window.removeEventListener('myra-exit-pet-mode', onExitPetMode);
     };
   }, []);
 
+  useEffect(() => {
+    if (isPetMode) {
+      const setupShortcuts = async () => {
+        try {
+          await register('CommandOrControl+Shift+M', (event) => {
+            if (event.state === 'Pressed') {
+              window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
+            }
+          });
+          await register('CommandOrControl+Shift+X', (event) => {
+            if (event.state === 'Pressed') {
+              window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
+            }
+          });
+        } catch (e) {
+          console.warn('Failed to register global shortcuts', e);
+        }
+      };
+      setupShortcuts();
+    } else {
+      const teardownShortcuts = async () => {
+        try {
+          await unregister('CommandOrControl+Shift+M');
+          await unregister('CommandOrControl+Shift+X');
+        } catch (e) {
+          console.warn('Failed to unregister global shortcuts', e);
+        }
+      };
+      teardownShortcuts();
+    }
+
+    return () => {
+      unregister('CommandOrControl+Shift+M').catch(() => {});
+      unregister('CommandOrControl+Shift+X').catch(() => {});
+    };
+  }, [isPetMode]);
+
   return (
     <div 
-      className="h-screen w-screen bg-[#020617] relative overflow-hidden text-white font-sans flex flex-col"
+      className={`h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col ${isPetMode ? 'bg-transparent' : 'bg-[#020617]'}`}
       data-tauri-drag-region={isMiniMode ? true : undefined}
     >
-      <div className="mesh-bg" data-tauri-drag-region={isMiniMode ? true : undefined}></div>
+      {!isPetMode && <div className="mesh-bg" data-tauri-drag-region={isMiniMode ? true : undefined}></div>}
       
       {/* Custom Titlebar */}
-      {!isMiniMode && (
+      {!isMiniMode && !isPetMode && (
         <TitleBar 
           onOpenMenu={() => setSidebarOpen(true)}
           onMinimize={minimize}
           onMaximize={toggleMaximize}
           onClose={close}
+          onPetMode={togglePetMode}
         />
       )}
 
       {/* ── Sliding Sidebar Overlay ── */}
-      {!isMiniMode && sidebarOpen && (
+      {!isMiniMode && !isPetMode && sidebarOpen && (
         <Sidebar onClose={() => setSidebarOpen(false)} />
       )}
 
       <div className="flex-1 relative flex min-h-0" data-tauri-drag-region={isMiniMode ? true : undefined}>
-        <MyraOS isMiniMode={isMiniMode} />
+        <MyraOS isMiniMode={isMiniMode} isPetMode={isPetMode} />
       </div>
     </div>
   );

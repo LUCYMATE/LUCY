@@ -1,15 +1,17 @@
-import { Minus, Square, X, Menu } from 'lucide-react';
+import { Minus, Square, X, Menu, Wand2 } from 'lucide-react';
 
 export function TitleBar({ 
   onOpenMenu, 
   onMinimize, 
   onMaximize, 
-  onClose 
+  onClose,
+  onPetMode 
 }: { 
   onOpenMenu: () => void;
   onMinimize: () => void;
   onMaximize: () => void;
   onClose: () => void;
+  onPetMode?: () => void;
 }) {
   return (
     <div 
@@ -26,6 +28,15 @@ export function TitleBar({
         </button>
       </div>
       <div className="flex h-full">
+        {onPetMode && (
+          <div 
+            className="w-12 h-full flex items-center justify-center hover:bg-pink-500/20 transition-colors cursor-pointer text-pink-400 hover:text-pink-300"
+            onClick={onPetMode}
+            title="Pet Mode"
+          >
+            <Wand2 size={14} />
+          </div>
+        )}
         <div 
           className="w-12 h-full flex items-center justify-center hover:bg-white/10 transition-colors cursor-pointer text-white/70 hover:text-white"
           onClick={onMinimize}

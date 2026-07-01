@@ -35,8 +35,8 @@ export function applyPeek(
   };
 
   // Lean INTO the screen
-  fr(VRMHumanBoneName.Hips,         0, 0, isLeft ? 0.2 : -0.2, poseSmooth); 
-  fr(VRMHumanBoneName.Spine,        0.1, isLeft ? -0.3 : 0.3, isLeft ? 0.4 : -0.4, poseSmooth); 
+  fr(VRMHumanBoneName.Hips,         0, 0, isLeft ? -0.2 : 0.2, poseSmooth); 
+  fr(VRMHumanBoneName.Spine,        0.1, isLeft ? 0.3 : -0.3, isLeft ? -0.4 : 0.4, poseSmooth); 
   fr(VRMHumanBoneName.Chest,        0, 0, 0, poseSmooth);
 
   fr(VRMHumanBoneName.LeftUpperLeg,  0.1, 0, 0.05,  poseSmooth); 
@@ -45,33 +45,33 @@ export function applyPeek(
   // Keep body shifted offscreen but spine rotated inwards
   tr(VRMHumanBoneName.Hips, isLeft ? -0.3 : 0.3, 0, 0, poseSmooth);
 
-  if (isLeft) {
-    // Peeking from left edge: BOTH arms hold the wall
-    fr(VRMHumanBoneName.RightUpperArm, -0.6, 0.2, 1.0, poseSmooth);
-    fr(VRMHumanBoneName.RightLowerArm, -0.4, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.RightHand,     0.3, 0, 0, poseSmooth);
-    tr(VRMHumanBoneName.RightHand,     0.15, 0.05, 0, poseSmooth);
-    
-    fr(VRMHumanBoneName.LeftUpperArm,  -0.4, 0.5, 0.8, poseSmooth);
-    fr(VRMHumanBoneName.LeftLowerArm,  -0.5, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.LeftHand,      0.3, 0, 0, poseSmooth);
-    tr(VRMHumanBoneName.LeftHand,      0.15, -0.05, 0, poseSmooth);
+  const innerPrefix = isLeft ? 'Left' : 'Right';
+  const outerPrefix = isLeft ? 'Right' : 'Left';
 
-    bendFingers('Right');
-    bendFingers('Left');
-  } else {
-    // Peeking from right edge: BOTH arms hold the wall
-    fr(VRMHumanBoneName.LeftUpperArm,  -0.6, -0.2, -1.0, poseSmooth);
-    fr(VRMHumanBoneName.LeftLowerArm,  -0.4, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.LeftHand,      0.3, 0, 0, poseSmooth);
-    tr(VRMHumanBoneName.LeftHand,     -0.15, 0.05, 0, poseSmooth);
-    
-    fr(VRMHumanBoneName.RightUpperArm, -0.4, -0.5, -0.8, poseSmooth);
-    fr(VRMHumanBoneName.RightLowerArm, -0.5, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.RightHand,      0.3, 0, 0, poseSmooth);
-    tr(VRMHumanBoneName.RightHand,     -0.15, -0.05, 0, poseSmooth);
+  const reachZ = isLeft ? 1 : -1;
+  const twistY = isLeft ? 1 : -1;
+  const shiftX = isLeft ? 1 : -1;
 
-    bendFingers('Right');
-    bendFingers('Left');
-  }
+  const innerUpperArm = VRMHumanBoneName[`${innerPrefix}UpperArm` as keyof typeof VRMHumanBoneName];
+  const innerLowerArm = VRMHumanBoneName[`${innerPrefix}LowerArm` as keyof typeof VRMHumanBoneName];
+  const innerHand = VRMHumanBoneName[`${innerPrefix}Hand` as keyof typeof VRMHumanBoneName];
+
+  const outerUpperArm = VRMHumanBoneName[`${outerPrefix}UpperArm` as keyof typeof VRMHumanBoneName];
+  const outerLowerArm = VRMHumanBoneName[`${outerPrefix}LowerArm` as keyof typeof VRMHumanBoneName];
+  const outerHand = VRMHumanBoneName[`${outerPrefix}Hand` as keyof typeof VRMHumanBoneName];
+
+  // Outer arm (crosses the body to hold the wall)
+  fr(outerUpperArm, -0.6, twistY * 0.2, reachZ * 1.0, poseSmooth);
+  fr(outerLowerArm, -0.4, 0, 0, poseSmooth);
+  fr(outerHand,      0.3, 0, 0, poseSmooth);
+  tr(outerHand,      shiftX * 0.15, 0.05, 0, poseSmooth);
+  
+  // Inner arm (closest to the wall)
+  fr(innerUpperArm, -0.4, twistY * 0.5, reachZ * 0.8, poseSmooth);
+  fr(innerLowerArm, -0.5, 0, 0, poseSmooth);
+  fr(innerHand,      0.3, 0, 0, poseSmooth);
+  tr(innerHand,      shiftX * 0.15, -0.05, 0, poseSmooth);
+
+  bendFingers(outerPrefix as 'Left' | 'Right');
+  bendFingers(innerPrefix as 'Left' | 'Right');
 }

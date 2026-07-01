@@ -6,9 +6,10 @@ import { BasePose } from './animations/core';
 
 interface AvatarControllerProps {
   isMiniMode?: boolean;
+  isPetMode?: boolean;
 }
 
-export function AvatarController({ isMiniMode = false }: AvatarControllerProps) {
+export function AvatarController({ isMiniMode = false, isPetMode = false }: AvatarControllerProps) {
   const { 
     isSpeaking, 
     isThinking, 
@@ -92,7 +93,7 @@ export function AvatarController({ isMiniMode = false }: AvatarControllerProps) 
 
   return createPortal(
     <div className="fixed inset-0 pointer-events-none z-[50]">
-      <Myra3D />
+      <Myra3D isPetMode={isPetMode} />
     </div>,
     document.body
   );

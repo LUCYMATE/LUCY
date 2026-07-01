@@ -1,5 +1,6 @@
 import { useState, useEffect, Suspense, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
+import { Mic, MicOff } from 'lucide-react';
 import { Environment, Html, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { VrmModel } from './VrmModel';
@@ -28,7 +29,7 @@ function Stool({ visible }: { visible: boolean }) {
 
 const ZOOM = 250; // 1 3D unit = 250 pixels.
 
-function SceneManager() {
+function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   const { 
     isSpeaking, 
     isThinking, 
@@ -88,10 +89,10 @@ function SceneManager() {
       
       let targetRotY = Math.PI; // default forward
       
-      if (distance > 0.05 && isWalking && !basePose.startsWith('peek')) {
+      if (distance > 0.05 && isWalking) {
         targetRotY = -Math.atan2(diffX, diffY);
       } else if (basePose.startsWith('peek')) {
-        targetRotY = basePose === 'peek-left' ? Math.PI/2 : -Math.PI/2;
+        targetRotY = 0;
       }
 
       // Stop walking exactly when arrived
@@ -175,7 +176,7 @@ function SceneManager() {
 
       <Html center zIndexRange={[100, 0]}>
         <div 
-          className="flex flex-col items-center justify-between pointer-events-none"
+          className="flex flex-col items-center justify-between pointer-events-none relative"
           style={{ width: 420, height: 660, marginTop: -120 }} 
         >
           <div 
@@ -208,7 +209,7 @@ function SceneManager() {
   );
 }
 
-export function Myra3D() {
+export function Myra3D({ isPetMode }: { isPetMode?: boolean }) {
   return (
     <div className="w-full h-full pointer-events-none">
       <Canvas
@@ -223,7 +224,7 @@ export function Myra3D() {
         
         <Suspense fallback={null}>
           <Environment preset="studio" />
-          <SceneManager />
+          <SceneManager isPetMode={isPetMode} />
         </Suspense>
       </Canvas>
     </div>
