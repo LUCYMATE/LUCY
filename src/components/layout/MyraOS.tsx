@@ -18,12 +18,10 @@ export function MyraOS({ isMiniMode = false, isPetMode = false }: { isMiniMode?:
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const container = logsContainerRef.current;
-    if (!container) return;
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    if (isNearBottom || logs.length <= 1) {
+    // Always scroll to the newest log, with a tiny delay to ensure DOM is updated
+    setTimeout(() => {
       logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    }, 50);
   }, [logs]);
 
   useEffect(() => {

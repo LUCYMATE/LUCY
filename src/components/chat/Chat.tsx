@@ -251,10 +251,16 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
     
     const handleWindowToggle = () => toggleMicRef.current();
     window.addEventListener('myra-toggle-mic', handleWindowToggle);
+
+    const handleToggleMute = () => {
+      window.dispatchEvent(new CustomEvent('internal-toggle-mute'));
+    };
+    window.addEventListener('myra-toggle-mute', handleToggleMute);
     
     return () => { 
       if (unlisten) unlisten(); 
       window.removeEventListener('myra-toggle-mic', handleWindowToggle);
+      window.removeEventListener('myra-toggle-mute', handleToggleMute);
     };
   }, []);
 
@@ -264,6 +270,12 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
     playerRef.current?.setMuted(newMuted);
     logger.add('info', 'Audio Output', newMuted ? 'Muted spoken response.' : 'Unmuted spoken response.');
   };
+
+  useEffect(() => {
+    const handleToggleMute = () => toggleMute();
+    window.addEventListener('internal-toggle-mute', handleToggleMute);
+    return () => window.removeEventListener('internal-toggle-mute', handleToggleMute);
+  }, [toggleMute]);
 
   const clearChat = () => {
     if (window.confirm("Are you sure you want to clear the conversation?")) {

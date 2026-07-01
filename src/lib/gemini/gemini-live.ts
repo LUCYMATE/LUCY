@@ -106,6 +106,7 @@ CRITICAL BEHAVIORS:
               if (toolCall) {
                 const functionCalls = toolCall.functionCalls ?? toolCall.function_calls ?? [];
                 const functionResponses: any[] = [];
+                const deferredMedia: string[] = [];
                 
                 for (const fc of functionCalls) {
                   const { name, id, args } = fc;
@@ -143,12 +144,29 @@ CRITICAL BEHAVIORS:
                       const screenData = await invoke<{base64: string, width: number, height: number}>('capture_screen');
                       
                       try {
-                        this.session.sendRealtimeInput({
-                          media: {
-                            mimeType: "image/jpeg",
-                            data: screenData.base64
-                          }
+                        const resizedBase64 = await new Promise<string>((resolve, reject) => {
+                          const img = new Image();
+                          img.onload = () => {
+                            let targetWidth = img.width;
+                            let targetHeight = img.height;
+                            const maxDim = 1024;
+                            if (targetWidth > maxDim || targetHeight > maxDim) {
+                              const ratio = Math.min(maxDim / targetWidth, maxDim / targetHeight);
+                              targetWidth = Math.floor(targetWidth * ratio);
+                              targetHeight = Math.floor(targetHeight * ratio);
+                            }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = targetWidth;
+                            canvas.height = targetHeight;
+                            const ctx = canvas.getContext('2d');
+                            ctx?.drawImage(img, 0, 0, targetWidth, targetHeight);
+                            resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+                          };
+                          img.onerror = reject;
+                          img.src = 'data:image/jpeg;base64,' + screenData.base64;
                         });
+
+                        deferredMedia.push(resizedBase64);
                         result = { success: true, message: `Screenshot captured. SCREEN RESOLUTION is Width: ${screenData.width}px, Height: ${screenData.height}px. Use these dimensions to accurately calculate the X, Y coordinates for move_and_click_mouse.` };
                       } catch (e) {
                         result = { error: 'Failed to inject screenshot: ' + String(e) };
@@ -165,21 +183,25 @@ CRITICAL BEHAVIORS:
                         // Wait a tiny bit for the camera to auto-expose
                         await new Promise(r => setTimeout(r, 500));
                         
+                        let targetWidth = video.videoWidth;
+                        let targetHeight = video.videoHeight;
+                        const maxDim = 1024;
+                        if (targetWidth > maxDim || targetHeight > maxDim) {
+                          const ratio = Math.min(maxDim / targetWidth, maxDim / targetHeight);
+                          targetWidth = Math.floor(targetWidth * ratio);
+                          targetHeight = Math.floor(targetHeight * ratio);
+                        }
+                        
                         const canvas = document.createElement('canvas');
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
+                        canvas.width = targetWidth;
+                        canvas.height = targetHeight;
                         const ctx = canvas.getContext('2d');
-                        ctx?.drawImage(video, 0, 0);
+                        ctx?.drawImage(video, 0, 0, targetWidth, targetHeight);
                         
                         const base64Jpeg = canvas.toDataURL('image/jpeg').split(',')[1];
                         stream.getTracks().forEach(track => track.stop());
 
-                        this.session.sendRealtimeInput({
-                          media: {
-                            mimeType: "image/jpeg",
-                            data: base64Jpeg
-                          }
-                        });
+                        deferredMedia.push(base64Jpeg);
                         result = { success: true, message: 'Webcam photo captured and injected into your visual cortex. Look at the image.' };
                       } catch (e) {
                         result = { error: 'Failed to capture webcam: ' + String(e) };
@@ -205,6 +227,22 @@ CRITICAL BEHAVIORS:
                     this.session.sendToolResponse({ functionResponses });
                   } else {
                     this.session.send({ toolResponse: { functionResponses } });
+                  }
+                  
+                  if (deferredMedia.length > 0) {
+                    setTimeout(() => {
+                      for (const base64 of deferredMedia) {
+                        // Use session.send instead of sendRealtimeInput to avoid media_chunks
+                        this.session.send({
+                          realtimeInput: {
+                            video: {
+                              mimeType: "image/jpeg",
+                              data: base64
+                            }
+                          }
+                        });
+                      }
+                    }, 50);
                   }
                 }
               }
@@ -423,8 +461,8 @@ CRITICAL BEHAVIORS:
       try {
         this.session.send(text);
       } catch (e2) {
-        if (this.session.sendRealtimeInput) {
-           this.session.sendRealtimeInput({ text });
+        if (this.session.send) {
+           this.session.send({ realtimeInput: { text } });
         } else {
            console.error('[GeminiLive] Could not send text', e2);
         }
@@ -445,10 +483,13 @@ CRITICAL BEHAVIORS:
     }
     this.audioChunksSent++;
 
-    this.session.sendRealtimeInput({
-      audio: {
-        mimeType: 'audio/pcm;rate=16000',
-        data: base64,
+    // Use session.send to avoid the deprecated media_chunks format
+    this.session.send({
+      realtimeInput: {
+        audio: {
+          mimeType: 'audio/pcm;rate=16000',
+          data: base64,
+        }
       }
     });
   }

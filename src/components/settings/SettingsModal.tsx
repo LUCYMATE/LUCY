@@ -157,6 +157,12 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
             >
               API Keys
             </button>
+            <button
+              onClick={() => setActiveTab('shortcuts')}
+              className={`px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 ${activeTab === 'shortcuts' ? 'bg-white/15 text-white shadow-inner' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+            >
+              Shortcuts
+            </button>
           </div>
           <div className="mt-auto">
             <button onClick={handleClose} className="flex items-center gap-2 px-4 py-3 rounded-xl text-left text-sm font-medium text-white/60 hover:text-white hover:bg-white/5 transition-all w-full">
@@ -346,6 +352,39 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                   placeholder="AIzaSy..."
                 />
                 <p className="text-xs text-white/40 mt-2">A fallback API key. The system will automatically try to use this key if the main key hits a rate limit or fails to connect.</p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'shortcuts' && (
+            <div className="text-white animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
+              <h3 className="text-2xl font-semibold mb-2">Global Shortcuts</h3>
+              <p className="text-sm text-white/60 mb-6">These shortcuts work globally across your OS, even when Myra is minimized or running in the background.</p>
+              
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
+                  <div>
+                    <h4 className="text-lg font-medium text-white">Toggle Microphone</h4>
+                    <p className="text-sm text-white/50">Mute or unmute your microphone</p>
+                  </div>
+                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Shift + M</kbd>
+                </div>
+                
+                <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
+                  <div>
+                    <h4 className="text-lg font-medium text-white">Toggle Speaker</h4>
+                    <p className="text-sm text-white/50">Mute or unmute Myra's spoken responses</p>
+                  </div>
+                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Shift + S</kbd>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-lg font-medium text-white">Exit Pet Mode</h4>
+                    <p className="text-sm text-white/50">Return to the standard window view</p>
+                  </div>
+                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Shift + X</kbd>
+                </div>
               </div>
             </div>
           )}

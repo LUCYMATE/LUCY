@@ -214,17 +214,19 @@ export function Myra3D({ isPetMode }: { isPetMode?: boolean }) {
     <div className="w-full h-full pointer-events-none">
       <Canvas
         dpr={1} 
-        gl={{ powerPreference: "low-power", antialias: false }}
+        gl={{ powerPreference: "default", antialias: true }}
         style={{ pointerEvents: 'none' }}
       >
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
         
-        <ambientLight intensity={2.0} />
-        <directionalLight position={[2, 2, 2]} intensity={3.0} />
-        <directionalLight position={[-2, -2, -2]} intensity={1.0} />
-        <directionalLight position={[0, 5, 2]} intensity={1.5} />
+        <ambientLight intensity={1.2} />
+        <directionalLight position={[2, 2, 2]} intensity={2.0} />
+        <directionalLight position={[-2, -2, -2]} intensity={0.5} />
+        <directionalLight position={[0, 5, 2]} intensity={1.0} />
         
         <Suspense fallback={null}>
+          {/* resolution={256} heavily reduces the RAM/VRAM cost of the HDRI map while keeping the high-quality lighting look */}
+          <Environment preset="city" resolution={256} />
           <SceneManager isPetMode={isPetMode} />
         </Suspense>
       </Canvas>

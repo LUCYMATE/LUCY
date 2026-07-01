@@ -65,53 +65,10 @@ export default function App() {
   };
 
   const minimize = async () => {
-    // Helper to safely execute Tauri commands without breaking the flow
-    const safe = async (p: Promise<any>) => {
-      try { await p; } catch (e) { console.warn('Tauri API error:', e); }
-    };
-
     try {
-      const win = getCurrentWindow();
-      if (!isMiniMode) {
-        try {
-          const isMax = await win.isMaximized();
-          if (isMax) {
-            await win.unmaximize();
-          } 
-          
-          const size = await win.outerSize();
-          const pos = await win.outerPosition();
-          const factor = await win.scaleFactor();
-          
-          const logicalSize = size.toLogical(factor);
-          const logicalPos = pos.toLogical(factor);
-          
-          normalSizeRef.current = { width: logicalSize.width, height: logicalSize.height };
-          normalPosRef.current = { x: logicalPos.x, y: logicalPos.y };
-        } catch (e) {
-          console.warn("Could not read window size/pos", e);
-        }
-
-        await safe(win.setMaxSize(null)); // clear max first
-        await safe(win.setMinSize(new LogicalSize(250, 90)));
-        await safe(win.setAlwaysOnTop(true));
-        
-        // Restore mini position if we have one
-        if (miniPosRef.current) {
-          await safe(win.setPosition(new LogicalPosition(miniPosRef.current.x, miniPosRef.current.y)));
-        }
-        
-        await safe(win.setSize(new LogicalSize(350, 100)));
-        await safe(win.setMaxSize(new LogicalSize(600, 150))); // set max after shrinking
-
-        setIsMiniMode(true);
-        setIsPetMode(false);
-      } else {
-        await restoreWindow();
-      }
+      await getCurrentWindow().minimize();
     } catch (e) {
-      console.warn("Fallback: window api totally failed", e);
-      setIsMiniMode(!isMiniMode); // Always apply UI state
+      console.warn("Minimize only works in Tauri apps");
     }
   };
 
@@ -203,37 +160,29 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isPetMode) {
-      const setupShortcuts = async () => {
-        try {
-          await register('CommandOrControl+Shift+M', () => {
-            window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
-          });
-          await register('CommandOrControl+Shift+X', () => {
-            window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
-          });
-        } catch (e) {
-          console.warn('Failed to register global shortcuts', e);
-        }
-      };
-      setupShortcuts();
-    } else {
-      const teardownShortcuts = async () => {
-        try {
-          await unregister('CommandOrControl+Shift+M');
-          await unregister('CommandOrControl+Shift+X');
-        } catch (e) {
-          console.warn('Failed to unregister global shortcuts', e);
-        }
-      };
-      teardownShortcuts();
-    }
+    const setupShortcuts = async () => {
+      try {
+        await register('CommandOrControl+Shift+M', () => {
+          window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
+        });
+        await register('CommandOrControl+Shift+X', () => {
+          window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
+        });
+        await register('CommandOrControl+Shift+S', () => {
+          window.dispatchEvent(new CustomEvent('myra-toggle-mute'));
+        });
+      } catch (e) {
+        console.warn('Failed to register global shortcuts', e);
+      }
+    };
+    setupShortcuts();
 
     return () => {
       unregister('CommandOrControl+Shift+M').catch(() => {});
       unregister('CommandOrControl+Shift+X').catch(() => {});
+      unregister('CommandOrControl+Shift+S').catch(() => {});
     };
-  }, [isPetMode]);
+  }, []);
 
   return (
     <div 
