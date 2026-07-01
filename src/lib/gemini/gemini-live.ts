@@ -228,10 +228,12 @@ CRITICAL BEHAVIORS:
                   if (deferredMedia.length > 0) {
                     setTimeout(() => {
                       for (const base64 of deferredMedia) {
-                        this.session.sendRealtimeInput({
-                          media: {
-                            mimeType: "image/jpeg",
-                            data: base64
+                        this.session.send({
+                          realtimeInput: {
+                            video: {
+                              mimeType: "image/jpeg",
+                              data: base64
+                            }
                           }
                         });
                       }
@@ -464,10 +466,12 @@ CRITICAL BEHAVIORS:
     }
     this.audioChunksSent++;
 
-    this.session.sendRealtimeInput({
-      audio: {
-        mimeType: 'audio/pcm;rate=16000',
-        data: base64,
+    this.session.send({
+      realtimeInput: {
+        audio: {
+          mimeType: 'audio/pcm;rate=16000',
+          data: base64,
+        }
       }
     });
   }

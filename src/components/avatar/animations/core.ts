@@ -19,13 +19,13 @@ export const SMOOTHING = 0.07;
  */
 export function slerpFromRest(
   bone: THREE.Object3D | null | undefined,
-  restQ: THREE.Quaternion,
+  restQ: THREE.Quaternion | undefined,
   dx: number,
   dy: number,
   dz: number,
   alpha: number
 ) {
-  if (!bone) return;
+  if (!bone || !restQ) return;
   const delta = new THREE.Quaternion().setFromEuler(new THREE.Euler(dx, dy, dz, 'XYZ'));
   const target = restQ.clone().multiply(delta);
   bone.quaternion.slerp(target, alpha);
@@ -36,13 +36,13 @@ export function slerpFromRest(
  */
 export function translateFromRest(
   bone: THREE.Object3D | null | undefined,
-  restP: THREE.Vector3,
+  restP: THREE.Vector3 | undefined,
   dx: number,
   dy: number,
   dz: number,
   alpha: number
 ) {
-  if (!bone) return;
+  if (!bone || !restP) return;
   const target = new THREE.Vector3(restP.x + dx, restP.y + dy, restP.z + dz);
   bone.position.lerp(target, alpha);
 }

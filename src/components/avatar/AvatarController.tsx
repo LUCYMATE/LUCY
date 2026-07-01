@@ -30,8 +30,8 @@ export function AvatarController({ isMiniMode = false, isPetMode = false }: Avat
     if (isMiniMode) return;
     
     const wanderInterval = setInterval(() => {
-      // Don't wander if active or dragging
-      if (isSpeaking || isListening || isThinking || isDragging) return;
+      // Don't wander if speaking, thinking, or being dragged by the user
+      if (isSpeaking || isThinking || isDragging) return;
       
       const r = Math.random();
       
