@@ -481,22 +481,25 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
               </button>
             </div>
           ) : isPetMode ? (
-            <div className="absolute bottom-6 right-6 pointer-events-auto flex items-center gap-4 bg-black/40 backdrop-blur-md p-3 rounded-full border border-white/10 shadow-2xl">
-              {isListening && (
-                <div className="w-16 h-8">
-                  <AudioVisualizer analyser={inputAnalyser} isActive={isListening} type="input" />
-                </div>
-              )}
+            <div className="absolute bottom-6 right-6 pointer-events-auto flex items-center gap-2 bg-black/40 backdrop-blur-md p-2 rounded-full border border-white/10 shadow-2xl">
               <button
                 type="button"
                 onClick={toggleMic}
                 disabled={isMicPending}
-                className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center border transition-all ${isListening
+                className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isListening
                     ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
                     : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
                   } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {isListening ? <Mic className="w-4 h-4" /> : (isMicPending ? <Activity className="w-4 h-4 animate-spin" /> : <MicOff className="w-4 h-4" />)}
+                {isListening ? <Mic className="w-4 h-4" /> : (isMicPending ? <Activity className="w-4 h-4 animate-spin" /> : <MicOff className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'))}
+                title="Exit Pet Mode"
+                className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center border border-white/10 bg-black/40 text-white/40 hover:border-white/30 hover:text-white/70 hover:bg-red-600/30 hover:text-red-400 hover:border-red-500/50 transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
           ) : (

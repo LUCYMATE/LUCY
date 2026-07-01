@@ -61,7 +61,11 @@ export class GeminiLive {
       const activeKey = this.currentlyUsingAlt && this.altApiKey ? this.altApiKey : apiKey;
       const ai = new GoogleGenAI({ apiKey: activeKey });
       
-      const savedModel = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
+      let savedModel = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
+      if (savedModel !== 'gemini-3.1-flash-live-preview') {
+        savedModel = 'gemini-3.1-flash-live-preview';
+        localStorage.setItem('myra_model', 'gemini-3.1-flash-live-preview');
+      }
       const savedVoice = localStorage.getItem('myra_voice') || 'Aoede';
       const coreInstruction = `You are Myra, an advanced OS-level voice assistant.
 CRITICAL BEHAVIORS:

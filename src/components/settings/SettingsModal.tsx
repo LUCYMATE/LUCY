@@ -15,7 +15,14 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>('');
 
-  const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview');
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    const model = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
+    if (model !== 'gemini-3.1-flash-live-preview') {
+      localStorage.setItem('myra_model', 'gemini-3.1-flash-live-preview');
+      return 'gemini-3.1-flash-live-preview';
+    }
+    return model;
+  });
   const [selectedVoice, setSelectedVoice] = useState<string>(() => localStorage.getItem('myra_voice') || 'Aoede');
   const [avatarSize, setAvatarSize] = useState<string>(() => {
     const val = localStorage.getItem('myra_avatar_size');
@@ -186,8 +193,6 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                   className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500"
                 >
                   <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live Preview (Recommended)</option>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                  <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Experimental</option>
                 </select>
                 <p className="text-xs text-white/40 mt-2">Choose the active backend model for spoken/text core generation.</p>
               </div>

@@ -109,7 +109,13 @@ fn press_key(key: String) {
         "down" => Key::DownArrow,
         "left" => Key::LeftArrow,
         "right" => Key::RightArrow,
-        _ => return, 
+        other => {
+            if other.chars().count() == 1 {
+                Key::Layout(other.chars().next().unwrap())
+            } else {
+                return;
+            }
+        }
     };
     enigo.key_click(enigo_key);
 }

@@ -3,7 +3,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { TitleBar } from './components/layout/TitleBar';
 import { Minus, Square, X, Menu } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
-import { getCurrentWindow, currentMonitor } from '@tauri-apps/api/window';
+import { getCurrentWindow, currentMonitor, cursorPosition } from '@tauri-apps/api/window';
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
 
@@ -158,6 +158,63 @@ export default function App() {
       window.removeEventListener('myra-exit-pet-mode', onExitPetMode);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isPetMode) return;
+
+    let active = true;
+    let lastIgnore = true;
+
+    const checkMouse = async () => {
+      if (!active) return;
+      try {
+        const win = getCurrentWindow();
+        const cursor = await cursorPosition();
+        const winPos = await win.outerPosition();
+        const factor = await win.scaleFactor();
+
+        // Convert cursor to logical coordinates relative to viewport
+        const x = (cursor.x - winPos.x) / factor;
+        const y = (cursor.y - winPos.y) / factor;
+
+        // Find elements with pointer-events-auto
+        const elements = document.querySelectorAll('.pointer-events-auto');
+        
+        let insideInteractive = false;
+        for (let i = 0; i < elements.length; i++) {
+          const el = elements[i];
+          const rect = el.getBoundingClientRect();
+          if (
+            x >= rect.left &&
+            x <= rect.right &&
+            y >= rect.top &&
+            y <= rect.bottom
+          ) {
+            insideInteractive = true;
+            break;
+          }
+        }
+
+        if (insideInteractive !== !lastIgnore) {
+          lastIgnore = !insideInteractive;
+          await win.setIgnoreCursorEvents(lastIgnore);
+        }
+      } catch (e) {
+        console.warn("Error in pet mode mouse tracking:", e);
+      }
+
+      if (active) {
+        setTimeout(checkMouse, 50); // check every 50ms
+      }
+    };
+
+    checkMouse();
+
+    return () => {
+      active = false;
+      getCurrentWindow().setIgnoreCursorEvents(false).catch(() => {});
+    };
+  }, [isPetMode]);
 
   useEffect(() => {
     const setupShortcuts = async () => {
