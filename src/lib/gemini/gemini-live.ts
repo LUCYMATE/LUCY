@@ -206,6 +206,26 @@ CRITICAL BEHAVIORS:
                       } catch (e) {
                         result = { error: 'Failed to capture webcam: ' + String(e) };
                       }
+                    } else if (name === 'search_web') {
+                      try {
+                        const script = `
+import urllib.request, urllib.parse, json, re
+try:
+    url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote("""${String(args.query || '').replace(/"/g, '\\"')}""")
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+    with urllib.request.urlopen(req) as response:
+        html = response.read().decode('utf-8')
+    snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', html, re.IGNORECASE | re.DOTALL)
+    clean = [re.sub(r'<[^>]+>', '', s).strip() for s in snippets][:3]
+    print(json.dumps(clean))
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+`;
+                        const output = await invoke('run_python_script', { script });
+                        result = { success: true, data: JSON.parse(output as string) };
+                      } catch (e) {
+                        result = { error: 'Search failed: ' + String(e) };
+                      }
                     } else {
                       result = { error: `Function ${name} not found` };
                     }
@@ -341,7 +361,6 @@ CRITICAL BEHAVIORS:
           },
           systemInstruction: finalInstruction,
           tools: [
-            { googleSearch: {} },
             {
               functionDeclarations: [
                 {
@@ -421,6 +440,15 @@ CRITICAL BEHAVIORS:
                   name: 'capture_camera',
                   description: 'Take a photo using the user\'s webcam to see them or their physical environment.',
                   parameters: { type: 'OBJECT', properties: {} }
+                },
+                {
+                  name: 'search_web',
+                  description: 'Search the web for real-time information (news, weather, facts). Returns snippets from search results.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { query: { type: 'STRING' } },
+                    required: ['query']
+                  }
                 }
               ]
             }
