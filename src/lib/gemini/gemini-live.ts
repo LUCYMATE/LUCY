@@ -1,6 +1,7 @@
 import { logger } from '../store/logger';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { invoke } from '@tauri-apps/api/core';
+import { fetch } from '@tauri-apps/plugin-http';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -208,21 +209,18 @@ CRITICAL BEHAVIORS:
                       }
                     } else if (name === 'search_web') {
                       try {
-                        const script = `
-import urllib.request, urllib.parse, json, re
-try:
-    url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote("""${String(args.query || '').replace(/"/g, '\\"')}""")
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-    with urllib.request.urlopen(req) as response:
-        html = response.read().decode('utf-8')
-    snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', html, re.IGNORECASE | re.DOTALL)
-    clean = [re.sub(r'<[^>]+>', '', s).strip() for s in snippets][:3]
-    print(json.dumps(clean))
-except Exception as e:
-    print(json.dumps({"error": str(e)}))
-`;
-                        const output = await invoke('run_python_script', { script });
-                        result = { success: true, data: JSON.parse(output as string) };
+                        const query = args.query || '';
+                        const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query as string);
+                        const response = await fetch(url, {
+                          method: 'GET',
+                          headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                          }
+                        });
+                        const html = await response.text();
+                        const matches = [...html.matchAll(/<a class="result__snippet[^>]*>(.*?)<\/a>/gis)];
+                        const snippets = matches.map(m => m[1].replace(/<[^>]+>/g, '').trim()).slice(0, 3);
+                        result = { success: true, data: snippets };
                       } catch (e) {
                         result = { error: 'Search failed: ' + String(e) };
                       }

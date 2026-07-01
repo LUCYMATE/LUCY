@@ -34,6 +34,7 @@
     "allow-press-key",
     "allow-capture-screen",
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "global-shortcut:allow-unregister",
+    "http:default"
   ]
 }
