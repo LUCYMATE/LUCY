@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useAvatarState } from '../../lib/store/avatarState';
 
 interface AudioVisualizerProps {
   analyser: AnalyserNode | null;
@@ -61,6 +62,16 @@ export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerPro
         const rms = Math.sqrt(sum / dataArray.length);
         // Scale and cap the target amplitude
         targetAmplitude = Math.max(0.02, Math.min(1.0, rms * 4.0));
+      }
+
+      if (type === 'input') {
+        const isHearingNow = targetAmplitude > 0.05;
+        if (isHearingNow !== animationRef.current /* hacky reuse of ref if needed? No, let's just use useAvatarState.getState().isHearingSound */) {
+            const currentState = useAvatarState.getState().isHearingSound;
+            if (isHearingNow !== currentState) {
+               useAvatarState.getState().setHearingSound(isHearingNow);
+            }
+        }
       }
 
       // Smooth amplitude transitions (lerp)

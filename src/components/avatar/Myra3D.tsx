@@ -92,7 +92,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
       if (distance > 0.05 && isWalking) {
         targetRotY = -Math.atan2(diffX, diffY);
       } else if (basePose.startsWith('peek')) {
-        targetRotY = 0;
+        targetRotY = Math.PI; // Face the user to peek over the edge
       }
 
       // Stop walking exactly when arrived

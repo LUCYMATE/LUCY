@@ -90,6 +90,8 @@ export function useVrmAnimator({
     const isSitting = basePose === 'sit';
     const isPeeking = basePose.startsWith('peek') && !isWalking;
     const isPeekLeft = basePose === 'peek-left';
+    
+    const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
 
     // Model Rotation: moveDirection is now the exact targetRotationY in radians
     if (vrm.scene) {
@@ -101,16 +103,16 @@ export function useVrmAnimator({
       applyPeek(vrm, rest, t, isPeekLeft);
       
       // Still apply expressions
-      applyExpressions(vrm, t, isSpeaking, isListening, isThinking, emotion);
+      applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
     } else {
       // Normal locomotion (walk/sit/stand)
       applyLocomotion(vrm, rest, t, actualIsWalking, isSitting);
       
       // Normal upper body gestures
-      applyGestures(vrm, rest, t, isGreeting, isSpeaking, isThinking, isListening, actualIsWalking, emotion, isSitting);
+      applyGestures(vrm, rest, t, isGreeting, isSpeaking, isThinking, actuallyHearing, actualIsWalking, emotion, isSitting);
       
       // Facial expressions and lip sync
-      applyExpressions(vrm, t, isSpeaking, isListening, isThinking, emotion);
+      applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
     }
 
     // Auto Blink Logic (Blink roughly every 4 seconds)

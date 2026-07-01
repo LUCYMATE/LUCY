@@ -8,6 +8,9 @@ export class GeminiLive {
   private session: any = null;
   private setupComplete = false;
   private _state: ConnectionState = 'idle';
+  private lastApiKey: string | null = null;
+  private isIntentionalDisconnect = false;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // --- Callbacks ---
   public onStateChange: ((state: ConnectionState, detail?: string) => void) | null = null;
@@ -22,8 +25,17 @@ export class GeminiLive {
   }
 
   async connect(apiKey: string) {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.isIntentionalDisconnect = false;
+    this.lastApiKey = apiKey;
+
     if (this.session) {
       this.disconnect();
+      // Wait a moment for disconnect to finish
+      this.isIntentionalDisconnect = false; 
     }
 
     this.setupComplete = false;
@@ -225,8 +237,17 @@ CRITICAL BEHAVIORS:
             logger.add('warning', 'WebSocket Closed', `Code: ${code}, Reason: ${reason}`);
             console.log(`[GeminiLive] WS closed ${code} — ${reason}`);
             this.setupComplete = false;
-            this.setState('disconnected', reason || `code ${code}`);
             this.session = null;
+            
+            if (!this.isIntentionalDisconnect && this.lastApiKey) {
+              logger.add('info', 'Auto-Reconnect', 'Connection dropped unexpectedly. Reconnecting in 3 seconds...');
+              this.setState('connecting');
+              this.reconnectTimeout = setTimeout(() => {
+                if (this.lastApiKey) this.connect(this.lastApiKey);
+              }, 3000);
+            } else {
+              this.setState('disconnected', reason || `code ${code}`);
+            }
           },
         },
         config: {
@@ -395,6 +416,11 @@ CRITICAL BEHAVIORS:
 
   // ---------------------------------------------------------------
   disconnect() {
+    this.isIntentionalDisconnect = true;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
     this.setupComplete = false;
     if (this.session) {
       this.session.close?.();

@@ -21,6 +21,8 @@ interface AvatarState {
   setWorldPosition: (pos: { x: number; y: number; z: number }) => void;
   setTargetPosition: (pos: { x: number; y: number; z: number } | null) => void;
   setIsDragging: (val: boolean) => void;
+  isHearingSound: boolean;
+  setHearingSound: (val: boolean) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -33,6 +35,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   worldPosition: { x: 0, y: -0.5, z: 0 },
   targetPosition: null,
   isDragging: false,
+  isHearingSound: false,
   
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -43,4 +46,5 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setWorldPosition: (pos) => set({ worldPosition: pos }),
   setTargetPosition: (pos) => set({ targetPosition: pos }),
   setIsDragging: (val) => set({ isDragging: val }),
+  setHearingSound: (val) => set({ isHearingSound: val }),
 }));
