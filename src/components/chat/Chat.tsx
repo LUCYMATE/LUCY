@@ -41,6 +41,39 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
   const modelBubbleIdRef = useRef<string>('');
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [petDragOffset, setPetDragOffset] = useState({ x: 0, y: 0 });
+  const isPetDraggingRef = useRef(false);
+  const petDragStartRef = useRef({ x: 0, y: 0 });
+  const petCurrentOffsetRef = useRef({ x: 0, y: 0 });
+
+  const handlePetPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // Only left click
+    if ((e.target as HTMLElement).tagName === 'BUTTON' || (e.target as HTMLElement).closest('button')) {
+      return; // Don't drag if clicking buttons
+    }
+    isPetDraggingRef.current = true;
+    petDragStartRef.current = { x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePetPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isPetDraggingRef.current) return;
+    const dx = e.clientX - petDragStartRef.current.x;
+    const dy = e.clientY - petDragStartRef.current.y;
+    setPetDragOffset({
+      x: petCurrentOffsetRef.current.x + dx,
+      y: petCurrentOffsetRef.current.y + dy
+    });
+  };
+
+  const handlePetPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isPetDraggingRef.current) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      petCurrentOffsetRef.current = { x: petDragOffset.x, y: petDragOffset.y };
+      isPetDraggingRef.current = false;
+    }
+  };
+
   const dragStartRef = useRef<{x: number, y: number} | null>(null);
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -407,9 +440,9 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
         <>
           {/* ── Top Status Bar ────────────────────────────────────── */}
           {!isMiniMode && (
-            <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-auto' : 'justify-end border-b border-white/5 bg-black/10'}`}>
+            <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-none' : 'justify-end border-b border-white/5 bg-black/10'}`}>
             <div 
-              className={`flex items-center gap-2 font-mono transition-all ${isPetMode ? 'text-[10px] opacity-70 hover:opacity-100' : 'text-xs'} ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-105' : ''}`}
+              className={`flex items-center gap-2 font-mono transition-all ${isPetMode ? 'text-[10px] opacity-70 hover:opacity-100 pointer-events-auto' : 'text-xs'} ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-105' : ''}`}
               onClick={() => {
                 if (['disconnected', 'error'].includes(connectionState)) initSystem();
               }}
@@ -481,25 +514,34 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
               </button>
             </div>
           ) : isPetMode ? (
-            <div className="absolute bottom-6 right-6 pointer-events-auto flex items-center gap-2 bg-black/40 backdrop-blur-md p-2 rounded-full border border-white/10 shadow-2xl">
+            <div 
+              onPointerDown={handlePetPointerDown}
+              onPointerMove={handlePetPointerMove}
+              onPointerUp={handlePetPointerUp}
+              style={{
+                transform: `translate(${petDragOffset.x}px, ${petDragOffset.y}px)`,
+                touchAction: 'none'
+              }}
+              className="absolute bottom-6 right-6 pointer-events-auto flex items-center gap-1.5 bg-black/40 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-2xl cursor-grab active:cursor-grabbing select-none"
+            >
               <button
                 type="button"
                 onClick={toggleMic}
                 disabled={isMicPending}
-                className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isListening
+                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isListening
                     ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
                     : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
                   } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {isListening ? <Mic className="w-4 h-4" /> : (isMicPending ? <Activity className="w-4 h-4 animate-spin" /> : <MicOff className="w-4 h-4" />}
+                {isListening ? <Mic className="w-3.5 h-3.5" /> : (isMicPending ? <Activity className="w-3.5 h-3.5 animate-spin" /> : <MicOff className="w-3.5 h-3.5" />)}
               </button>
               <button
                 type="button"
                 onClick={() => window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'))}
                 title="Exit Pet Mode"
-                className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center border border-white/10 bg-black/40 text-white/40 hover:border-white/30 hover:text-white/70 hover:bg-red-600/30 hover:text-red-400 hover:border-red-500/50 transition-all cursor-pointer"
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center border border-white/10 bg-black/40 text-white/40 hover:border-white/30 hover:text-white/70 hover:bg-red-600/30 hover:text-red-400 hover:border-red-500/50 transition-all cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
           ) : (
