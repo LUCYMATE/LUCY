@@ -228,12 +228,18 @@ CRITICAL BEHAVIORS:
                   if (deferredMedia.length > 0) {
                     setTimeout(() => {
                       for (const base64 of deferredMedia) {
-                        this.session.send({
-                          realtimeInput: {
-                            video: {
-                              mimeType: "image/jpeg",
-                              data: base64
-                            }
+                        // this.session.send({
+                        //   realtimeInput: {
+                        //     video: {
+                        //       mimeType: "image/jpeg",
+                        //       data: base64
+                        //     }
+                        //   }
+                        // });   Depreciated never come to this again
+                        this.session.sendRealtimeInput({
+                           video: {
+                            mimeType: "image/jpeg",
+                            data: base64
                           }
                         });
                       }
@@ -335,6 +341,7 @@ CRITICAL BEHAVIORS:
           },
           systemInstruction: finalInstruction,
           tools: [
+            { googleSearch: {} },
             {
               functionDeclarations: [
                 {
@@ -466,14 +473,18 @@ CRITICAL BEHAVIORS:
     }
     this.audioChunksSent++;
 
-    this.session.send({
-      realtimeInput: {
-        audio: {
-          mimeType: 'audio/pcm;rate=16000',
-          data: base64,
-        }
-      }
-    });
+    // this.session.send({
+    //   realtimeInput: {
+    //     audio: {
+    //       mimeType: 'audio/pcm;rate=16000',
+    //       data: base64,
+    //     }
+    //   }
+    // });   Depreciated never come to this again 
+    this.session.sendRealtimeInput([{
+  mimeType: 'audio/pcm;rate=16000',
+  data: base64
+}]);
   }
 
   // ---------------------------------------------------------------
