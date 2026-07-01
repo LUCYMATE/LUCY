@@ -90,12 +90,14 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
     logger.add('info', 'System Boot', 'Initializing MyraOS and Gemini connection...');
     setInitialized(true);
 
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    const apiKey = localStorage.getItem('myra_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    const altApiKey = localStorage.getItem('myra_alt_api_key') || undefined;
+    
     if (!apiKey) {
-      logger.add('error', 'API Key Missing', 'VITE_GEMINI_API_KEY not found in .env');
+      logger.add('error', 'API Key Missing', 'No API key found in Settings or .env');
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(), role: 'model',
-        text: '⚠️ Error: VITE_GEMINI_API_KEY not found in .env',
+        text: '⚠️ Error: No Gemini API Key found. Please add one in Settings.',
       }]);
       return;
     }
@@ -173,7 +175,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
       modelBubbleIdRef.current = '';
     };
 
-    gemini.connect(apiKey);
+    gemini.connect(apiKey, altApiKey);
   };
 
   useEffect(() => {
@@ -361,17 +363,17 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
         connectionState === 'idle' ? 'text-white/40' : 'text-yellow-400';
 
   const statusLabel =
-    connectionState === 'connected' ? 'LIVE CONNECTION ACTIVE' :
+    connectionState === 'connected' ? (isListening ? 'CONNECTED (MIC ON)' : 'CONNECTED (MIC OFF)') :
       connectionState === 'connecting' ? 'CONNECTING…' :
         connectionState === 'error' ? `ERROR${statusDetail ? `: ${statusDetail.slice(0, 40)}` : ''}` :
           connectionState === 'disconnected' ? 'DISCONNECTED' : 'IDLE';
 
   return (
-    <div className={`flex flex-col h-full min-h-0 bg-transparent ${isPetMode ? 'pointer-events-none hidden' : ''}`}>
+    <div className={`flex flex-col h-full min-h-0 bg-transparent ${isPetMode ? 'pointer-events-none' : ''}`}>
       {!initialized ? (
         /* ── Splash Screen ──────────────────────────────────────── */
         <div 
-          className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-1000"
+          className={`flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-1000 ${isPetMode ? 'hidden' : ''}`}
           data-tauri-drag-region
         >
           <div className="w-32 h-32 rounded-full bg-pink-500/10 flex items-center justify-center mb-8 relative">
@@ -384,7 +386,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
           </p>
           <button
             onClick={initSystem}
-            className="px-12 h-16 rounded-3xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold tracking-[0.2em] transform hover:scale-105 transition-all shadow-[0_0_40px_rgba(244,63,94,0.4)]"
+            className="px-12 h-16 rounded-3xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold tracking-[0.2em] transform hover:scale-105 transition-all shadow-[0_0_40px_rgba(244,63,94,0.4)] pointer-events-auto"
           >
             INITIALIZE CORE
           </button>
@@ -393,7 +395,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
         <>
           {/* ── Top Status Bar ────────────────────────────────────── */}
           {!isMiniMode && (
-            <div className="shrink-0 p-4 flex justify-end items-center gap-4 border-b border-white/5 bg-black/10">
+            <div className={`shrink-0 p-4 flex justify-end items-center gap-4 ${isPetMode ? 'bg-transparent pointer-events-auto' : 'border-b border-white/5 bg-black/10'}`}>
             <div 
               className={`flex items-center gap-2 text-xs font-mono transition-all ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:opacity-70 hover:scale-105' : ''}`}
               onClick={() => {

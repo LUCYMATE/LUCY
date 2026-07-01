@@ -206,15 +206,11 @@ export default function App() {
     if (isPetMode) {
       const setupShortcuts = async () => {
         try {
-          await register('CommandOrControl+Shift+M', (event) => {
-            if (event.state === 'Pressed') {
-              window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
-            }
+          await register('CommandOrControl+Shift+M', () => {
+            window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
           });
-          await register('CommandOrControl+Shift+X', (event) => {
-            if (event.state === 'Pressed') {
-              window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
-            }
+          await register('CommandOrControl+Shift+X', () => {
+            window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
           });
         } catch (e) {
           console.warn('Failed to register global shortcuts', e);

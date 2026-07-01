@@ -23,6 +23,8 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
     return val;
   });
   const [systemInstruction, setSystemInstruction] = useState<string>(() => localStorage.getItem('myra_system_instruction') || 'You are a helpful voice assistant. Keep replies conversational, concise, and natural for back-and-forth spoken chat.');
+  const [mainApiKey, setMainApiKey] = useState<string>(() => localStorage.getItem('myra_main_api_key') || '');
+  const [altApiKey, setAltApiKey] = useState<string>(() => localStorage.getItem('myra_alt_api_key') || '');
   const [changed, setChanged] = useState(false);
 
   useEffect(() => {
@@ -104,6 +106,18 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
     logger.add('success', 'Settings', 'Avatar size changed to ' + val);
   };
 
+  const handleMainApiKeyChange = (val: string) => {
+    setMainApiKey(val);
+    localStorage.setItem('myra_main_api_key', val);
+    setChanged(true);
+  };
+
+  const handleAltApiKeyChange = (val: string) => {
+    setAltApiKey(val);
+    localStorage.setItem('myra_alt_api_key', val);
+    setChanged(true);
+  };
+
 
   const handleClose = () => {
     if (changed) {
@@ -136,6 +150,12 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
               className={`px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 ${activeTab === 'audio' ? 'bg-white/15 text-white shadow-inner' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
             >
               Devices
+            </button>
+            <button
+              onClick={() => setActiveTab('api')}
+              className={`px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 ${activeTab === 'api' ? 'bg-white/15 text-white shadow-inner' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+            >
+              API Keys
             </button>
           </div>
           <div className="mt-auto">
@@ -297,6 +317,36 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                  </p>
               </div>
 
+            </div>
+          )}
+
+          {activeTab === 'api' && (
+            <div className="text-white animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
+              <h3 className="text-2xl font-semibold mb-2">API Keys</h3>
+              
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <label className="block text-sm font-medium text-white mb-2">Main Gemini API Key</label>
+                <input
+                  type="password"
+                  value={mainApiKey}
+                  onChange={(e) => handleMainApiKeyChange(e.target.value)}
+                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
+                  placeholder="AIzaSy..."
+                />
+                <p className="text-xs text-white/40 mt-2">Your primary Gemini API key. If left blank, the app will try to use the key from the .env file.</p>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <label className="block text-sm font-medium text-white mb-2">Alternative Gemini API Key</label>
+                <input
+                  type="password"
+                  value={altApiKey}
+                  onChange={(e) => handleAltApiKeyChange(e.target.value)}
+                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
+                  placeholder="AIzaSy..."
+                />
+                <p className="text-xs text-white/40 mt-2">A fallback API key. The system will automatically try to use this key if the main key hits a rate limit or fails to connect.</p>
+              </div>
             </div>
           )}
         </div>

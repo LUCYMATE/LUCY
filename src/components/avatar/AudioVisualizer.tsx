@@ -66,11 +66,9 @@ export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerPro
 
       if (type === 'input') {
         const isHearingNow = targetAmplitude > 0.05;
-        if (isHearingNow !== animationRef.current /* hacky reuse of ref if needed? No, let's just use useAvatarState.getState().isHearingSound */) {
-            const currentState = useAvatarState.getState().isHearingSound;
-            if (isHearingNow !== currentState) {
-               useAvatarState.getState().setHearingSound(isHearingNow);
-            }
+        const currentState = useAvatarState.getState().isHearingSound;
+        if (isHearingNow !== currentState) {
+           useAvatarState.getState().setHearingSound(isHearingNow);
         }
       }
 

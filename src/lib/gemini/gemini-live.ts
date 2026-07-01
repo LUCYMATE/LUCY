@@ -9,8 +9,12 @@ export class GeminiLive {
   private setupComplete = false;
   private _state: ConnectionState = 'idle';
   private lastApiKey: string | null = null;
+  private altApiKey: string | null = null;
+  private currentlyUsingAlt = false;
   private isIntentionalDisconnect = false;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private retryCount = 0;
+  private connectionId = 0;
 
   // --- Callbacks ---
   public onStateChange: ((state: ConnectionState, detail?: string) => void) | null = null;
@@ -24,13 +28,24 @@ export class GeminiLive {
     this.onStateChange?.(state, detail);
   }
 
-  async connect(apiKey: string) {
+  async connect(apiKey: string, altApiKey?: string, isAutoRetry = false, useAltKey = false) {
+    this.connectionId++;
+    const currentConnectionId = this.connectionId;
+
+    if (!isAutoRetry) {
+      this.retryCount = 0;
+      this.currentlyUsingAlt = useAltKey;
+    } else {
+      this.currentlyUsingAlt = useAltKey;
+    }
+
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
     this.isIntentionalDisconnect = false;
     this.lastApiKey = apiKey;
+    this.altApiKey = altApiKey || null;
 
     if (this.session) {
       this.disconnect();
@@ -42,7 +57,8 @@ export class GeminiLive {
     this.setState('connecting');
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      const activeKey = this.currentlyUsingAlt && this.altApiKey ? this.altApiKey : apiKey;
+      const ai = new GoogleGenAI({ apiKey: activeKey });
       
       const savedModel = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
       const savedVoice = localStorage.getItem('myra_voice') || 'Aoede';
@@ -69,12 +85,15 @@ CRITICAL BEHAVIORS:
         model: savedModel,
         callbacks: {
           onopen: () => {
+            if (this.connectionId !== currentConnectionId) return;
             logger.add('success', 'Setup Complete', 'Gemini Live system is fully connected and ready for input.');
             console.log('[GeminiLive] Setup complete -> CONNECTED');
             this.setupComplete = true;
+            this.retryCount = 0;
             this.setState('connected');
           },
           onmessage: async (message: any) => {
+            if (this.connectionId !== currentConnectionId) return;
             try {
               const serverContent = message?.serverContent ?? message?.server_content;
               
@@ -226,12 +245,14 @@ CRITICAL BEHAVIORS:
             }
           },
           onerror: (event: any) => {
+            if (this.connectionId !== currentConnectionId) return;
             const msg = event?.message || 'WebSocket error';
             logger.add('error', 'WebSocket Error', msg);
             console.error('[GeminiLive] WS error:', event);
             this.setState('error', msg);
           },
           onclose: (event: any) => {
+            if (this.connectionId !== currentConnectionId) return;
             const reason = event?.reason || 'none';
             const code = event?.code || 0;
             logger.add('warning', 'WebSocket Closed', `Code: ${code}, Reason: ${reason}`);
@@ -240,11 +261,25 @@ CRITICAL BEHAVIORS:
             this.session = null;
             
             if (!this.isIntentionalDisconnect && this.lastApiKey) {
-              logger.add('info', 'Auto-Reconnect', 'Connection dropped unexpectedly. Reconnecting in 3 seconds...');
-              this.setState('connecting');
-              this.reconnectTimeout = setTimeout(() => {
-                if (this.lastApiKey) this.connect(this.lastApiKey);
-              }, 3000);
+              if (this.retryCount < 3) {
+                this.retryCount++;
+                const delay = this.retryCount * 2000;
+                
+                let tryAlt = this.currentlyUsingAlt;
+                if (!this.setupComplete && this.altApiKey && !this.currentlyUsingAlt) {
+                  tryAlt = true;
+                  logger.add('warning', 'Connection Failed', 'Trying alternative API key...');
+                }
+
+                logger.add('info', 'Auto-Reconnect', `Connection dropped unexpectedly. Retrying (${this.retryCount}/3) in ${delay/1000}s...`);
+                this.setState('connecting');
+                this.reconnectTimeout = setTimeout(() => {
+                  if (this.lastApiKey) this.connect(this.lastApiKey, this.altApiKey || undefined, true, tryAlt);
+                }, delay);
+              } else {
+                logger.add('error', 'Auto-Reconnect Failed', 'Max retries reached. Please reconnect manually.');
+                this.setState('disconnected', 'Max retries reached');
+              }
             } else {
               this.setState('disconnected', reason || `code ${code}`);
             }
