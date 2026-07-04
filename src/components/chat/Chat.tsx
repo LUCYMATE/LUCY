@@ -32,10 +32,24 @@ interface Message {
 }
 
 export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
-  const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
-  const [messages, setMessages] = useState<Message[]>([
-    { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' },
-  ]);
+  const [activeChatId, setActiveChatId] = useState<string>(() => {
+    if (localStorage.getItem('syra_launch_pet_mode') === 'true') {
+      const chats = chatHistory.getChats();
+      if (chats.length > 0) return chats[0].id;
+    }
+    return crypto.randomUUID();
+  });
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (localStorage.getItem('syra_launch_pet_mode') === 'true') {
+      const chats = chatHistory.getChats();
+      if (chats.length > 0 && chats[0].messages.length > 0) {
+        return chats[0].messages;
+      }
+    }
+    return [
+      { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' },
+    ];
+  });
   const [input, setInput] = useState('');
   const [initialized, setInitialized] = useState(true);
   const [isMicPending, setIsMicPending] = useState(false);
@@ -200,13 +214,17 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
 
           if (matchedEmotion === 'flirty') {
             const currentPose = useAvatarState.getState().basePose;
-            const isSittingPose = currentPose === 'sit' || currentPose === 'sultry-sit' || currentPose === 'fingerwarm';
-            if (isSittingPose) {
+            const isBoringSitting = currentPose === 'sit';
+            const isBoringStanding = currentPose === 'stand';
+            
+            // Only override the pose with a random flirty one if she is just sitting or standing normally.
+            // If she is already peeking, stretching, or blowing a kiss, leave her deliberate pose alone!
+            if (isBoringSitting) {
               const flirtySittingPoses = ['sultry-sit', 'fingerwarm'];
               const randomPose = flirtySittingPoses[Math.floor(Math.random() * flirtySittingPoses.length)] as any;
               useAvatarState.getState().setBasePose(randomPose);
-            } else {
-              const flirtyStandingPoses = ['stretch', 'lean', 'hip-cock', 'body-roll', 'spread-legs', 'arch', 'caress', 'squeeze'];
+            } else if (isBoringStanding) {
+              const flirtyStandingPoses = ['stretch', 'lean', 'hip-cock', 'body-roll', 'spread-legs', 'arch', 'caress', 'squeeze', 'flying-kiss'];
               const randomPose = flirtyStandingPoses[Math.floor(Math.random() * flirtyStandingPoses.length)] as any;
               useAvatarState.getState().setBasePose(randomPose);
             }

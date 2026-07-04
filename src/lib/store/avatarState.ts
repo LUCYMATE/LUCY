@@ -7,6 +7,7 @@ interface AvatarState {
   isListening: boolean;
   emotion: Emotion;
   basePose: BasePose;
+  lastPoseOverrideTime: number;
   isWalking: boolean;
   worldPosition: { x: number; y: number; z: number };
   targetPosition: { x: number; y: number; z: number } | null;
@@ -23,6 +24,7 @@ interface AvatarState {
   setListening: (val: boolean) => void;
   setEmotion: (val: Emotion) => void;
   setBasePose: (val: BasePose) => void;
+  setLastPoseOverrideTime: (val: number) => void;
   setIsWalking: (val: boolean) => void;
   setWorldPosition: (pos: { x: number; y: number; z: number }) => void;
   setTargetPosition: (pos: { x: number; y: number; z: number } | null) => void;
@@ -44,6 +46,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isListening: false,
   emotion: 'neutral',
   basePose: 'stand',
+  lastPoseOverrideTime: 0,
   isWalking: false,
   worldPosition: { x: 0, y: -0.5, z: 0 },
   targetPosition: null,
@@ -62,6 +65,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setListening: (val) => set({ isListening: val }),
   setEmotion: (val) => set({ emotion: val }),
   setBasePose: (val) => set({ basePose: val }),
+  setLastPoseOverrideTime: (val) => set({ lastPoseOverrideTime: val }),
   setIsWalking: (val) => set({ isWalking: val }),
   setWorldPosition: (pos) => set({ worldPosition: pos }),
   setTargetPosition: (pos) => set({ targetPosition: pos }),

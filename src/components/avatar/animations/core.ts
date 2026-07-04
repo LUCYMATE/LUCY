@@ -8,7 +8,7 @@ export interface BoneRest {
   };
 }
 
-export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'sultry-sit' | 'stretch' | 'lean' | 'hip-cock' | 'body-roll' | 'spread-legs' | 'arch' | 'caress' | 'squeeze' | 'fingerwarm';
+export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'sultry-sit' | 'stretch' | 'lean' | 'hip-cock' | 'body-roll' | 'spread-legs' | 'arch' | 'caress' | 'squeeze' | 'fingerwarm' | 'flying-kiss';
 export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'thinking' | 'flirty';
 
 // The global smoothing factor (higher = faster convergence to pose)

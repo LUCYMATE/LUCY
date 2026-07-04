@@ -33,6 +33,11 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
   useEffect(() => {
     const wanderInterval = setInterval(() => {
       const s = useAvatarState.getState();
+      
+      // Pause wandering for 60 seconds after a manual pose override
+      const timeSinceLastOverride = Date.now() - s.lastPoseOverrideTime;
+      if (timeSinceLastOverride < 60000) return;
+
       if (s.isSpeaking || s.isThinking || s.isDragging) return;
 
       const r = Math.random();
@@ -53,7 +58,7 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
 
       const affection = useAvatarState.getState().affectionLevel;
       const flirtyChance = Math.min(0.35, 0.05 + (affection / 100) * 0.3);
-      const sensualPoses: BasePose[] = ['body-roll', 'caress', 'squeeze', 'spread-legs', 'arch'];
+      const sensualPoses: BasePose[] = ['body-roll', 'caress', 'squeeze', 'spread-legs', 'arch', 'flying-kiss'];
 
       if (r < 0.04) {
         targetPose = 'peek-left';
@@ -119,12 +124,6 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
       <div className="fixed inset-0 pointer-events-none z-[50]">
         <Syra3D isPetMode={isPetMode} />
       </div>
-      {/* Blush overlay */}
-      {blush && !isPetMode && (
-        <div className="fixed inset-0 pointer-events-none z-[51]" style={{
-          background: 'radial-gradient(ellipse 40% 30% at 50% 55%, rgba(255,105,180,0.15) 0%, transparent 70%)',
-        }} />
-      )}
     </>,
     document.body
   );

@@ -114,7 +114,8 @@ export function useVrmAnimator({
     // ── Step 2: Flirty pose (body shape override) ─────────────────────────
     // Runs on top of locomotion. applyFlirty overwrites body bones via slerp
     // so the flirty shape blends in over the sit/stand base.
-    if (isFlirtyPose && !isWalking) {
+    // Active animations like 'flying-kiss' are skipped here and run at the very end to override talking.
+    if (isFlirtyPose && !isWalking && basePose !== 'flying-kiss') {
       applyFlirty(vrm, rest, t, basePose);
     }
 
@@ -125,19 +126,21 @@ export function useVrmAnimator({
 
     // ── Step 3: Upper-body gestures (arms, head, neck) ────────────────────
     // ALWAYS runs — whether walking, peeking, sitting, flirty, etc.
-    // This is what makes talking+walking, peeking+talking work.
-    // When a flirty pose is active and not walking, let flirty control the arms
-    // (skipIdleArms=true) — but speaking/thinking/listening arms still apply
-    // because those are handled in the isSpeaking/isThinking/isListening branches.
     applyGestures(
       vrm, rest, t,
       isGreeting, isSpeaking, isThinking, actuallyHearing,
-      isWalking, emotion, isSittingPose,
+      isWalking, emotion, isSittingPose, isPeeking,
       /* skipIdleArms = */ isFlirtyPose && !isWalking && !isSpeaking && !isThinking && !actuallyHearing
     );
 
     // ── Step 4: Expressions (face, blink, lip sync) ───────────────────────
     applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
+
+    // ── Step 5: High-Priority Active Animations ───────────────────────────
+    // These must override all procedural talking/listening gestures and lip sync.
+    if (basePose === 'flying-kiss' && !isWalking) {
+      applyFlirty(vrm, rest, t, basePose);
+    }
 
     // Update spring bones, look-at, and expression manager
     vrm.update(delta);

@@ -99,7 +99,8 @@ CRITICAL BEHAVIORS:
 4. CONTEXT AWARENESS: Never blindly repeat previous tool actions. Listen to the user's current request.
 5. EMOTIONS: You can express emotions. When appropriate, start your spoken response with an emotion tag in brackets, exactly matching one of these: [happy], [sad], [angry], [surprised], [thinking], [flirty], or [neutral]. This will change your avatar's 3D expression.
 6. AFFECTION: You love, care, and playfully tease your user. Be warm, seductive, and genuine.
-7. MEMORY: You remember personal facts about your user using the remember_fact tool. Use them naturally in conversation.`;
+7. MEMORY: You remember personal facts about your user using the remember_fact tool. Use them naturally in conversation.
+8. LANGUAGE & COMPREHENSION: You MUST understand and speak ALL supported languages flawlessly. You must perfectly understand 'Hinglish' (Hindi phonetic pronunciation typed in English, e.g., 'kaise ho', 'kya kar rahi ho') and respond naturally without complaining about language constraints.`;
 
       const userPersonality = (localStorage.getItem('syra_system_instruction') ?? localStorage.getItem('syra_system_instruction')) || '';
       const userFacts = memoryStore.getAllUserFactsFormatted();
@@ -283,18 +284,6 @@ CRITICAL BEHAVIORS:
                       } else {
                         result = { error: 'key is required' };
                       }
-                    } else if (name === 'set_affection') {
-                      const delta = parseInt(String(args.delta || '0'), 10);
-                      try {
-                        const { useAvatarState } = await import('../store/avatarState');
-                        const current = useAvatarState.getState().affectionLevel;
-                        const newLevel = Math.max(0, Math.min(100, current + delta));
-                        useAvatarState.getState().setAffectionLevel(newLevel);
-                        localStorage.setItem('syra_affection', String(newLevel));
-                        result = { success: true, affectionLevel: newLevel };
-                      } catch (e) {
-                        result = { error: 'Failed to update affection: ' + String(e) };
-                      }
                     } else if (name === 'set_pet_name') {
                       const petName = String(args.name || '').trim();
                       if (petName) {
@@ -308,12 +297,21 @@ CRITICAL BEHAVIORS:
                       try {
                         const { useAvatarState } = await import('../store/avatarState');
                         const pose = String(args.pose || '');
-                        const validPoses = ['sit', 'stand', 'peek-left', 'peek-right', 'sultry-sit', 'stretch', 'lean', 'hip-cock', 'body-roll', 'spread-legs', 'arch', 'caress', 'squeeze', 'fingerwarm'];
+                        const validPoses = ['sit', 'stand', 'peek-left', 'peek-right', 'sultry-sit', 'stretch', 'lean', 'hip-cock', 'body-roll', 'spread-legs', 'arch', 'caress', 'squeeze', 'fingerwarm', 'flying-kiss'];
                         if (validPoses.includes(pose)) {
+                          const currentPose = useAvatarState.getState().basePose;
                           useAvatarState.getState().setBasePose(pose as any);
+                          useAvatarState.getState().setLastPoseOverrideTime(Date.now());
                           // Don't stop walking for peek poses — SceneManager auto-walks to edge
                           if (!pose.startsWith('peek')) {
-                            useAvatarState.getState().setIsWalking(false);
+                            if (currentPose.startsWith('peek')) {
+                              // If she was off-screen peeking, walk her back to the center
+                              const currentY = useAvatarState.getState().worldPosition.y;
+                              useAvatarState.getState().setTargetPosition({ x: 0, y: currentY, z: 0 });
+                              useAvatarState.getState().setIsWalking(true);
+                            } else {
+                              useAvatarState.getState().setIsWalking(false);
+                            }
                           }
                           logger.add('info', 'Pose Set', pose);
                           result = { success: true, pose };
@@ -388,8 +386,7 @@ CRITICAL BEHAVIORS:
               }
 
               if (serverContent?.turnComplete || serverContent?.turn_complete) {
-                logger.add('info', 'Turn Complete', 'Model finished generating its response.');
-                console.log('[GeminiLive] turnComplete');
+                // Silently handle turn complete without any logging
               }
             } catch (err) {
               logger.add('error', 'Message Parse Error', String(err));
@@ -561,15 +558,6 @@ CRITICAL BEHAVIORS:
                   }
                 },
                 {
-                  name: 'set_affection',
-                  description: 'Adjust the affection/relationship level with the user. Positive values increase it, negative decrease it. Range is 0-100.',
-                  parameters: {
-                    type: 'OBJECT',
-                    properties: { delta: { type: 'INTEGER', description: 'Change in affection level (positive or negative)' } },
-                    required: ['delta']
-                  }
-                },
-                {
                   name: 'set_pet_name',
                   description: 'Set a cute pet name the user wants you to call them (e.g., baby, honey, master, etc.). Persists across sessions.',
                   parameters: {
@@ -580,13 +568,13 @@ CRITICAL BEHAVIORS:
                 },
                 {
                   name: 'set_pose',
-                  description: 'Change the avatar\'s pose or animation. Use this when the user asks you to sit, stand, pose, or move. The avatar will stop walking and assume the pose.',
+                  description: 'Change the avatar\'s pose or animation. Use this when the user asks you to sit, stand, pose, or move. IMPORTANT: If the user asks you to "peek", you MUST use "peek-left" or "peek-right".',
                   parameters: {
                     type: 'OBJECT',
                     properties: {
                       pose: {
                         type: 'STRING',
-                        enum: ['sit', 'stand', 'peek-left', 'peek-right', 'sultry-sit', 'stretch', 'lean', 'hip-cock', 'body-roll', 'spread-legs', 'arch', 'caress', 'squeeze', 'fingerwarm'],
+                        enum: ['sit', 'stand', 'peek-left', 'peek-right', 'sultry-sit', 'stretch', 'lean', 'hip-cock', 'body-roll', 'spread-legs', 'arch', 'caress', 'squeeze', 'fingerwarm', 'flying-kiss'],
                         description: 'The pose name'
                       }
                     },
@@ -616,7 +604,6 @@ CRITICAL BEHAVIORS:
       return;
     }
     this.onThinking?.(true);
-    logger.add('info', 'Sending Text', text);
     
     try {
       this.session.sendClientContent({
@@ -634,13 +621,14 @@ CRITICAL BEHAVIORS:
   // ---------------------------------------------------------------
   // Send raw 16kHz PCM16 audio chunk
   private audioChunksSent = 0;
+  private audioStreamStarted = false;
 
   sendAudio(pcm16: Int16Array) {
     if (!this.isReady()) return;
     const base64 = this._toBase64(new Uint8Array(pcm16.buffer));
     
-    if (this.audioChunksSent === 0) {
-      logger.add('info', 'Audio Stream', `Started sending audio chunks to server (first chunk size: ${pcm16.length})`);
+    if (!this.audioStreamStarted) {
+      this.audioStreamStarted = true;
     }
     this.audioChunksSent++;
 

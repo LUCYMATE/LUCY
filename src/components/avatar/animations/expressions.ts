@@ -63,15 +63,15 @@ export function applyExpressions(
   vrm.expressionManager.setValue(VRMExpressionPresetName.Relaxed, 0);
 
   if (emotion === 'happy') {
-    vrm.expressionManager.setValue(VRMExpressionPresetName.Happy, 1.0);
+    vrm.expressionManager.setValue(VRMExpressionPresetName.Happy, 0.6); // Reduced from 1.0 to prevent eyes fully closing and mouth breaking
   } else if (emotion === 'angry') {
-    vrm.expressionManager.setValue(VRMExpressionPresetName.Angry, 1.0);
+    vrm.expressionManager.setValue(VRMExpressionPresetName.Angry, 0.8);
   } else if (emotion === 'sad') {
-    vrm.expressionManager.setValue(VRMExpressionPresetName.Sad, 1.0);
+    vrm.expressionManager.setValue(VRMExpressionPresetName.Sad, 0.8);
   } else if (emotion === 'surprised') {
-    vrm.expressionManager.setValue(VRMExpressionPresetName.Surprised, 1.0);
+    vrm.expressionManager.setValue(VRMExpressionPresetName.Surprised, 0.8);
   } else if (isFlirty) {
-    vrm.expressionManager.setValue(VRMExpressionPresetName.Happy, 0.8);
+    vrm.expressionManager.setValue(VRMExpressionPresetName.Happy, 0.5);
     vrm.expressionManager.setValue(VRMExpressionPresetName.Relaxed, 0.4);
   } else if (emotion === 'thinking' || isThinking) {
     vrm.expressionManager.setValue(VRMExpressionPresetName.Relaxed, 0.5);

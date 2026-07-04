@@ -123,6 +123,9 @@ export default function App() {
     const timer = setTimeout(async () => {
       try {
         await getCurrentWindow().show();
+        if (localStorage.getItem('syra_launch_pet_mode') === 'true') {
+          togglePetMode();
+        }
       } catch (e) {
         // Not running in Tauri or permission missing
       }

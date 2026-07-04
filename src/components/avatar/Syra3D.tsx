@@ -27,6 +27,95 @@ function Stool({ visible }: { visible: boolean }) {
   );
 }
 
+function FlyingKisses({ active }: { active: boolean }) {
+  const [particles, setParticles] = useState<any[]>([]);
+  const hasSpawnedRef = useRef<boolean>(false);
+
+  useFrame((state, delta) => {
+    if (active) {
+      const lastOverride = useAvatarState.getState().lastPoseOverrideTime;
+      const localTime = (Date.now() - lastOverride) / 1000.0;
+      
+      // Spawn exactly once when the hand extends at t=1.2s
+      if (localTime >= 1.2 && !hasSpawnedRef.current) {
+        setParticles([
+          { 
+            id: Math.random(), 
+            x: -0.15, 
+            y: 0, 
+            vx: -0.05, 
+            vy: 0.2, 
+            life: 1.0, 
+            scale: 0.8 
+          },
+          { 
+            id: Math.random(), 
+            x: 0.15, 
+            y: -0.1, 
+            vx: 0.05, 
+            vy: 0.15, 
+            life: 1.0, 
+            scale: 1.1 
+          }
+        ]);
+        hasSpawnedRef.current = true;
+      }
+    } else {
+      hasSpawnedRef.current = false;
+    }
+
+    if (particles.length > 0) {
+      setParticles(prev => prev.map(p => {
+        p.x += p.vx * delta;
+        p.y += p.vy * delta;
+        p.life -= delta * 0.7; // live for ~1.4 seconds
+        return p;
+      }).filter(p => p.life > 0));
+    }
+  });
+
+  if (particles.length === 0) return null;
+
+  return (
+    <group position={[0, 1.45, 0.4]}>
+      {particles.map(p => {
+        const age = 1.0 - p.life;
+        // Grow rapidly to 1.0, then slowly expand further
+        const scale = Math.min(1.0, age * 5.0) * p.scale + (age * 0.5);
+        
+        return (
+          <Html key={p.id} position={[p.x, p.y, 0]} center zIndexRange={[50, 0]}>
+            <div style={{
+              opacity: p.life > 0.4 ? 1 : p.life / 0.4, // fade out smoothly
+              transform: `scale(${scale})`,
+              pointerEvents: 'none',
+              userSelect: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <svg viewBox="0 0 32 32" style={{ 
+                width: '50px', 
+                height: '50px',
+                filter: 'drop-shadow(0px 4px 10px rgba(255, 105, 180, 0.6))'
+              }}>
+                <defs>
+                  <linearGradient id={`kissGrad-${p.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#ff8da1" />
+                    <stop offset="100%" stopColor="#ff4b72" />
+                  </linearGradient>
+                </defs>
+                <path d="M16 28.5C16 28.5 3 19.5 3 10.5C3 5.5 7.5 2 11.5 2C14 2 15.5 3.5 16 5C16.5 3.5 18 2 20.5 2C24.5 2 29 5.5 29 10.5C29 19.5 16 28.5 16 28.5Z" 
+                      fill={`url(#kissGrad-${p.id})`} />
+              </svg>
+            </div>
+          </Html>
+        );
+      })}
+    </group>
+  );
+}
+
 
 const ZOOM = 250; // 1 3D unit = 250 pixels.
 
@@ -164,12 +253,12 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
     const currentPos = useAvatarState.getState().worldPosition;
 
     if (basePose === 'peek-left') {
-      // Walk towards left edge but keep shoulder/chest visible, then lean right
-      setTargetPosition({ x: -(edgeX - 0.35), y: currentPos.y, z: currentPos.z });
+      // Walk past left edge so the body hides, then lean right brings head back on screen
+      setTargetPosition({ x: -(edgeX + 0.1), y: currentPos.y, z: currentPos.z });
       useAvatarState.getState().setIsWalking(true);
     } else if (basePose === 'peek-right') {
-      // Walk towards right edge but keep shoulder/chest visible
-      setTargetPosition({ x: (edgeX - 0.35), y: currentPos.y, z: currentPos.z });
+      // Walk past right edge
+      setTargetPosition({ x: (edgeX + 0.1), y: currentPos.y, z: currentPos.z });
       useAvatarState.getState().setIsWalking(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,7 +290,8 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
       <group scale={avatarScale} position={[0, -1.2, 0]}>
         {/* Show stool for ALL sitting poses */}
         <Stool visible={isCurrentlySitting} />
-
+        
+        <FlyingKisses active={basePose === 'flying-kiss'} />
 
         <VrmModel 
           url={wearClothes ? '/syra.vrm' : '/syranude.vrm'}

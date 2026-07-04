@@ -36,6 +36,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [connectionChanged, setConnectionChanged] = useState(false);
   const [deviceChanged, setDeviceChanged] = useState(false);
   const [wearClothes, setWearClothesLocal] = useState(() => useAvatarState.getState().wearClothes);
+  const [launchPetMode, setLaunchPetMode] = useState(() => localStorage.getItem('syra_launch_pet_mode') === 'true');
   useEffect(() => {
     async function loadDevices() {
       try {
@@ -159,6 +160,12 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
               General
             </button>
             <button
+              onClick={() => setActiveTab('persona')}
+              className={`px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 ${activeTab === 'persona' ? 'bg-white/15 text-white shadow-inner' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
+            >
+              AI Persona
+            </button>
+            <button
               onClick={() => setActiveTab('audio')}
               className={`px-4 py-3 rounded-xl text-left text-sm font-medium transition-all duration-200 ${activeTab === 'audio' ? 'bg-white/15 text-white shadow-inner' : 'text-white/60 hover:text-white hover:bg-white/5'}`}
             >
@@ -188,36 +195,26 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
         <div className="flex-1 p-8 flex flex-col overflow-y-auto bg-white/[0.02]">
           {activeTab === 'general' && (
             <div className="text-white animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
-              <h3 className="text-2xl font-semibold mb-2">Model & Persona</h3>
+              <h3 className="text-2xl font-semibold mb-2">General Settings</h3>
               
-              {/* Model Dropdown */}
+              {/* Launch in Pet Mode Toggle */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
-                <label className="block text-sm font-medium text-white mb-2">Gemini Model</label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500"
-                >
-                  <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live Preview (Recommended)</option>
-                </select>
-                <p className="text-xs text-white/40 mt-2">Choose the active backend model for spoken/text core generation.</p>
-              </div>
-
-              {/* Voice Dropdown */}
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
-                <label className="block text-sm font-medium text-white mb-2">AI Voice</label>
-                <select
-                  value={selectedVoice}
-                  onChange={(e) => handleVoiceChange(e.target.value)}
-                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
-                >
-                  <option value="Aoede">Aoede (Female - Default)</option>
-                  <option value="Kore">Kore (Female - Bright)</option>
-                  <option value="Charon">Charon (Male - Deep)</option>
-                  <option value="Fenrir">Fenrir (Male - Warm)</option>
-                  <option value="Puck">Puck (Male - Casual)</option>
-                </select>
-                <p className="text-xs text-white/40 mt-2">Select the vocal synthesis avatar voice style.</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-white">Launch in Pet Mode Default</label>
+                    <p className="text-xs text-white/40 mt-1">If enabled, the app will directly open in Pet Mode on launch and continue the previous chat session.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !launchPetMode;
+                      setLaunchPetMode(next);
+                      localStorage.setItem('syra_launch_pet_mode', String(next));
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${launchPetMode ? 'bg-pink-500' : 'bg-white/20'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${launchPetMode ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
               </div>
 
               {/* Avatar Size Slider */}
@@ -260,6 +257,42 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${wearClothes ? 'translate-x-6' : 'translate-x-0'}`} />
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'persona' && (
+            <div className="text-white animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
+              <h3 className="text-2xl font-semibold mb-2">Model & Persona</h3>
+              
+              {/* Model Dropdown */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <label className="block text-sm font-medium text-white mb-2">Gemini Model</label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500"
+                >
+                  <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live Preview (Recommended)</option>
+                </select>
+                <p className="text-xs text-white/40 mt-2">Choose the active backend model for spoken/text core generation.</p>
+              </div>
+
+              {/* Voice Dropdown */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <label className="block text-sm font-medium text-white mb-2">AI Voice</label>
+                <select
+                  value={selectedVoice}
+                  onChange={(e) => handleVoiceChange(e.target.value)}
+                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
+                >
+                  <option value="Aoede">Aoede (Female - Default)</option>
+                  <option value="Kore">Kore (Female - Bright)</option>
+                  <option value="Charon">Charon (Male - Deep)</option>
+                  <option value="Fenrir">Fenrir (Male - Warm)</option>
+                  <option value="Puck">Puck (Male - Casual)</option>
+                </select>
+                <p className="text-xs text-white/40 mt-2">Select the vocal synthesis avatar voice style.</p>
               </div>
 
               {/* Personality Textarea */}
