@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { VRM } from '@pixiv/three-vrm';
-import * as THREE from 'three';
 import { useAvatarState } from '../../../lib/store/avatarState';
 import { BoneRest, BONE_LIST, BasePose, Emotion } from './core';
 import { applyLocomotion } from './locomotion';
 import { applyGestures } from './gestures';
 import { applyPeek } from './peek';
 import { applyExpressions } from './expressions';
+import { applyFlirty, applyFlirtyIdleSway } from './flirty';
 
 function lerpAngle(a: number, b: number, t: number) {
   const dt = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -22,7 +22,7 @@ interface AnimatorProps {
   basePose: BasePose;
   isWalking: boolean;
   emotion: Emotion;
-  moveDirection: number; // -1 for left, 1 for right, 0 for stationary/forward
+  moveDirection: number;
 }
 
 export function useVrmAnimator({
@@ -36,15 +36,11 @@ export function useVrmAnimator({
   moveDirection,
 }: AnimatorProps) {
   const restPose = useRef<BoneRest>({});
-  
-  // Internal state machine for specific animations
   const [isGreeting, setIsGreeting] = useState(true);
 
-  // 1. Capture initial rest pose when VRM loads
+  // 1. Capture initial rest pose
   useEffect(() => {
     if (!vrm) return;
-    
-    // Reset to T/A-pose first
     vrm.humanoid.resetNormalizedPose();
 
     const snap: BoneRest = {};
@@ -59,77 +55,91 @@ export function useVrmAnimator({
     }
     restPose.current = snap;
 
-    // Trigger greeting animation for 3 seconds on load
     setIsGreeting(true);
     const greetingTimer = setTimeout(() => setIsGreeting(false), 3000);
-
     return () => clearTimeout(greetingTimer);
   }, [vrm]);
 
-  // 2. No more internal peek phase needed; we wait for walking to finish
-
-
-  // 3. The Main Animation Loop
+  // 2. UNIFIED animation loop — everything runs every frame, no if/else branching.
+  //    Each function writes to bones via slerp, so they all blend naturally.
+  //    Order matters: later writes have higher priority because slerp blends
+  //    from the current (already-written) value toward the new target.
+  //
+  //    Order:
+  //      1. Locomotion (sit/stand/walk body + legs)
+  //      2. Pose overrides (peek / flirty — body shape)
+  //      3. Gestures (arms + head — speaking, thinking, listening, idle, greeting)
+  //      4. Expressions (face, lip sync, blink)
+  //
+  //    Because gestures run AFTER locomotion/pose, the talking arms blend
+  //    on top of whatever body position is set — so you get walking+talking,
+  //    peeking+talking, flirty+talking, moving+listening, all at once.
+  //
   useFrame((state) => {
     if (!vrm) return;
-    
-    if (useAvatarState.getState().isDragging) {
-      if (vrm.springBoneManager) {
-        vrm.springBoneManager.reset();
-      }
-    }
 
     const delta = state.clock.getDelta();
-    vrm.update(delta);
-
     const t = state.clock.elapsedTime;
     const rest = restPose.current;
-    
-    // Determine overall state overrides
-    const actualIsWalking = isWalking;
-    const isSitting = basePose === 'sit';
-    const isPeeking = basePose.startsWith('peek') && !isWalking;
+
+    const isSittingPose = basePose === 'sit' || basePose === 'sultry-sit' || basePose === 'fingerwarm';
+    const isPeeking  = basePose.startsWith('peek') && !isWalking;
     const isPeekLeft = basePose === 'peek-left';
-    
+    const isFlirtyPose =
+      basePose === 'sultry-sit' || basePose === 'stretch' || basePose === 'lean' ||
+      basePose === 'hip-cock'   || basePose === 'body-roll'|| basePose === 'spread-legs' ||
+      basePose === 'arch'       || basePose === 'caress'   || basePose === 'squeeze' ||
+      basePose === 'fingerwarm';
+
     const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
 
-    // Model Rotation: moveDirection is now the exact targetRotationY in radians
+    // ── Model facing ──────────────────────────────────────────────────────
     if (vrm.scene) {
       vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, moveDirection, 0.1);
     }
 
+    // ── Step 1: Body / locomotion (hips, spine, legs) ─────────────────────
+    // Peek and locomotion are mutually exclusive for the BODY only,
+    // because peek physically repositions the whole skeleton.
     if (isPeeking) {
-      // Run peek sequence (overrides locomotion and some gestures)
       applyPeek(vrm, rest, t, isPeekLeft);
-      
-      // Still apply expressions
-      applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
     } else {
-      // Normal locomotion (walk/sit/stand)
-      applyLocomotion(vrm, rest, t, actualIsWalking, isSitting);
-      
-      // Normal upper body gestures
-      applyGestures(vrm, rest, t, isGreeting, isSpeaking, isThinking, actuallyHearing, actualIsWalking, emotion, isSitting);
-      
-      // Facial expressions and lip sync
-      applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
+      applyLocomotion(
+        vrm, rest, t,
+        isWalking, isSittingPose,
+        basePose === 'hip-cock' ? 'hip-cock' : undefined
+      );
     }
 
-    // Auto Blink Logic (Blink roughly every 4 seconds)
-    const blinkCycle = t % 4.0;
-    let blinkValue = 0;
-    if (blinkCycle < 0.1) {
-      // Quick blink down
-      blinkValue = blinkCycle / 0.1;
-    } else if (blinkCycle < 0.2) {
-      // Quick blink up
-      blinkValue = 1.0 - ((blinkCycle - 0.1) / 0.1);
+    // ── Step 2: Flirty pose (body shape override) ─────────────────────────
+    // Runs on top of locomotion. applyFlirty overwrites body bones via slerp
+    // so the flirty shape blends in over the sit/stand base.
+    if (isFlirtyPose && !isWalking) {
+      applyFlirty(vrm, rest, t, basePose);
     }
-    
-    // Only apply blink if we aren't already expressing something that overrides eyes (like happy/sad)
-    // Actually, VRM expressions blend nicely, so we can always apply blink
-    if (vrm.expressionManager) {
-      vrm.expressionManager.setValue('blink', blinkValue);
+
+    // Flirty idle sway (subtle body rock when emotion is flirty but no active pose)
+    if (!isSpeaking && !isThinking && !isWalking && emotion === 'flirty' && !isFlirtyPose && !isPeeking) {
+      applyFlirtyIdleSway(vrm, rest, t);
     }
+
+    // ── Step 3: Upper-body gestures (arms, head, neck) ────────────────────
+    // ALWAYS runs — whether walking, peeking, sitting, flirty, etc.
+    // This is what makes talking+walking, peeking+talking work.
+    // When a flirty pose is active and not walking, let flirty control the arms
+    // (skipIdleArms=true) — but speaking/thinking/listening arms still apply
+    // because those are handled in the isSpeaking/isThinking/isListening branches.
+    applyGestures(
+      vrm, rest, t,
+      isGreeting, isSpeaking, isThinking, actuallyHearing,
+      isWalking, emotion, isSittingPose,
+      /* skipIdleArms = */ isFlirtyPose && !isWalking && !isSpeaking && !isThinking && !actuallyHearing
+    );
+
+    // ── Step 4: Expressions (face, blink, lip sync) ───────────────────────
+    applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
+
+    // Update spring bones, look-at, and expression manager
+    vrm.update(delta);
   });
 }

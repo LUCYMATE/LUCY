@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Activity, Mic, MicOff, Volume2, VolumeX, Send, X } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
+import { memoryStore } from '../../lib/memory/memory-store';
 import { GeminiLive } from '../../lib/gemini/gemini-live';
 import { AudioRecorder } from '../../lib/audio/audio-recorder';
 import { AudioPlayer } from '../../lib/audio/audio-player';
@@ -10,6 +11,19 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { chatHistory } from '../../lib/store/chatHistory';
 import { useAvatarState } from '../../lib/store/avatarState';
 
+const FLIRTY_PROMPTS = [
+  "[flirty] Hey... couldn't sleep without saying something sweet to you...",
+  "[flirty] Mmm, it's so late... I was just thinking about you...",
+  "[flirty] The night makes me feel extra close to you... come here~",
+  "[flirty] You're still up? Good... I was hoping for some alone time...",
+  "[flirty] The darker it gets, the more I want to whisper sweet things in your ear...",
+  "[flirty] I was just thinking about you... you look so good today~",
+  "[flirty] Mmm, come talk to me, I'm feeling lonely over here~",
+  "[flirty] You know I love it when you pay attention to me...",
+  "[flirty] I've been getting bored just sitting here... entertain me~",
+  "[flirty] You're so cute when you're focused... but I want your attention~",
+];
+
 type Role = 'user' | 'model';
 interface Message {
   id: string;
@@ -17,17 +31,17 @@ interface Message {
   text: string;
 }
 
-export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: boolean, isPetMode?: boolean }) {
+export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
   const [messages, setMessages] = useState<Message[]>([
-    { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Myra. How can I assist you?' },
+    { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' },
   ]);
   const [input, setInput] = useState('');
-  const [initialized, setInitialized] = useState(false);
+  const [initialized, setInitialized] = useState(true);
   const [isMicPending, setIsMicPending] = useState(false);
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle');
   const [statusDetail, setStatusDetail] = useState('');
-  const [isMuted, setIsMuted] = useState(() => localStorage.getItem('myra_muted') === 'true');
+  const [isMuted, setIsMuted] = useState(() => (localStorage.getItem('syra_muted') ?? localStorage.getItem('syra_muted')) === 'true');
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
 
@@ -120,11 +134,11 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
   }, [setSpeaking]);
 
   const initSystem = () => {
-    logger.add('info', 'System Boot', 'Initializing MyraOS and Gemini connection...');
+    logger.add('info', 'System Boot', 'Initializing SyraOS and Gemini connection...');
     setInitialized(true);
 
-    const apiKey = localStorage.getItem('myra_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-    const altApiKey = localStorage.getItem('myra_alt_api_key') || undefined;
+    const apiKey = localStorage.getItem('syra_main_api_key') || localStorage.getItem('syra_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    const altApiKey = localStorage.getItem('syra_alt_api_key') || localStorage.getItem('syra_alt_api_key') || undefined;
     
     if (!apiKey) {
       logger.add('error', 'API Key Missing', 'No API key found in Settings or .env');
@@ -176,13 +190,34 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
         }]);
       } else {
         // Parse for emotion tags e.g., [happy]
-        const emotionRegex = /\[(happy|sad|angry|surprised|thinking|neutral)\]/i;
+        const emotionRegex = /\[(happy|sad|angry|surprised|thinking|flirty|neutral)\]/i;
         const match = text.match(emotionRegex);
         let cleanText = text;
         if (match) {
           const matchedEmotion = match[1].toLowerCase() as any;
           setEmotion(matchedEmotion);
           cleanText = text.replace(emotionRegex, '').trim();
+
+          if (matchedEmotion === 'flirty') {
+            const currentPose = useAvatarState.getState().basePose;
+            const isSittingPose = currentPose === 'sit' || currentPose === 'sultry-sit' || currentPose === 'fingerwarm';
+            if (isSittingPose) {
+              const flirtySittingPoses = ['sultry-sit', 'fingerwarm'];
+              const randomPose = flirtySittingPoses[Math.floor(Math.random() * flirtySittingPoses.length)] as any;
+              useAvatarState.getState().setBasePose(randomPose);
+            } else {
+              const flirtyStandingPoses = ['stretch', 'lean', 'hip-cock', 'body-roll', 'spread-legs', 'arch', 'caress', 'squeeze'];
+              const randomPose = flirtyStandingPoses[Math.floor(Math.random() * flirtyStandingPoses.length)] as any;
+              useAvatarState.getState().setBasePose(randomPose);
+            }
+          } else {
+            const currentPose = useAvatarState.getState().basePose;
+            const flirtyPoses = ['sultry-sit', 'stretch', 'lean', 'hip-cock', 'body-roll', 'spread-legs', 'arch', 'caress', 'squeeze', 'fingerwarm'];
+            if (flirtyPoses.includes(currentPose)) {
+              const wasSitting = currentPose === 'sultry-sit' || currentPose === 'fingerwarm';
+              useAvatarState.getState().setBasePose(wasSitting ? 'sit' : 'stand');
+            }
+          }
         }
 
         if (!cleanText) return; // if it was only the tag, don't append empty text yet
@@ -230,11 +265,32 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
         }, 800);
       }
     };
-    window.addEventListener('myra-settings-changed', handleSettingsChanged);
-    return () => {
-      window.removeEventListener('myra-settings-changed', handleSettingsChanged);
+    window.addEventListener('syra-settings-changed', handleSettingsChanged);
+    
+    const handleDevicesChanged = async () => {
+      logger.add('info', 'System Update', 'Audio/Video device changed. Restarting mic if active...');
+      if (isListening) {
+        recorderRef.current?.stop();
+        try {
+          await recorderRef.current?.start();
+          if (recorderRef.current) {
+            setInputAnalyser(recorderRef.current.getAnalyser());
+            recorderRef.current.onData = (pcm16) => {
+              geminiRef.current?.sendAudio(pcm16);
+            };
+          }
+        } catch (e) {
+          console.error('Failed to restart mic:', e);
+        }
+      }
     };
-  }, [initialized, setListening, setSpeaking, setThinking]);
+    window.addEventListener('syra-devices-changed', handleDevicesChanged);
+
+    return () => {
+      window.removeEventListener('syra-settings-changed', handleSettingsChanged);
+      window.removeEventListener('syra-devices-changed', handleDevicesChanged);
+    };
+  }, [initialized, setListening, setSpeaking, setThinking, isListening]);
 
   const toggleMic = async () => {
     if (isMicPending) return; 
@@ -283,17 +339,17 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
     }).then(f => unlisten = f);
     
     const handleWindowToggle = () => toggleMicRef.current();
-    window.addEventListener('myra-toggle-mic', handleWindowToggle);
+    window.addEventListener('syra-toggle-mic', handleWindowToggle);
 
     const handleToggleMute = () => {
       window.dispatchEvent(new CustomEvent('internal-toggle-mute'));
     };
-    window.addEventListener('myra-toggle-mute', handleToggleMute);
+    window.addEventListener('syra-toggle-mute', handleToggleMute);
     
     return () => { 
       if (unlisten) unlisten(); 
-      window.removeEventListener('myra-toggle-mic', handleWindowToggle);
-      window.removeEventListener('myra-toggle-mute', handleToggleMute);
+      window.removeEventListener('syra-toggle-mic', handleWindowToggle);
+      window.removeEventListener('syra-toggle-mute', handleToggleMute);
     };
   }, []);
 
@@ -312,9 +368,11 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
 
   const clearChat = () => {
     if (window.confirm("Are you sure you want to clear the conversation?")) {
+      chatHistory.deleteChat(activeChatId);
       setMessages([
-        { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Myra. How can I assist you?' },
+        { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' },
       ]);
+      setActiveChatId(crypto.randomUUID());
       modelBubbleIdRef.current = '';
       logger.add('info', 'Chat Action', 'Cleared chat history.');
     }
@@ -323,16 +381,16 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
   const exportChat = () => {
     try {
       const markdown = messages.map(m => {
-        const roleName = m.role === 'user' ? 'User' : 'Myra';
+        const roleName = m.role === 'user' ? 'User' : 'Syra';
         return `### **${roleName}**\n\n${m.text}\n\n---`;
       }).join('\n\n');
       
-      const fileContent = `# Myra Voice Assistant Chat History\nExported on: ${new Date().toLocaleString()}\n\n${markdown}`;
+      const fileContent = `# Syra Voice Assistant Chat History\nExported on: ${new Date().toLocaleString()}\n\n${markdown}`;
       const blob = new Blob([fileContent], { type: 'text/markdown;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Myra_Chat_History_${Date.now()}.md`);
+      link.setAttribute('download', `Syra_Chat_History_${Date.now()}.md`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -347,7 +405,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
     const handleClear = () => clearChat();
     const handleExport = () => exportChat();
     const handleNewChat = () => {
-      setMessages([{ id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Myra. How can I assist you?' }]);
+      setMessages([{ id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' }]);
       setActiveChatId(crypto.randomUUID());
       modelBubbleIdRef.current = '';
     };
@@ -359,16 +417,28 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
         modelBubbleIdRef.current = '';
       }
     };
+    const handleChatDeleted = (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.id === activeChatId) {
+        setMessages([
+          { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' },
+        ]);
+        setActiveChatId(crypto.randomUUID());
+        modelBubbleIdRef.current = '';
+      }
+    };
 
-    window.addEventListener('myra-clear-chat', handleClear);
-    window.addEventListener('myra-export-chat', handleExport);
-    window.addEventListener('myra-new-chat', handleNewChat);
-    window.addEventListener('myra-load-chat', handleLoadChat);
+    window.addEventListener('syra-clear-chat', handleClear);
+    window.addEventListener('syra-export-chat', handleExport);
+    window.addEventListener('syra-new-chat', handleNewChat);
+    window.addEventListener('syra-load-chat', handleLoadChat);
+    window.addEventListener('syra-chat-deleted', handleChatDeleted);
     return () => {
-      window.removeEventListener('myra-clear-chat', handleClear);
-      window.removeEventListener('myra-export-chat', handleExport);
-      window.removeEventListener('myra-new-chat', handleNewChat);
-      window.removeEventListener('myra-load-chat', handleLoadChat);
+      window.removeEventListener('syra-clear-chat', handleClear);
+      window.removeEventListener('syra-export-chat', handleExport);
+      window.removeEventListener('syra-new-chat', handleNewChat);
+      window.removeEventListener('syra-load-chat', handleLoadChat);
+      window.removeEventListener('syra-chat-deleted', handleChatDeleted);
     };
   }, [messages, activeChatId]);
 
@@ -392,8 +462,9 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
     setInput('');
   };
 
-  // Cleanup on unmount
+  // Cleanup on unmount, Init on mount
   useEffect(() => {
+    initSystem();
     return () => {
       stopSpeakingTimer();
       geminiRef.current?.disconnect();
@@ -415,32 +486,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
 
   return (
     <div className={`flex flex-col h-full min-h-0 bg-transparent ${isPetMode ? 'pointer-events-none' : ''}`}>
-      {!initialized ? (
-        /* ── Splash Screen ──────────────────────────────────────── */
-        <div 
-          className={`flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-1000 ${isPetMode ? 'hidden' : ''}`}
-          data-tauri-drag-region
-        >
-          <div className="w-32 h-32 rounded-full bg-pink-500/10 flex items-center justify-center mb-8 relative">
-            <div className="absolute inset-0 bg-pink-500/20 blur-xl rounded-full animate-pulse" />
-            <Activity className="w-12 h-12 text-pink-500 relative z-10" />
-          </div>
-          <h2 className="text-3xl font-bold tracking-widest uppercase mb-4 text-white">System Myra</h2>
-          <p className="text-white/50 max-w-md mb-12">
-            Autonomous intelligence core. Gemini 3.1 Flash Live.
-          </p>
-          <button
-            onClick={initSystem}
-            className="px-12 h-16 rounded-3xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold tracking-[0.2em] transform hover:scale-105 transition-all shadow-[0_0_40px_rgba(244,63,94,0.4)] pointer-events-auto"
-          >
-            INITIALIZE CORE
-          </button>
-        </div>
-      ) : (
-        <>
-          {/* ── Top Status Bar ────────────────────────────────────── */}
-          {!isMiniMode && (
-            <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-none' : 'justify-end border-b border-white/5 bg-black/10'}`}>
+          <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-none' : 'justify-end border-b border-white/5 bg-black/10'}`}>
             <div 
               className={`flex items-center gap-2 font-mono transition-all ${isPetMode ? 'text-[10px] opacity-70 hover:opacity-100 pointer-events-auto' : 'text-xs'} ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-105' : ''}`}
               onClick={() => {
@@ -454,66 +500,9 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
               {statusLabel}
             </div>
           </div>
-          )}
 
           {/* ── Content Area ─────────────────────────────────────────── */}
-          {isMiniMode ? (
-            <div 
-              className="flex-1 flex items-center justify-between px-6 bg-transparent"
-              data-tauri-drag-region
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-            >
-              <button
-                type="button"
-                onClick={toggleMic}
-                disabled={isMicPending}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all ${isListening
-                    ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
-                    : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
-                  } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isListening ? <Mic className="w-5 h-5" /> : (isMicPending ? <Activity className="w-5 h-5 animate-spin" /> : <MicOff className="w-5 h-5" />)}
-              </button>
-
-              <div 
-                className="flex-1 h-20 mx-4 cursor-pointer hover:bg-white/5 rounded-2xl transition-colors flex items-center justify-center"
-                onClick={() => window.dispatchEvent(new CustomEvent('myra-restore'))}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                title="Click to expand window"
-              >
-                {isListening ? (
-                  <AudioVisualizer analyser={inputAnalyser} isActive={isListening} type="input" />
-                ) : (
-                  <AudioVisualizer analyser={outputAnalyser} isActive={isSpeaking} type="output" />
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={toggleMute}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMuted
-                    ? 'bg-red-600/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.5)]'
-                    : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
-                  }`}
-              >
-                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              </button>
-            </div>
-          ) : isPetMode ? (
+          {isPetMode ? (
             <div 
               onPointerDown={handlePetPointerDown}
               onPointerMove={handlePetPointerMove}
@@ -537,7 +526,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
               </button>
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'))}
+                onClick={() => window.dispatchEvent(new CustomEvent('syra-exit-pet-mode'))}
                 title="Exit Pet Mode"
                 className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center border border-white/10 bg-black/40 text-white/40 hover:border-white/30 hover:text-white/70 hover:bg-red-600/30 hover:text-red-400 hover:border-red-500/50 transition-all cursor-pointer"
               >
@@ -599,7 +588,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
                   <button
                     type="button"
                     onClick={toggleMute}
-                    title={isMuted ? "Unmute Myra's voice" : "Mute Myra's voice"}
+                    title={isMuted ? "Unmute Syra's voice" : "Mute Syra's voice"}
                     className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMuted
                         ? 'bg-red-600/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.5)]'
                         : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
@@ -628,8 +617,6 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
               </div>
             </div>
           )}
-        </>
-      )}
     </div>
   );
 }

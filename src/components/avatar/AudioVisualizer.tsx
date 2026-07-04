@@ -4,7 +4,7 @@ import { useAvatarState } from '../../lib/store/avatarState';
 interface AudioVisualizerProps {
   analyser: AnalyserNode | null;
   isActive: boolean;
-  type: 'input' | 'output'; // input is mic (pink/purple), output is Myra speaking (blue/pink)
+  type: 'input' | 'output'; // input is mic (pink/purple), output is Syra speaking (blue/pink)
 }
 
 export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerProps) {

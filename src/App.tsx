@@ -1,4 +1,4 @@
-import { MyraOS } from './components/layout/MyraOS';
+import { SyraOS } from './components/layout/SyraOS';
 import { Sidebar } from './components/layout/Sidebar';
 import { TitleBar } from './components/layout/TitleBar';
 import { Minus, Square, X, Menu } from 'lucide-react';
@@ -8,13 +8,11 @@ import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
 
 export default function App() {
-  const [isMiniMode, setIsMiniMode] = useState(false);
   const [isPetMode, setIsPetMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const normalSizeRef = useRef<{width: number, height: number} | null>(null);
   const normalPosRef = useRef<{x: number, y: number} | null>(null);
-  const miniPosRef = useRef<{x: number, y: number} | null>(null);
   const petModePosRef = useRef<{x: number, y: number} | null>(null);
 
   const restoreWindow = async () => {
@@ -24,15 +22,7 @@ export default function App() {
     try {
       const win = getCurrentWindow();
       
-      // Save mini mode position before restoring
-      try {
-        const pos = await win.outerPosition();
-        const factor = await win.scaleFactor();
-        const logicalPos = pos.toLogical(factor);
-        miniPosRef.current = { x: logicalPos.x, y: logicalPos.y };
-      } catch (e) {
-        console.warn("Could not save mini position", e);
-      }
+
 
       await safe(win.setMaxSize(null));
       await safe(win.setAlwaysOnTop(false));
@@ -55,11 +45,9 @@ export default function App() {
       }
 
       await safe(win.setMinSize(new LogicalSize(800, 600)));
-      setIsMiniMode(false);
       setIsPetMode(false);
     } catch (e) {
       console.warn("Fallback: window api totally failed", e);
-      setIsMiniMode(false); 
       setIsPetMode(false);
     }
   };
@@ -106,7 +94,6 @@ export default function App() {
         await safe(win.setIgnoreCursorEvents(true));
 
         setIsPetMode(true);
-        setIsMiniMode(false);
       } else {
         await restoreWindow();
       }
@@ -149,13 +136,13 @@ export default function App() {
       restoreWindow();
     };
     
-    window.addEventListener('myra-restore', onRestore);
-    window.addEventListener('myra-exit-pet-mode', onExitPetMode);
+    window.addEventListener('syra-restore', onRestore);
+    window.addEventListener('syra-exit-pet-mode', onExitPetMode);
 
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('myra-restore', onRestore);
-      window.removeEventListener('myra-exit-pet-mode', onExitPetMode);
+      window.removeEventListener('syra-restore', onRestore);
+      window.removeEventListener('syra-exit-pet-mode', onExitPetMode);
     };
   }, []);
 
@@ -220,13 +207,13 @@ export default function App() {
     const setupShortcuts = async () => {
       try {
         await register('CommandOrControl+Shift+M', () => {
-          window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
+          window.dispatchEvent(new CustomEvent('syra-toggle-mic'));
         });
         await register('CommandOrControl+Shift+X', () => {
-          window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
+          window.dispatchEvent(new CustomEvent('syra-exit-pet-mode'));
         });
         await register('CommandOrControl+Shift+S', () => {
-          window.dispatchEvent(new CustomEvent('myra-toggle-mute'));
+          window.dispatchEvent(new CustomEvent('syra-toggle-mute'));
         });
       } catch (e) {
         console.warn('Failed to register global shortcuts', e);
@@ -244,12 +231,11 @@ export default function App() {
   return (
     <div 
       className={`h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col ${isPetMode ? 'bg-transparent' : 'bg-[#020617]'}`}
-      data-tauri-drag-region={isMiniMode ? true : undefined}
     >
-      {!isPetMode && <div className="mesh-bg" data-tauri-drag-region={isMiniMode ? true : undefined}></div>}
+      {!isPetMode && <div className="mesh-bg"></div>}
       
       {/* Custom Titlebar */}
-      {!isMiniMode && !isPetMode && (
+      {!isPetMode && (
         <TitleBar 
           onOpenMenu={() => setSidebarOpen(true)}
           onMinimize={minimize}
@@ -260,12 +246,12 @@ export default function App() {
       )}
 
       {/* ── Sliding Sidebar Overlay ── */}
-      {!isMiniMode && !isPetMode && sidebarOpen && (
+      {!isPetMode && sidebarOpen && (
         <Sidebar onClose={() => setSidebarOpen(false)} />
       )}
 
-      <div className="flex-1 relative flex min-h-0" data-tauri-drag-region={isMiniMode ? true : undefined}>
-        <MyraOS isMiniMode={isMiniMode} isPetMode={isPetMode} />
+      <div className="flex-1 relative flex min-h-0">
+        <SyraOS isPetMode={isPetMode} />
       </div>
     </div>
   );

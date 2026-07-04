@@ -2892,29 +2892,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "myra"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "cpal",
- "enigo",
- "image 0.25.10",
- "lazy_static",
- "log",
- "screenshots",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-http",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "tauri-plugin-shell",
-]
-
-[[package]]
 name = "ndk"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4848,6 +4825,29 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
+]
+
+[[package]]
+name = "syra"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "cpal",
+ "enigo",
+ "image 0.25.10",
+ "lazy_static",
+ "log",
+ "screenshots",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-http",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "tauri-plugin-shell",
 ]
 
 [[package]]

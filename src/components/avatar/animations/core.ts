@@ -8,11 +8,20 @@ export interface BoneRest {
   };
 }
 
-export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right';
-export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'thinking';
+export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'sultry-sit' | 'stretch' | 'lean' | 'hip-cock' | 'body-roll' | 'spread-legs' | 'arch' | 'caress' | 'squeeze' | 'fingerwarm';
+export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'thinking' | 'flirty';
 
-// The global smoothing factor
-export const SMOOTHING = 0.07;
+// The global smoothing factor (higher = faster convergence to pose)
+export const SMOOTHING = 0.12;
+
+// Finger joint names for bending
+export const FINGER_JOINTS = [
+  'Proximal', 'Intermediate', 'Distal'
+] as const;
+
+export const FINGER_NAMES = [
+  'Thumb', 'Index', 'Middle', 'Ring', 'Little'
+] as const;
 
 /**
  * Slerp a bone's rotation toward a target that is: rest * delta(dx,dy,dz)

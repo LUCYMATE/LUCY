@@ -11,7 +11,8 @@ export function applyGestures(
   isListening: boolean,
   isWalking: boolean,
   emotion: Emotion,
-  isSitting: boolean
+  isSitting: boolean,
+  skipIdleArms = false
 ) {
   const fr = (name: VRMHumanBoneName, dx: number, dy: number, dz: number, alpha = SMOOTHING) =>
     slerpFromRest(vrm.humanoid?.getNormalizedBoneNode(name), rest[name]?.quaternion, dx, dy, dz, alpha);
@@ -71,22 +72,34 @@ export function applyGestures(
     const wristR   = Math.sin(g * 1.8)   * 0.35;
     const rise     = Math.abs(Math.sin(g * 0.7)) * 0.50 * swingMult;
 
-    // Head while speaking
-    fr(VRMHumanBoneName.Neck, 0.04, Math.cos(t * 1.8) * 0.05, 0, SMOOTHING);
-    fr(VRMHumanBoneName.Head,
-      Math.sin(t * 2.2) * 0.12 * headTilt,
-      Math.cos(t * 1.6) * 0.14 * headTilt,
-      Math.sin(t * 1.1) * 0.05 * headTilt,
-      SMOOTHING);
-
-    // Arms
-    fr(VRMHumanBoneName.RightUpperArm,  rArmBase.x + rise, rArmBase.y + swing, rArmBase.z + 0.4, SMOOTHING);
-    fr(VRMHumanBoneName.RightLowerArm,  rElbowBase.x, rElbowBase.y + elbowR, rElbowBase.z, SMOOTHING);
-    fr(VRMHumanBoneName.RightHand,      rHandBase.x + wristR, rHandBase.y, rHandBase.z, SMOOTHING);
-
-    fr(VRMHumanBoneName.LeftUpperArm,   lArmBase.x, lArmBase.y + counter, lArmBase.z, SMOOTHING);
-    fr(VRMHumanBoneName.LeftLowerArm,   lElbowBase.x, lElbowBase.y - elbowL, lElbowBase.z, SMOOTHING);
-    fr(VRMHumanBoneName.LeftHand,       lHandBase.x, lHandBase.y, lHandBase.z, SMOOTHING);
+    if (emotion === 'flirty') {
+      const hairFlip = Math.sin(g * 0.5) * 0.4;
+      fr(VRMHumanBoneName.Neck, 0.02, 0.15 * hairFlip, 0, SMOOTHING);
+      fr(VRMHumanBoneName.Head,
+        Math.sin(t * 1.5) * 0.08,
+        0.2 * hairFlip + Math.cos(t * 1.0) * 0.06,
+        Math.sin(t * 0.8) * 0.04,
+        SMOOTHING);
+      fr(VRMHumanBoneName.RightUpperArm,  rArmBase.x + rise - 0.2, rArmBase.y + swing + 0.3, rArmBase.z + 0.2, SMOOTHING);
+      fr(VRMHumanBoneName.RightLowerArm,  rElbowBase.x, rElbowBase.y + elbowR + 0.5, rElbowBase.z, SMOOTHING);
+      fr(VRMHumanBoneName.RightHand,      rHandBase.x + wristR + 0.1, rHandBase.y, rHandBase.z, SMOOTHING);
+      fr(VRMHumanBoneName.LeftUpperArm,   lArmBase.x + 0.1, lArmBase.y + counter - 0.2, lArmBase.z - 0.3, SMOOTHING);
+      fr(VRMHumanBoneName.LeftLowerArm,   lElbowBase.x, lElbowBase.y - elbowL - 0.3, lElbowBase.z, SMOOTHING);
+      fr(VRMHumanBoneName.LeftHand,       lHandBase.x + 0.2, lHandBase.y, lHandBase.z - 0.2, SMOOTHING);
+    } else {
+      fr(VRMHumanBoneName.Neck, 0.04, Math.cos(t * 1.8) * 0.05, 0, SMOOTHING);
+      fr(VRMHumanBoneName.Head,
+        Math.sin(t * 2.2) * 0.12 * headTilt,
+        Math.cos(t * 1.6) * 0.14 * headTilt,
+        Math.sin(t * 1.1) * 0.05 * headTilt,
+        SMOOTHING);
+      fr(VRMHumanBoneName.RightUpperArm,  rArmBase.x + rise, rArmBase.y + swing, rArmBase.z + 0.4, SMOOTHING);
+      fr(VRMHumanBoneName.RightLowerArm,  rElbowBase.x, rElbowBase.y + elbowR, rElbowBase.z, SMOOTHING);
+      fr(VRMHumanBoneName.RightHand,      rHandBase.x + wristR, rHandBase.y, rHandBase.z, SMOOTHING);
+      fr(VRMHumanBoneName.LeftUpperArm,   lArmBase.x, lArmBase.y + counter, lArmBase.z, SMOOTHING);
+      fr(VRMHumanBoneName.LeftLowerArm,   lElbowBase.x, lElbowBase.y - elbowL, lElbowBase.z, SMOOTHING);
+      fr(VRMHumanBoneName.LeftHand,       lHandBase.x, lHandBase.y, lHandBase.z, SMOOTHING);
+    }
 
   } else if (isThinking) {
     fr(VRMHumanBoneName.Neck, 0, 0.1, 0, SMOOTHING * 0.5);
@@ -127,41 +140,44 @@ export function applyGestures(
       0,
       SMOOTHING * 0.35);
 
-    if (isWalking) {
-      // Arms swing while walking (opposite to legs)
-      const walkSpeed = 6.0;
-      const wt = t * walkSpeed;
-      const armSwing = 0.3;
-      // Right arm swings with left leg
-      fr(VRMHumanBoneName.RightUpperArm, -Math.sin(wt) * armSwing, 0, -1.0, 0.2);
-      fr(VRMHumanBoneName.RightLowerArm, 0, 0.5, 0, 0.2);
-      // Left arm swings with right leg
-      fr(VRMHumanBoneName.LeftUpperArm, -Math.sin(wt + Math.PI) * armSwing, 0, 1.0, 0.2);
-      fr(VRMHumanBoneName.LeftLowerArm, 0, -0.5, 0, 0.2);
-    } else {
-      // Calculate slow random sways
-      const idleArmSwayX = Math.sin(t * 0.7) * 0.03;
-      const idleArmSwayZ = Math.cos(t * 0.5) * 0.05;
-      const elbowSway = Math.sin(t * 0.9) * 0.04;
-
-      if (isSitting) {
-        // Hands resting on lap (arms perfectly vertical & pulled tightly inward, elbows bent less)
-        fr(VRMHumanBoneName.RightUpperArm, 0 + idleArmSwayX, 0, -1.5 + idleArmSwayZ, SMOOTHING * 0.4);
-        fr(VRMHumanBoneName.RightLowerArm, 0, 0.9 + elbowSway, 0, SMOOTHING * 0.4);
-        fr(VRMHumanBoneName.RightHand, -0.2, 0, 0, SMOOTHING * 0.4);
-
-        fr(VRMHumanBoneName.LeftUpperArm, 0 + idleArmSwayX, 0, 1.5 - idleArmSwayZ, SMOOTHING * 0.4);
-        fr(VRMHumanBoneName.LeftLowerArm, 0, -0.9 - elbowSway, 0, SMOOTHING * 0.4);
-        fr(VRMHumanBoneName.LeftHand, -0.2, 0, 0, SMOOTHING * 0.4);
+    // When a flirty pose is active, let applyFlirty control the arms
+    if (!skipIdleArms) {
+      if (isWalking) {
+        // Arms swing while walking (opposite to legs)
+        const walkSpeed = 6.0;
+        const wt = t * walkSpeed;
+        const armSwing = 0.3;
+        // Right arm swings with left leg
+        fr(VRMHumanBoneName.RightUpperArm, -Math.sin(wt) * armSwing, 0, -1.0, 0.2);
+        fr(VRMHumanBoneName.RightLowerArm, 0, 0.5, 0, 0.2);
+        // Left arm swings with right leg
+        fr(VRMHumanBoneName.LeftUpperArm, -Math.sin(wt + Math.PI) * armSwing, 0, 1.0, 0.2);
+        fr(VRMHumanBoneName.LeftLowerArm, 0, -0.5, 0, 0.2);
       } else {
-        // Hanging straight down by sides (downward Z rotation)
-        fr(VRMHumanBoneName.RightUpperArm, 0.1 + idleArmSwayX, 0, -1.25 + idleArmSwayZ, SMOOTHING * 0.4);
-        fr(VRMHumanBoneName.RightLowerArm, 0, 0.1 + elbowSway, 0, SMOOTHING * 0.4);
-        fr(VRMHumanBoneName.RightHand, 0, 0, 0, SMOOTHING * 0.4);
+        // Calculate slow random sways
+        const idleArmSwayX = Math.sin(t * 0.7) * 0.03;
+        const idleArmSwayZ = Math.cos(t * 0.5) * 0.05;
+        const elbowSway = Math.sin(t * 0.9) * 0.04;
 
-        fr(VRMHumanBoneName.LeftUpperArm, 0.1 + idleArmSwayX, 0, 1.25 - idleArmSwayZ, SMOOTHING * 0.4);
-        fr(VRMHumanBoneName.LeftLowerArm, 0, -0.1 - elbowSway, 0, SMOOTHING * 0.4);
-        fr(VRMHumanBoneName.LeftHand, 0, 0, 0, SMOOTHING * 0.4);
+        if (isSitting) {
+          // Hands resting on lap (arms perfectly vertical & pulled tightly inward, elbows bent less)
+          fr(VRMHumanBoneName.RightUpperArm, 0 + idleArmSwayX, 0, -1.5 + idleArmSwayZ, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.RightLowerArm, 0, 0.9 + elbowSway, 0, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.RightHand, -0.2, 0, 0, SMOOTHING * 0.4);
+
+          fr(VRMHumanBoneName.LeftUpperArm, 0 + idleArmSwayX, 0, 1.5 - idleArmSwayZ, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.LeftLowerArm, 0, -0.9 - elbowSway, 0, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.LeftHand, -0.2, 0, 0, SMOOTHING * 0.4);
+        } else {
+          // Hanging straight down by sides (downward Z rotation)
+          fr(VRMHumanBoneName.RightUpperArm, 0.1 + idleArmSwayX, 0, -1.25 + idleArmSwayZ, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.RightLowerArm, 0, 0.1 + elbowSway, 0, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.RightHand, 0, 0, 0, SMOOTHING * 0.4);
+
+          fr(VRMHumanBoneName.LeftUpperArm, 0.1 + idleArmSwayX, 0, 1.25 - idleArmSwayZ, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.LeftLowerArm, 0, -0.1 - elbowSway, 0, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.LeftHand, 0, 0, 0, SMOOTHING * 0.4);
+        }
       }
     }
   }

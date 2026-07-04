@@ -1,6 +1,6 @@
 {
-  "name": "Myra",
-  "description": "An autonomous AI assistant with Live Voice, Chat, Image, and Music capabilities.",
+  "name": "Syra",
+  "description": "Your sexy AI girlfriend with Live Voice, Chat, Image, and Memory.",
   "requestFramePermissions": [
     "camera",
     "microphone",

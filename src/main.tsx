@@ -36,7 +36,7 @@ function showCustomAlert(msg: string) {
   popup.style.fontFamily = 'system-ui, -apple-system, sans-serif';
 
   const title = document.createElement('h3');
-  title.textContent = 'Myra says';
+  title.textContent = 'Syra says';
   title.style.margin = '0 0 12px 0';
   title.style.color = '#38bdf8';
   title.style.fontSize = '18px';

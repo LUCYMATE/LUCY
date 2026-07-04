@@ -1,7 +1,7 @@
 import { useState, useEffect, Suspense, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Mic, MicOff } from 'lucide-react';
-import { Environment, Html, OrthographicCamera } from '@react-three/drei';
+import { Html, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { VrmModel } from './VrmModel';
 import { useAvatarState } from '../../lib/store/avatarState';
@@ -27,6 +27,7 @@ function Stool({ visible }: { visible: boolean }) {
   );
 }
 
+
 const ZOOM = 250; // 1 3D unit = 250 pixels.
 
 function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
@@ -42,29 +43,14 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
     targetPosition,
     setTargetPosition,
     isDragging,
-    setIsDragging
+    setIsDragging,
+    blush,
+    wearClothes,
+    avatarScale,
   } = useAvatarState();
 
   const groupRef = useRef<THREE.Group>(null);
   const [internalMoveDir, setInternalMoveDir] = useState(0);
-  const [avatarScale, setAvatarScale] = useState(1);
-
-  useEffect(() => {
-    const updateScale = () => {
-      const val = localStorage.getItem('myra_avatar_size');
-      if (val) {
-        const scaleVal = parseInt(val, 10);
-        if (!isNaN(scaleVal)) {
-          setAvatarScale(scaleVal / 100);
-        }
-      }
-    };
-    
-    updateScale();
-    
-    window.addEventListener('myra-settings-changed', updateScale);
-    return () => window.removeEventListener('myra-settings-changed', updateScale);
-  }, []);
 
   // Smoothly move the model towards targetPosition if we aren't dragging
   useFrame((state, delta) => {
@@ -75,17 +61,28 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
       groupRef.current.position.set(worldPosition.x, worldPosition.y, worldPosition.z);
       if (internalMoveDir !== 0) setInternalMoveDir(0);
     } else if (targetPosition) {
-      // Lerp towards target
-      const speed = basePose.startsWith('peek') && isWalking ? 1.0 : 3.0;
-      groupRef.current.position.lerp(
-        new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z),
-        delta * speed
-      );
-      
       // Calculate move direction locally to avoid React state thrashing
       const diffX = targetPosition.x - groupRef.current.position.x;
       const diffY = targetPosition.y - groupRef.current.position.y;
       const distance = Math.sqrt(diffX*diffX + diffY*diffY);
+      
+      if (isWalking && distance > 0.01) {
+        // Constant speed for walking to match animation and prevent "sliding"
+        const speed = basePose.startsWith('peek') ? 0.8 : 1.5; // units per second
+        const step = speed * delta;
+        if (distance <= step) {
+          groupRef.current.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
+        } else {
+          groupRef.current.position.x += (diffX / distance) * step;
+          groupRef.current.position.y += (diffY / distance) * step;
+        }
+      } else {
+        // Gentle lerp for small corrections when not walking
+        groupRef.current.position.lerp(
+          new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z),
+          delta * 5.0
+        );
+      }
       
       let targetRotY = Math.PI; // default forward
       
@@ -128,8 +125,8 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
       const edgeX = (ww / 2) / ZOOM;
 
       const newPos = {
-        // Clamp manual dragging so she can't be thrown out of the window
-        x: Math.max(-edgeX, Math.min(edgeX, currentPos.x + movementX)),
+        // Allow slight off-screen dragging for peek adjustments
+        x: Math.max(-edgeX - 0.5, Math.min(edgeX + 0.5, currentPos.x + movementX)),
         y: currentPos.y + movementY,
         z: currentPos.z
       };
@@ -157,13 +154,57 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ─── Auto-walk to screen edge for peek poses ─────────────────────────────
+  // When basePose changes to peek-left/peek-right, automatically walk to the
+  // appropriate screen edge FIRST, then the peek animation applies on arrival
+  // (isPeeking is only true when !isWalking in the animator).
+  useEffect(() => {
+    const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const edgeX = (ww / 2) / ZOOM;
+    const currentPos = useAvatarState.getState().worldPosition;
+
+    if (basePose === 'peek-left') {
+      // Walk towards left edge but keep shoulder/chest visible, then lean right
+      setTargetPosition({ x: -(edgeX - 0.35), y: currentPos.y, z: currentPos.z });
+      useAvatarState.getState().setIsWalking(true);
+    } else if (basePose === 'peek-right') {
+      // Walk towards right edge but keep shoulder/chest visible
+      setTargetPosition({ x: (edgeX - 0.35), y: currentPos.y, z: currentPos.z });
+      useAvatarState.getState().setIsWalking(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basePose]);
+
+
+  const isCurrentlySitting = (basePose === 'sit' || basePose === 'sultry-sit' || basePose === 'fingerwarm') && !isWalking;
+  const y_head = isCurrentlySitting ? 1.03 : 1.45;
+  const y_waist = isCurrentlySitting ? 0.43 : 0.85;
+  const y_feet = 0.15;
+
+  const getHandleStyle = (yLocal: number, widthBase: number, heightBase: number) => {
+    const w = widthBase * avatarScale;
+    const h = heightBase * avatarScale;
+    const yPixel = (-1.2 + yLocal * avatarScale) * ZOOM;
+    return {
+      position: 'absolute' as const,
+      width: w,
+      height: h,
+      left: `calc(50% - ${w / 2}px)`,
+      top: `${-yPixel - h / 2}px`,
+      borderRadius: '50%',
+    };
+  };
+
   return (
     <group ref={groupRef}>
       {/* Dynamic Scale from Settings */}
       <group scale={avatarScale} position={[0, -1.2, 0]}>
-        <Stool visible={basePose === 'sit' && !isWalking} />
+        {/* Show stool for ALL sitting poses */}
+        <Stool visible={isCurrentlySitting} />
+
+
         <VrmModel 
-          url="/myra.vrm" 
+          url={wearClothes ? '/syra.vrm' : '/syranude.vrm'}
           isSpeaking={isSpeaking} 
           isThinking={isThinking} 
           isListening={isListening} 
@@ -171,37 +212,40 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
           isWalking={isWalking}
           emotion={emotion}
           moveDirection={internalMoveDir}
+          isSitting={isCurrentlySitting}
         />
       </group>
 
+      {/* blush effect removed — was showing as a plain box above model */}
+
       <Html center zIndexRange={[100, 0]}>
-        <div 
-          className="flex flex-col items-center justify-between pointer-events-none relative"
-          style={{ width: 420, height: 660, marginTop: -120 }} 
-        >
+        <div className="pointer-events-none relative" style={{ width: 0, height: 0 }}>
           <div 
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
-            className="w-48 h-48 rounded-full cursor-grab active:cursor-grabbing pointer-events-auto"
-            title="Drag Myra (Head)"
+            className="cursor-grab active:cursor-grabbing pointer-events-auto"
+            style={getHandleStyle(y_head, 160, 160)}
+            title="Drag Syra (Head)"
           />
           <div 
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
-            className="w-60 h-72 rounded-full cursor-grab active:cursor-grabbing pointer-events-auto"
-            title="Drag Myra (Waist)"
+            className="cursor-grab active:cursor-grabbing pointer-events-auto"
+            style={getHandleStyle(y_waist, 200, 240)}
+            title="Drag Syra (Waist)"
           />
           <div 
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
-            className="w-72 h-36 rounded-full cursor-grab active:cursor-grabbing pointer-events-auto"
-            title="Drag Myra (Feet)"
+            className="cursor-grab active:cursor-grabbing pointer-events-auto"
+            style={getHandleStyle(y_feet, 220, 120)}
+            title="Drag Syra (Feet)"
           />
         </div>
       </Html>
@@ -209,7 +253,9 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   );
 }
 
-export function Myra3D({ isPetMode }: { isPetMode?: boolean }) {
+
+
+export function Syra3D({ isPetMode }: { isPetMode?: boolean }) {
   return (
     <div className="w-full h-full pointer-events-none">
       <Canvas
@@ -219,13 +265,9 @@ export function Myra3D({ isPetMode }: { isPetMode?: boolean }) {
       >
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
         
-        <ambientLight intensity={1.2} />
-        <directionalLight position={[2, 2, 2]} intensity={2.0} />
-        <directionalLight position={[-2, -2, -2]} intensity={0.5} />
-        <directionalLight position={[0, 5, 2]} intensity={1.0} />
-        
         <Suspense fallback={null}>
-          <Environment preset="city" />
+          <ambientLight intensity={0.8} color="#ffffff" />
+          <directionalLight position={[0, 2, 2]} intensity={1} color="#ffffff" />
           <SceneManager isPetMode={isPetMode} />
         </Suspense>
       </Canvas>

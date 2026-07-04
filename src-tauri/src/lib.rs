@@ -55,7 +55,7 @@ fn type_string(text: String) {
 #[tauri::command]
 fn run_python_script(script: String) -> Result<String, String> {
     let temp_dir = std::env::temp_dir();
-    let file_path = temp_dir.join("myra_temp_script.py");
+    let file_path = temp_dir.join("syra_temp_script.py");
     std::fs::write(&file_path, script).map_err(|e| e.to_string())?;
 
     let output = std::process::Command::new("python")

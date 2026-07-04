@@ -1,3 +1,5 @@
+import { memoryStore } from '../memory/memory-store';
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'model';
@@ -16,7 +18,7 @@ type Subscriber = (chats: ChatSession[]) => void;
 class ChatHistoryManager {
   private chats: ChatSession[] = [];
   private subscribers: Set<Subscriber> = new Set();
-  private readonly STORAGE_KEY = 'myra_chat_history';
+  private readonly STORAGE_KEY = 'syra_chat_history';
 
   constructor() {
     this.loadFromStorage();
@@ -93,6 +95,7 @@ class ChatHistoryManager {
   public deleteChat(id: string) {
     this.chats = this.chats.filter(c => c.id !== id);
     this.saveToStorage();
+    memoryStore.deleteChatSummary(id);
   }
 
   public clearAll() {

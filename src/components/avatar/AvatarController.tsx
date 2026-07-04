@@ -1,100 +1,131 @@
 import { useEffect, useRef } from 'react';
+// Suppress missing declaration file error when @types/react-dom is not installed
+// @ts-ignore
 import { createPortal } from 'react-dom';
-import { Myra3D } from './Myra3D';
+import { Syra3D } from './Syra3D';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { BasePose } from './animations/core';
 
 interface AvatarControllerProps {
-  isMiniMode?: boolean;
   isPetMode?: boolean;
 }
 
-export function AvatarController({ isMiniMode = false, isPetMode = false }: AvatarControllerProps) {
+export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
   const { 
     isSpeaking, 
     isThinking, 
     isListening, 
-    emotion,
-    basePose,
     setBasePose,
-    isWalking,
     setIsWalking,
     setTargetPosition,
     isDragging
   } = useAvatarState();
+
+  const blush = useAvatarState(s => s.emotion === 'flirty');
   
-  const walkTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync isPetMode to state for HeartParticles
+  useEffect(() => {
+    useAvatarState.getState().setIsPetMode(isPetMode);
+  }, [isPetMode]);
 
   // Autonomous Wandering Orchestrator in 3D Space
   useEffect(() => {
-    if (isMiniMode) return;
-    
     const wanderInterval = setInterval(() => {
-      // Don't wander if speaking, thinking, or being dragged by the user
-      if (isSpeaking || isThinking || isDragging) return;
-      
+      const s = useAvatarState.getState();
+      if (s.isSpeaking || s.isThinking || s.isDragging) return;
+
       const r = Math.random();
-      
-      const currentX = useAvatarState.getState().worldPosition.x;
-      const currentY = useAvatarState.getState().worldPosition.y;
+
+      const currentX = s.worldPosition.x;
+      const currentY = s.worldPosition.y;
       const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
       const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
       
-      // Calculate screen boundaries
       const edgeX = (ww / 2) / 250; 
       const edgeY = (wh / 2) / 250;
-      const innerMaxX = Math.max(0, edgeX - 0.8); // padding to keep her fully visible when standing/sitting
+      const innerMaxX = Math.max(0, edgeX - 0.8);
       const innerMaxY = Math.max(0, edgeY - 0.8);
 
       let targetX = currentX;
       let targetY = currentY;
       let targetPose: BasePose = 'sit';
 
-      if (r < 0.075) {
+      const affection = useAvatarState.getState().affectionLevel;
+      const flirtyChance = Math.min(0.35, 0.05 + (affection / 100) * 0.3);
+      const sensualPoses: BasePose[] = ['body-roll', 'caress', 'squeeze', 'spread-legs', 'arch'];
+
+      if (r < 0.04) {
         targetPose = 'peek-left';
-        // Go completely outside the left edge to peek
-        targetX = -edgeX - 0.4; 
-      } else if (r < 0.15) {
+        // SceneManager auto-walks to left edge — just set a reasonable Y
+        targetX = currentX; // SceneManager will override X
+        targetY = currentY;
+      } else if (r < 0.08) {
         targetPose = 'peek-right';
-        // Go completely outside the right edge to peek
-        targetX = edgeX + 0.4;  
-      } else if (r < 0.45) {
-        targetPose = 'stand';
-        // Anywhere strictly inside the screen
-        targetX = (Math.random() - 0.5) * (innerMaxX * 2); 
+        // SceneManager auto-walks to right edge — just set a reasonable Y
+        targetX = currentX; // SceneManager will override X
+        targetY = currentY;
+      } else if (r < 0.08 + flirtyChance * 0.5) {
+        const sensualR = Math.random();
+        if (sensualR < 0.15) {
+          targetPose = 'sultry-sit';
+        } else if (sensualR < 0.3) {
+          targetPose = 'stretch';
+        } else if (sensualR < 0.45) {
+          targetPose = 'hip-cock';
+        } else if (sensualR < 0.55) {
+          targetPose = 'fingerwarm';
+        } else {
+          targetPose = sensualPoses[Math.floor(Math.random() * sensualPoses.length)];
+        }
+        targetX = (Math.random() - 0.5) * (innerMaxX * 2);
         targetY = (Math.random() - 0.5) * (innerMaxY * 2);
-      } else if (r < 0.75) {
-        targetPose = 'sit';
+      } else if (r < 0.70) {
+        const casualR = Math.random();
+        if (casualR < 0.15) targetPose = 'stretch';
+        else if (casualR < 0.30) targetPose = 'lean';
+        else targetPose = 'stand';
         targetX = (Math.random() - 0.5) * (innerMaxX * 2);
         targetY = (Math.random() - 0.5) * (innerMaxY * 2);
       } else if (r < 0.85) {
-        targetPose = 'stand';
-        targetX = currentX; // stay in place
+        targetPose = 'sit';
+        targetX = (Math.random() - 0.5) * (innerMaxX * 2);
+        targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+      } else if (r < 0.95) {
+        const casualR = Math.random();
+        if (casualR < 0.20) targetPose = 'stretch';
+        else if (casualR < 0.40) targetPose = 'lean';
+        else targetPose = 'stand';
+        targetX = currentX;
       } else {
         targetPose = 'sit';
-        targetX = currentX; // stay in place
+        targetX = currentX;
       }
 
       setBasePose(targetPose);
-      setTargetPosition({ x: targetX, y: targetY, z: 0 }); // update 3D target
+      setTargetPosition({ x: targetX, y: targetY, z: 0 });
       
       setIsWalking(true);
-      if (walkTimerRef.current) clearTimeout(walkTimerRef.current);
 
-    }, 20000); 
+    }, 15000); 
 
     return () => {
       clearInterval(wanderInterval);
-      if (walkTimerRef.current) clearTimeout(walkTimerRef.current);
     }
-  }, [isSpeaking, isListening, isThinking, isMiniMode, isDragging, setBasePose, setIsWalking, setTargetPosition]);
-
-  if (isMiniMode) return null;
+  }, [isSpeaking, isListening, isThinking, isDragging, setBasePose, setIsWalking, setTargetPosition]);
 
   return createPortal(
-    <div className="fixed inset-0 pointer-events-none z-[50]">
-      <Myra3D isPetMode={isPetMode} />
-    </div>,
+    <>
+      <div className="fixed inset-0 pointer-events-none z-[50]">
+        <Syra3D isPetMode={isPetMode} />
+      </div>
+      {/* Blush overlay */}
+      {blush && !isPetMode && (
+        <div className="fixed inset-0 pointer-events-none z-[51]" style={{
+          background: 'radial-gradient(ellipse 40% 30% at 50% 55%, rgba(255,105,180,0.15) 0%, transparent 70%)',
+        }} />
+      )}
+    </>,
     document.body
   );
 }

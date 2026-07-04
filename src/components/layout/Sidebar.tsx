@@ -43,7 +43,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
         {/* New Chat Button */}
         <div className="px-6 pb-4 shrink-0 relative z-10">
           <button
-            onClick={() => { window.dispatchEvent(new CustomEvent('myra-new-chat')); onClose(); }}
+            onClick={() => { window.dispatchEvent(new CustomEvent('syra-new-chat')); onClose(); }}
             className="group flex items-center justify-center gap-2 w-full py-3 px-4 bg-gradient-to-r from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 text-white rounded-2xl transition-all border border-pink-500/20 hover:border-pink-500/40 cursor-pointer font-medium shadow-[0_0_20px_rgba(236,72,153,0.1)] hover:shadow-[0_0_30px_rgba(236,72,153,0.2)]"
           >
             <Plus className="w-4 h-4 transition-transform group-hover:rotate-90" />
@@ -59,7 +59,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
               className="group relative flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-black/20 hover:bg-white/10 transition-all cursor-pointer border border-transparent hover:border-white/5"
               onClick={() => {
                 if (renamingId !== chat.id) {
-                  window.dispatchEvent(new CustomEvent('myra-load-chat', { detail: chat }));
+                  window.dispatchEvent(new CustomEvent('syra-load-chat', { detail: chat }));
                   onClose();
                 }
               }}
@@ -108,6 +108,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
                         e.stopPropagation(); 
                         if (window.confirm('Delete this chat?')) {
                           chatHistory.deleteChat(chat.id); 
+                          window.dispatchEvent(new CustomEvent('syra-chat-deleted', { detail: { id: chat.id } }));
                         }
                         setActiveMenuId(null); 
                       }}
@@ -132,14 +133,14 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
         {/* Footer Actions */}
         <div className="p-4 border-t border-white/5 flex flex-col gap-2 shrink-0 bg-black/10 relative z-10">
           <button
-            onClick={() => { window.dispatchEvent(new CustomEvent('myra-clear-chat')); onClose(); }}
+            onClick={() => { window.dispatchEvent(new CustomEvent('syra-clear-chat')); onClose(); }}
             className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-medium text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer w-full"
           >
             <Trash2 className="w-3.5 h-3.5" />
             Clear Current Chat
           </button>
           <button
-            onClick={() => { window.dispatchEvent(new CustomEvent('myra-export-chat')); onClose(); }}
+            onClick={() => { window.dispatchEvent(new CustomEvent('syra-export-chat')); onClose(); }}
             className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-medium text-white/40 hover:text-white hover:bg-white/10 transition-all cursor-pointer w-full"
           >
             <Download className="w-3.5 h-3.5" />

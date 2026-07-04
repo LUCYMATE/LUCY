@@ -34,13 +34,16 @@ export function applyPeek(
     });
   };
 
-  const rotSign = isLeft ? 1 : -1; // Flip rotations: 1 leans Right, -1 leans Left
-  const trSign = isLeft ? -1 : 1; // Keep translations: -1 shifts Left, 1 shifts Right
+  const rotSign = isLeft ? 1 : -1; 
+  const trSign = isLeft ? 1 : -1; 
 
-  // Lean INTO the screen
-  fr(VRMHumanBoneName.Hips,         0, 0, rotSign * 0.2, poseSmooth); 
-  fr(VRMHumanBoneName.Spine,        0.1, rotSign * -0.3, rotSign * 0.4, poseSmooth); 
-  fr(VRMHumanBoneName.Chest,        0, 0, 0, poseSmooth);
+  // Lean INTO the screen with a much stronger and more natural curve
+  fr(VRMHumanBoneName.Hips,         0.05, 0, rotSign * 0.3, poseSmooth); 
+  fr(VRMHumanBoneName.Spine,        0.15, rotSign * -0.4, rotSign * 0.5, poseSmooth); 
+  fr(VRMHumanBoneName.Chest,        0.1, 0, rotSign * 0.2, poseSmooth);
+  fr(VRMHumanBoneName.UpperChest,   0.05, 0, rotSign * 0.1, poseSmooth);
+  fr(VRMHumanBoneName.Neck,         0.05, rotSign * 0.2, 0, poseSmooth);
+  fr(VRMHumanBoneName.Head,         -0.1, rotSign * 0.2, 0, poseSmooth);
 
   fr(VRMHumanBoneName.LeftUpperLeg,  0.1, 0, rotSign * -0.05, poseSmooth); 
   fr(VRMHumanBoneName.RightUpperLeg, 0.1, 0, rotSign * 0.05, poseSmooth);

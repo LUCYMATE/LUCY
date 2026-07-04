@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { useLoader } from '@react-three/fiber';
+import { useEffect, useRef, useState } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRM } from '@pixiv/three-vrm';
+import * as THREE from 'three';
 import { BasePose, Emotion } from './animations/core';
 import { useVrmAnimator } from './animations/useVrmAnimator';
 
@@ -13,37 +13,214 @@ interface VrmModelProps {
   basePose?: BasePose;
   isWalking?: boolean;
   emotion?: Emotion;
-  moveDirection?: number; // -1 for left, 1 for right, 0 for forward
+  moveDirection?: number;
+  isSitting?: boolean;
 }
 
-export function VrmModel({ 
-  url, 
-  isSpeaking, 
-  isThinking = false, 
-  isListening = false, 
-  basePose = 'sit', 
+// ─── Dispose helper ───────────────────────────────────────────────────────────
+function disposeVrm(vrm: VRM) {
+  try {
+    vrm.scene.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.geometry?.dispose();
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach((m: THREE.Material) => {
+          if (!m) return;
+          Object.values(m).forEach((v) => {
+            if (v instanceof THREE.Texture) v.dispose();
+          });
+          m.dispose();
+        });
+      }
+    });
+  } catch (_) { /* best-effort */ }
+}
+
+export function VrmModel({
+  url,
+  isSpeaking,
+  isThinking = false,
+  isListening = false,
+  basePose = 'sit',
   isWalking = false,
   emotion = 'neutral',
-  moveDirection = 0
+  moveDirection = 0,
+  isSitting = false,
 }: VrmModelProps) {
   const [vrm, setVrm] = useState<VRM | null>(null);
+  const pendantRef = useRef<THREE.Group | null>(null);
+  // Store original collider radii for ALL colliders (not name-filtered)
+  const colliderOrigRadii = useRef<Map<any, number>>(new Map());
 
-  const gltf = useLoader(GLTFLoader, url, (loader) => {
-    loader.register((parser) => new VRMLoaderPlugin(parser));
-  });
-
+  const mountedRef = useRef(true);
   useEffect(() => {
-    if (!gltf?.userData.vrm) return;
-    const loadedVrm = gltf.userData.vrm as VRM;
-    loadedVrm.scene.traverse((obj) => { obj.frustumCulled = false; });
-    
-    // Initial rotation facing forward
-    loadedVrm.scene.rotation.y = Math.PI;
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-    setVrm(loadedVrm);
-  }, [gltf]);
+  // ─── Manual load / dispose cycle ────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    let loadedVrm: VRM | null = null;
 
-  // Delegate all animation logic to our custom hook
+    const loader = new GLTFLoader();
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+
+    loader.load(
+      url,
+      (gltf) => {
+        if (cancelled || !mountedRef.current) {
+          const staleVrm = gltf.userData.vrm as VRM | undefined;
+          if (staleVrm) disposeVrm(staleVrm);
+          return;
+        }
+
+        if (!gltf?.userData.vrm) return;
+        loadedVrm = gltf.userData.vrm as VRM;
+
+        // ── Basic setup ─────────────────────────────────────────────────────
+        loadedVrm.scene.traverse((obj) => { obj.frustumCulled = false; });
+        loadedVrm.scene.rotation.y = Math.PI;
+
+        // DO NOT touch materials — VRM uses MToon shaders, not MeshStandard.
+        // Changing opacity/transparent/alphaTest/depthWrite corrupts MToon rendering.
+
+        // ── Fix ALL spring-bone physics ──────────────────────────────────────
+        // Apply uniform settings to EVERY joint — don't try to name-match,
+        // because VRM bone names vary wildly between models.
+        if (loadedVrm.springBoneManager) {
+          const manager = loadedVrm.springBoneManager as any;
+
+          // Collect all joints (works for both v1 Set and v2 array)
+          const rawJoints: any[] = [];
+          if (manager.joints) {
+            manager.joints.forEach((j: any) => rawJoints.push(j));
+          } else if (manager.springBones) {
+            manager.springBones.forEach((j: any) => rawJoints.push(j));
+          }
+
+          // Log bone names for debugging (remove later)
+          console.log('[VRM] Spring bone joints:', rawJoints.map(j => j.bone?.name || 'unnamed'));
+
+          rawJoints.forEach((joint) => {
+            const s = joint.settings;
+            if (!s) return;
+
+            // Force gravity DOWN with real power on every single joint
+            if (!s.gravityDir) {
+              s.gravityDir = new THREE.Vector3(0, -1, 0);
+            } else {
+              s.gravityDir.set(0, -1, 0);
+            }
+
+            // Ensure gravity is active — many VRM exports have 0
+            s.gravityPower = Math.max(s.gravityPower ?? 0, 0.08);
+
+            // Increase stiffness so things stay near rest pose (prevents flying)
+            s.stiffness = Math.max(s.stiffness ?? 0, 1.0);
+
+            // Increase drag so things don't keep swinging
+            s.dragForce = Math.max(s.dragForce ?? 0, 0.5);
+          });
+
+          // ── Store ALL collider radii for sit/stand toggling ──────────────
+          const colliders: any[] = Array.isArray(manager.colliders)
+            ? manager.colliders
+            : [];
+
+          // Log collider parents for debugging
+          console.log('[VRM] Collider parents:', colliders.map(c => c.parent?.name || 'unnamed'));
+
+          colliderOrigRadii.current.clear();
+          colliders.forEach((collider) => {
+            const shape = collider.shape;
+            if (shape && typeof shape.radius === 'number') {
+              colliderOrigRadii.current.set(collider, shape.radius);
+            }
+          });
+        }
+
+        if (mountedRef.current) setVrm(loadedVrm);
+      },
+      undefined,
+      (err) => {
+        if (!cancelled) console.error('[VrmModel] load error:', err);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      if (loadedVrm) disposeVrm(loadedVrm);
+      if (mountedRef.current) setVrm(null);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
+  // ─── Sitting: disable ALL colliders so skirt/hair fall naturally ───────────
+  // When seated the legs bend upward and colliders push spring-bone cloth UP.
+  // Zeroing ALL radii while sitting lets gravity alone position the fabric.
+  useEffect(() => {
+    if (!vrm?.springBoneManager) return;
+    const manager = vrm.springBoneManager as any;
+    const colliders: any[] = Array.isArray(manager.colliders) ? manager.colliders : [];
+
+    colliders.forEach((collider) => {
+      const savedRadius = colliderOrigRadii.current.get(collider);
+      if (savedRadius === undefined) return;
+      const shape = collider.shape;
+      if (shape && typeof shape.radius === 'number') {
+        shape.radius = isSitting ? 0.001 : savedRadius;
+      }
+    });
+  }, [isSitting, vrm]);
+
+  // ─── Add pendant accessory ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!vrm) return;
+
+    if (pendantRef.current) {
+      pendantRef.current.parent?.remove(pendantRef.current);
+      pendantRef.current = null;
+    }
+
+    const neckBone = vrm.humanoid?.getNormalizedBoneNode('neck');
+    if (!neckBone) return;
+
+    const pendant = new THREE.Group();
+
+    const chainGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.08, 6);
+    const chainMat = new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.8, roughness: 0.2 });
+    const chain = new THREE.Mesh(chainGeo, chainMat);
+    chain.position.set(0, -0.04, 0);
+    pendant.add(chain);
+
+    const gemGeo = new THREE.OctahedronGeometry(0.015);
+    const gemMat = new THREE.MeshStandardMaterial({
+      color: '#e040a0',
+      metalness: 0.3,
+      roughness: 0.1,
+      emissive: '#e040a0',
+      emissiveIntensity: 0.1,
+    });
+    const gem = new THREE.Mesh(gemGeo, gemMat);
+    gem.position.set(0, -0.08, 0);
+    pendant.add(gem);
+
+    pendant.position.set(0, -0.02, 0.04);
+    neckBone.add(pendant);
+    pendantRef.current = pendant;
+
+    return () => {
+      if (pendantRef.current) {
+        pendantRef.current.parent?.remove(pendantRef.current);
+        chainGeo.dispose(); chainMat.dispose();
+        gemGeo.dispose();   gemMat.dispose();
+        pendantRef.current = null;
+      }
+    };
+  }, [vrm]);
+
   useVrmAnimator({
     vrm,
     isSpeaking,
@@ -55,9 +232,11 @@ export function VrmModel({
     moveDirection
   });
 
+  if (!vrm) return null;
+
   return (
     <group>
-      <primitive object={gltf.scene} />
+      <primitive object={vrm.scene} />
     </group>
   );
 }

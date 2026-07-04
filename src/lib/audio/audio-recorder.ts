@@ -23,7 +23,7 @@ export class AudioRecorder {
       
       const timeoutPromise = (ms: number, msg: string) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms));
 
-      const savedDeviceId = localStorage.getItem('myra_mic_id');
+      const savedDeviceId = (localStorage.getItem('syra_mic_id') ?? localStorage.getItem('syra_mic_id'));
       const audioConstraints: MediaTrackConstraints | boolean = savedDeviceId 
         ? { deviceId: { exact: savedDeviceId } } 
         : true;

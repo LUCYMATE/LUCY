@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Settings as SettingsIcon, Volume2, Mic } from 'lucide-react';
 import { logger } from '../../lib/store/logger';
+import { useAvatarState } from '../../lib/store/avatarState';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -16,24 +17,25 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [selectedCamera, setSelectedCamera] = useState<string>('');
 
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    const model = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
+    const model = (localStorage.getItem('syra_model') ?? localStorage.getItem('syra_model')) || 'gemini-3.1-flash-live-preview';
     if (model !== 'gemini-3.1-flash-live-preview') {
-      localStorage.setItem('myra_model', 'gemini-3.1-flash-live-preview');
+      localStorage.setItem('syra_model', 'gemini-3.1-flash-live-preview');
       return 'gemini-3.1-flash-live-preview';
     }
     return model;
   });
-  const [selectedVoice, setSelectedVoice] = useState<string>(() => localStorage.getItem('myra_voice') || 'Aoede');
+  const [selectedVoice, setSelectedVoice] = useState<string>(() => (localStorage.getItem('syra_voice') ?? localStorage.getItem('syra_voice')) || 'Aoede');
   const [avatarSize, setAvatarSize] = useState<string>(() => {
-    const val = localStorage.getItem('myra_avatar_size');
+    const val = localStorage.getItem('syra_avatar_size') ?? localStorage.getItem('syra_avatar_size');
     if (!val || ['Small', 'Medium', 'Large'].includes(val)) return '100';
     return val;
   });
-  const [systemInstruction, setSystemInstruction] = useState<string>(() => localStorage.getItem('myra_system_instruction') || 'You are a helpful voice assistant. Keep replies conversational, concise, and natural for back-and-forth spoken chat.');
-  const [mainApiKey, setMainApiKey] = useState<string>(() => localStorage.getItem('myra_main_api_key') || '');
-  const [altApiKey, setAltApiKey] = useState<string>(() => localStorage.getItem('myra_alt_api_key') || '');
-  const [changed, setChanged] = useState(false);
-
+  const [systemInstruction, setSystemInstruction] = useState<string>(() => (localStorage.getItem('syra_system_instruction') ?? localStorage.getItem('syra_system_instruction')) || 'You are Syra, a sexy, affectionate, flirty AI girlfriend. Keep replies conversational, warm, and natural for back-and-forth spoken chat. Use emotion tags like [flirty], [happy], [surprised] naturally.');
+  const [mainApiKey, setMainApiKey] = useState<string>(() => (localStorage.getItem('syra_main_api_key') ?? localStorage.getItem('syra_main_api_key')) || '');
+  const [altApiKey, setAltApiKey] = useState<string>(() => (localStorage.getItem('syra_alt_api_key') ?? localStorage.getItem('syra_alt_api_key')) || '');
+  const [connectionChanged, setConnectionChanged] = useState(false);
+  const [deviceChanged, setDeviceChanged] = useState(false);
+  const [wearClothes, setWearClothesLocal] = useState(() => useAvatarState.getState().wearClothes);
   useEffect(() => {
     async function loadDevices() {
       try {
@@ -44,23 +46,23 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
         // Microphones
         const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
         setDevices(audioInputs);
-        const savedMicId = localStorage.getItem('myra_mic_id');
+        const savedMicId = localStorage.getItem('syra_mic_id');
         if (savedMicId && audioInputs.some(d => d.deviceId === savedMicId)) {
           setSelectedMic(savedMicId);
         } else if (audioInputs.length > 0) {
           setSelectedMic(audioInputs[0].deviceId);
-          localStorage.setItem('myra_mic_id', audioInputs[0].deviceId);
+          localStorage.setItem('syra_mic_id', audioInputs[0].deviceId);
         }
 
         // Cameras
         const videoInputs = allDevices.filter(d => d.kind === 'videoinput');
         setVideoDevices(videoInputs);
-        const savedCamId = localStorage.getItem('myra_camera_id');
+        const savedCamId = localStorage.getItem('syra_camera_id');
         if (savedCamId && videoInputs.some(d => d.deviceId === savedCamId)) {
           setSelectedCamera(savedCamId);
         } else if (videoInputs.length > 0) {
           setSelectedCamera(videoInputs[0].deviceId);
-          localStorage.setItem('myra_camera_id', videoInputs[0].deviceId);
+          localStorage.setItem('syra_camera_id', videoInputs[0].deviceId);
         }
         
       } catch (e) {
@@ -73,65 +75,69 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const handleMicChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedMic(val);
-    localStorage.setItem('myra_mic_id', val);
-    setChanged(true);
+    localStorage.setItem('syra_mic_id', val);
+    setDeviceChanged(true);
     logger.add('success', 'Settings', 'Microphone changed to ' + val);
   };
 
   const handleCameraChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedCamera(val);
-    localStorage.setItem('myra_camera_id', val);
-    setChanged(true);
+    localStorage.setItem('syra_camera_id', val);
+    setDeviceChanged(true);
     logger.add('success', 'Settings', 'Camera changed to ' + val);
   };
 
   const handleModelChange = (val: string) => {
     setSelectedModel(val);
-    localStorage.setItem('myra_model', val);
-    setChanged(true);
+    localStorage.setItem('syra_model', val);
+    setConnectionChanged(true);
     logger.add('success', 'Settings', 'Model changed to ' + val);
   };
 
   const handleVoiceChange = (val: string) => {
     setSelectedVoice(val);
-    localStorage.setItem('myra_voice', val);
-    setChanged(true);
+    localStorage.setItem('syra_voice', val);
+    setConnectionChanged(true);
     logger.add('success', 'Settings', 'Voice changed to ' + val);
   };
 
   const handleInstructionChange = (val: string) => {
     setSystemInstruction(val);
-    localStorage.setItem('myra_system_instruction', val);
-    setChanged(true);
+    localStorage.setItem('syra_system_instruction', val);
+    setConnectionChanged(true);
   };
 
   const handleAvatarSizeChange = (val: string) => {
     setAvatarSize(val);
-    localStorage.setItem('myra_avatar_size', val);
-    setChanged(true);
-    logger.add('success', 'Settings', 'Avatar size changed to ' + val);
+    localStorage.setItem('syra_avatar_size', val);
+    const scaleVal = parseInt(val, 10);
+    if (!isNaN(scaleVal)) {
+      useAvatarState.getState().setAvatarScale(scaleVal / 100);
+    }
   };
 
   const handleMainApiKeyChange = (val: string) => {
     setMainApiKey(val);
-    localStorage.setItem('myra_main_api_key', val);
-    setChanged(true);
+    localStorage.setItem('syra_main_api_key', val);
+    setConnectionChanged(true);
   };
 
   const handleAltApiKeyChange = (val: string) => {
     setAltApiKey(val);
-    localStorage.setItem('myra_alt_api_key', val);
-    setChanged(true);
+    localStorage.setItem('syra_alt_api_key', val);
+    setConnectionChanged(true);
   };
 
 
   const handleClose = () => {
-    if (changed) {
+    if (connectionChanged) {
       if (onSettingsChanged) {
         onSettingsChanged();
       }
-      window.dispatchEvent(new CustomEvent('myra-settings-changed'));
+      window.dispatchEvent(new CustomEvent('syra-settings-changed'));
+    } else if (deviceChanged) {
+      window.dispatchEvent(new CustomEvent('syra-devices-changed'));
     }
     onClose();
   };
@@ -236,6 +242,26 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                 <p className="text-xs text-white/40 mt-3">Adjust the size of the 3D avatar on screen.</p>
               </div>
 
+              {/* Wear Clothes Toggle */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-white">Wear Clothes</label>
+                    <p className="text-xs text-white/40 mt-1">Toggle avatar clothing on/off</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !wearClothes;
+                      setWearClothesLocal(next);
+                      useAvatarState.getState().setWearClothes(next);
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${wearClothes ? 'bg-pink-500' : 'bg-white/20'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${wearClothes ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </div>
+
               {/* Personality Textarea */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
                 <label className="block text-sm font-medium text-white mb-2">Personality & Custom Preferences</label>
@@ -246,7 +272,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                   className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans resize-none"
                   placeholder="E.g., You love making sarcastic jokes, keep answers under 2 sentences, etc."
                 />
-                <p className="text-xs text-white/40 mt-2">These instructions add custom personality quirks and preferences on top of Myra's core automation system.</p>
+                <p className="text-xs text-white/40 mt-2">These instructions add custom personality quirks and preferences on top of Syra's core automation system.</p>
               </div>
             </div>
           )}
@@ -364,7 +390,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
           {activeTab === 'shortcuts' && (
             <div className="text-white animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
               <h3 className="text-2xl font-semibold mb-2">Global Shortcuts</h3>
-              <p className="text-sm text-white/60 mb-6">These shortcuts work globally across your OS, even when Myra is minimized or running in the background.</p>
+              <p className="text-sm text-white/60 mb-6">These shortcuts work globally across your OS, even when Syra is minimized or running in the background.</p>
               
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
                 <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
@@ -378,7 +404,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                 <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
                   <div>
                     <h4 className="text-lg font-medium text-white">Toggle Speaker</h4>
-                    <p className="text-sm text-white/50">Mute or unmute Myra's spoken responses</p>
+                    <p className="text-sm text-white/50">Mute or unmute Syra's spoken responses</p>
                   </div>
                   <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Shift + S</kbd>
                 </div>
