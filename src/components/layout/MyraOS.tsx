@@ -7,7 +7,7 @@ import { logger, LogEntry } from '../../lib/store/logger';
 import { AvatarController } from '../avatar/AvatarController';
 
 
-export function SyraOS({ isPetMode = false }: { isPetMode?: boolean }) {
+export function MyraOS({ isPetMode = false }: { isPetMode?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const [latency, setLatency] = useState<string>('checking...');
   const [cpu, setCpu] = useState<number>(0);

@@ -1,4 +1,4 @@
-import { SyraOS } from './components/layout/SyraOS';
+import { MyraOS } from './components/layout/MyraOS';
 import { Sidebar } from './components/layout/Sidebar';
 import { TitleBar } from './components/layout/TitleBar';
 import { Minus, Square, X, Menu } from 'lucide-react';
@@ -254,7 +254,7 @@ export default function App() {
       )}
 
       <div className="flex-1 relative flex min-h-0">
-        <SyraOS isPetMode={isPetMode} />
+        <MyraOS isPetMode={isPetMode} />
       </div>
     </div>
   );
