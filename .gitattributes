@@ -1,0 +1,3 @@
+src/config/bot-profile.ts merge=ours
+src/premium/* merge=ours
+public/premium/* merge=ours

@@ -1,100 +1,108 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+// @ts-ignore
 import { createPortal } from 'react-dom';
-import { Myra3D } from './Myra3D';
+import { Avatar3D } from './Avatar3D';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { BasePose } from './animations/core';
 
 interface AvatarControllerProps {
-  isMiniMode?: boolean;
   isPetMode?: boolean;
 }
 
-export function AvatarController({ isMiniMode = false, isPetMode = false }: AvatarControllerProps) {
-  const { 
-    isSpeaking, 
-    isThinking, 
-    isListening, 
-    emotion,
-    basePose,
+export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
+  const {
+    isSpeaking,
+    isThinking,
+    isListening,
     setBasePose,
-    isWalking,
     setIsWalking,
     setTargetPosition,
     isDragging
   } = useAvatarState();
-  
-  const walkTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync isPetMode to state
+  useEffect(() => {
+    useAvatarState.getState().setIsPetMode(isPetMode);
+  }, [isPetMode]);
 
   // Autonomous Wandering Orchestrator in 3D Space
   useEffect(() => {
-    if (isMiniMode) return;
-    
     const wanderInterval = setInterval(() => {
-      // Don't wander if speaking, thinking, or being dragged by the user
-      if (isSpeaking || isThinking || isDragging) return;
-      
+      const s = useAvatarState.getState();
+
+      // Pause wandering for 60 seconds after a manual pose override
+      const timeSinceLastOverride = Date.now() - s.lastPoseOverrideTime;
+      if (timeSinceLastOverride < 60000) return;
+
+      if (s.isSpeaking || s.isThinking || s.isDragging) return;
+
       const r = Math.random();
-      
-      const currentX = useAvatarState.getState().worldPosition.x;
-      const currentY = useAvatarState.getState().worldPosition.y;
+
+      const currentX = s.worldPosition.x;
+      const currentY = s.worldPosition.y;
       const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
       const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
-      
-      // Calculate screen boundaries
-      const edgeX = (ww / 2) / 250; 
-      const edgeY = (wh / 2) / 250;
-      const innerMaxX = Math.max(0, edgeX - 0.8); // padding to keep her fully visible when standing/sitting
+
+      const edgeX   = (ww / 2) / 250;
+      const edgeY   = (wh / 2) / 250;
+      const innerMaxX = Math.max(0, edgeX - 0.8);
       const innerMaxY = Math.max(0, edgeY - 0.8);
 
       let targetX = currentX;
       let targetY = currentY;
       let targetPose: BasePose = 'sit';
 
-      if (r < 0.075) {
+      if (r < 0.04) {
         targetPose = 'peek-left';
-        // Go completely outside the left edge to peek
-        targetX = -edgeX - 0.4; 
-      } else if (r < 0.15) {
+        // SceneManager auto-walks to left edge
+        targetX = currentX;
+        targetY = currentY;
+      } else if (r < 0.08) {
         targetPose = 'peek-right';
-        // Go completely outside the right edge to peek
-        targetX = edgeX + 0.4;  
-      } else if (r < 0.45) {
-        targetPose = 'stand';
-        // Anywhere strictly inside the screen
-        targetX = (Math.random() - 0.5) * (innerMaxX * 2); 
+        // SceneManager auto-walks to right edge
+        targetX = currentX;
+        targetY = currentY;
+      } else if (r < 0.30) {
+        // Casual expressive poses
+        const casualR = Math.random();
+        if (casualR < 0.33) targetPose = 'stretch';
+        else if (casualR < 0.66) targetPose = 'lean';
+        else targetPose = 'stand';
+        targetX = (Math.random() - 0.5) * (innerMaxX * 2);
         targetY = (Math.random() - 0.5) * (innerMaxY * 2);
-      } else if (r < 0.75) {
-        targetPose = 'sit';
+      } else if (r < 0.70) {
+        targetPose = 'stand';
         targetX = (Math.random() - 0.5) * (innerMaxX * 2);
         targetY = (Math.random() - 0.5) * (innerMaxY * 2);
       } else if (r < 0.85) {
+        targetPose = 'sit';
+        targetX = (Math.random() - 0.5) * (innerMaxX * 2);
+        targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+      } else if (r < 0.95) {
         targetPose = 'stand';
-        targetX = currentX; // stay in place
+        targetX = currentX;
       } else {
         targetPose = 'sit';
-        targetX = currentX; // stay in place
+        targetX = currentX;
       }
 
       setBasePose(targetPose);
-      setTargetPosition({ x: targetX, y: targetY, z: 0 }); // update 3D target
-      
+      setTargetPosition({ x: targetX, y: targetY, z: 0 });
       setIsWalking(true);
-      if (walkTimerRef.current) clearTimeout(walkTimerRef.current);
 
-    }, 20000); 
+    }, 15000);
 
     return () => {
       clearInterval(wanderInterval);
-      if (walkTimerRef.current) clearTimeout(walkTimerRef.current);
-    }
-  }, [isSpeaking, isListening, isThinking, isMiniMode, isDragging, setBasePose, setIsWalking, setTargetPosition]);
-
-  if (isMiniMode) return null;
+    };
+  }, [isSpeaking, isListening, isThinking, isDragging, setBasePose, setIsWalking, setTargetPosition]);
 
   return createPortal(
-    <div className="fixed inset-0 pointer-events-none z-[50]">
-      <Myra3D isPetMode={isPetMode} />
-    </div>,
+    <>
+      <div className="fixed inset-0 pointer-events-none z-[50]">
+        <Avatar3D isPetMode={isPetMode} />
+      </div>
+    </>,
     document.body
   );
 }

@@ -7,7 +7,7 @@ import { logger, LogEntry } from '../../lib/store/logger';
 import { AvatarController } from '../avatar/AvatarController';
 
 
-export function MyraOS({ isMiniMode = false, isPetMode = false }: { isMiniMode?: boolean, isPetMode?: boolean }) {
+export function MyraOS({ isPetMode = false }: { isPetMode?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const [latency, setLatency] = useState<string>('checking...');
   const [cpu, setCpu] = useState<number>(0);
@@ -73,23 +73,22 @@ export function MyraOS({ isMiniMode = false, isPetMode = false }: { isMiniMode?:
 
   return (
     <div 
-      className={`flex h-full w-full gap-4 sm:gap-6 relative max-w-[1600px] mx-auto min-h-0 ${isMiniMode || isPetMode ? 'p-0' : 'p-4 sm:p-6'} ${isPetMode ? 'max-w-none' : ''}`}
-      data-tauri-drag-region={isMiniMode ? true : undefined}
+      className={`flex h-full w-full gap-4 sm:gap-6 relative max-w-[1600px] mx-auto min-h-0 ${isPetMode ? 'p-0 max-w-none' : 'p-4 sm:p-6'}`}
+
     >
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
         <section className="flex-1 flex flex-col min-w-0 min-h-0">
           <div 
-            className={`${!isPetMode ? 'glass rounded-[40px]' : ''} flex-1 relative overflow-hidden flex flex-col min-h-0 ${isMiniMode ? '!rounded-xl' : ''}`}
-            data-tauri-drag-region={isMiniMode ? true : undefined}
-          >
-            <Chat isMiniMode={isMiniMode} isPetMode={isPetMode} />
+            className={`${!isPetMode ? 'glass rounded-[40px]' : ''} flex-1 relative overflow-hidden flex flex-col min-h-0`}
+            >
+            <Chat isPetMode={isPetMode} />
           </div>
         </section>
       </main>
 
       {/* Navigation (originally on left, now shifted to right) */}
-      {!isMiniMode && !isPetMode && (
+      {!isPetMode && (
         <aside className="w-16 sm:w-64 shrink-0 flex flex-col gap-4">
           <div className="flex flex-col items-center sm:items-start glass rounded-3xl p-4 sm:p-6 h-full gap-8">
            <div className="flex items-center gap-3 w-full justify-center sm:justify-start shrink-0">
@@ -165,7 +164,7 @@ export function MyraOS({ isMiniMode = false, isPetMode = false }: { isMiniMode?:
       )}
       
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
-      <AvatarController isMiniMode={isMiniMode} isPetMode={isPetMode} />
+      <AvatarController isPetMode={isPetMode} />
     </div>
   );
 }

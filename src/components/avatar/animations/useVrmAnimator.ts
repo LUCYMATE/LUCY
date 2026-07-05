@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { VRM } from '@pixiv/three-vrm';
-import * as THREE from 'three';
 import { useAvatarState } from '../../../lib/store/avatarState';
 import { BoneRest, BONE_LIST, BasePose, Emotion } from './core';
 import { applyLocomotion } from './locomotion';
 import { applyGestures } from './gestures';
 import { applyPeek } from './peek';
 import { applyExpressions } from './expressions';
+import { applyFlirty, applyFlirtyIdleSway } from '../../../premium/flirty';
 
 function lerpAngle(a: number, b: number, t: number) {
   const dt = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -22,7 +22,7 @@ interface AnimatorProps {
   basePose: BasePose;
   isWalking: boolean;
   emotion: Emotion;
-  moveDirection: number; // -1 for left, 1 for right, 0 for stationary/forward
+  moveDirection: number;
 }
 
 export function useVrmAnimator({
@@ -36,15 +36,11 @@ export function useVrmAnimator({
   moveDirection,
 }: AnimatorProps) {
   const restPose = useRef<BoneRest>({});
-  
-  // Internal state machine for specific animations
   const [isGreeting, setIsGreeting] = useState(true);
 
   // 1. Capture initial rest pose when VRM loads
   useEffect(() => {
     if (!vrm) return;
-    
-    // Reset to T/A-pose first
     vrm.humanoid.resetNormalizedPose();
 
     const snap: BoneRest = {};
@@ -59,77 +55,71 @@ export function useVrmAnimator({
     }
     restPose.current = snap;
 
-    // Trigger greeting animation for 3 seconds on load
     setIsGreeting(true);
     const greetingTimer = setTimeout(() => setIsGreeting(false), 3000);
-
     return () => clearTimeout(greetingTimer);
   }, [vrm]);
 
-  // 2. No more internal peek phase needed; we wait for walking to finish
-
-
-  // 3. The Main Animation Loop
+  // 2. UNIFIED animation loop
+  //    Order: locomotion → flirty pose → gestures → expressions → high-priority active
+  //    vrm.update() called LAST so spring bones simulate against final posed skeleton.
   useFrame((state) => {
     if (!vrm) return;
-    
-    if (useAvatarState.getState().isDragging) {
-      if (vrm.springBoneManager) {
-        vrm.springBoneManager.reset();
-      }
-    }
 
     const delta = state.clock.getDelta();
-    vrm.update(delta);
+    const t     = state.clock.elapsedTime;
+    const rest  = restPose.current;
 
-    const t = state.clock.elapsedTime;
-    const rest = restPose.current;
-    
-    // Determine overall state overrides
-    const actualIsWalking = isWalking;
-    const isSitting = basePose === 'sit';
-    const isPeeking = basePose.startsWith('peek') && !isWalking;
-    const isPeekLeft = basePose === 'peek-left';
-    
+    const isSitting   = basePose === 'sit';
+    const isPeeking   = basePose.startsWith('peek') && !isWalking;
+    const isPeekLeft  = basePose === 'peek-left';
+    const isFlirtyPose =
+      basePose === 'caress'      ||
+      basePose === 'stretch'     ||
+      basePose === 'lean';
+
     const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
 
-    // Model Rotation: moveDirection is now the exact targetRotationY in radians
+    // ── Model facing ──────────────────────────────────────────────────────
     if (vrm.scene) {
       vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, moveDirection, 0.1);
     }
 
+    // ── Step 1: Body / locomotion (hips, spine, legs) ─────────────────────
     if (isPeeking) {
-      // Run peek sequence (overrides locomotion and some gestures)
       applyPeek(vrm, rest, t, isPeekLeft);
-      
-      // Still apply expressions
-      applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
     } else {
-      // Normal locomotion (walk/sit/stand)
-      applyLocomotion(vrm, rest, t, actualIsWalking, isSitting);
-      
-      // Normal upper body gestures
-      applyGestures(vrm, rest, t, isGreeting, isSpeaking, isThinking, actuallyHearing, actualIsWalking, emotion, isSitting);
-      
-      // Facial expressions and lip sync
-      applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
+      applyLocomotion(vrm, rest, t, isWalking, isSitting);
     }
 
-    // Auto Blink Logic (Blink roughly every 4 seconds)
-    const blinkCycle = t % 4.0;
-    let blinkValue = 0;
-    if (blinkCycle < 0.1) {
-      // Quick blink down
-      blinkValue = blinkCycle / 0.1;
-    } else if (blinkCycle < 0.2) {
-      // Quick blink up
-      blinkValue = 1.0 - ((blinkCycle - 0.1) / 0.1);
+    // ── Step 2: Flirty pose (body shape override) ─────────────────────────
+    if (isFlirtyPose && !isWalking) {
+      applyFlirty(vrm, rest, t, basePose);
     }
-    
-    // Only apply blink if we aren't already expressing something that overrides eyes (like happy/sad)
-    // Actually, VRM expressions blend nicely, so we can always apply blink
-    if (vrm.expressionManager) {
-      vrm.expressionManager.setValue('blink', blinkValue);
+
+    // Flirty idle sway when emotion is flirty but no active flirty pose
+    if (!isSpeaking && !isThinking && !isWalking && emotion === 'flirty' && !isFlirtyPose && !isPeeking) {
+      applyFlirtyIdleSway(vrm, rest, t);
     }
+
+    // ── Step 3: Upper-body gestures (arms, head, neck) ────────────────────
+    applyGestures(
+      vrm, rest, t,
+      isGreeting, isSpeaking, isThinking, actuallyHearing,
+      isWalking, emotion, isSitting
+    );
+
+    // ── Step 4: Expressions (face, blink, lip sync) ───────────────────────
+    applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
+
+    // ── Step 5: High-priority active animations ───────────────────────────
+    // flying-kiss must override talking gestures, so it runs last
+    if (basePose === 'flying-kiss' && !isWalking) {
+      applyFlirty(vrm, rest, t, basePose);
+    }
+
+    // ── Update spring bones, look-at, expression manager ─────────────────
+    // Must be AFTER all bone writes so spring bones simulate against final pose
+    vrm.update(delta);
   });
 }

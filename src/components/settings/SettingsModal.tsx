@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Settings as SettingsIcon, Volume2, Mic } from 'lucide-react';
 import { logger } from '../../lib/store/logger';
+import { useAvatarState } from '../../lib/store/avatarState';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -33,6 +34,9 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [mainApiKey, setMainApiKey] = useState<string>(() => localStorage.getItem('myra_main_api_key') || '');
   const [altApiKey, setAltApiKey] = useState<string>(() => localStorage.getItem('myra_alt_api_key') || '');
   const [changed, setChanged] = useState(false);
+  const [launchPetMode, setLaunchPetMode] = useState<boolean>(
+    () => localStorage.getItem('myra_launch_pet_mode') === 'true'
+  );
 
   useEffect(() => {
     async function loadDevices() {
@@ -109,6 +113,8 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const handleAvatarSizeChange = (val: string) => {
     setAvatarSize(val);
     localStorage.setItem('myra_avatar_size', val);
+    // Update zustand immediately so canvas responds without page reload
+    useAvatarState.getState().setAvatarScale(parseFloat(val) / 100);
     setChanged(true);
     logger.add('success', 'Settings', 'Avatar size changed to ' + val);
   };
@@ -236,9 +242,29 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                 <p className="text-xs text-white/40 mt-3">Adjust the size of the 3D avatar on screen.</p>
               </div>
 
+              {/* Launch in Pet Mode Toggle */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-white">Launch in Pet Mode</label>
+                    <p className="text-xs text-white/40 mt-1">If enabled, Myra opens directly in Pet Mode (fullscreen desktop companion) on every launch.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !launchPetMode;
+                      setLaunchPetMode(next);
+                      localStorage.setItem('myra_launch_pet_mode', String(next));
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${launchPetMode ? 'bg-pink-500' : 'bg-white/20'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${launchPetMode ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </div>
+
               {/* Personality Textarea */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
-                <label className="block text-sm font-medium text-white mb-2">Personality & Custom Preferences</label>
+                <label className="block text-sm font-medium text-white mb-2">Personality &amp; Custom Preferences</label>
                 <textarea
                   value={systemInstruction}
                   onChange={(e) => handleInstructionChange(e.target.value)}

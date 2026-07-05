@@ -9,6 +9,7 @@ import { AudioVisualizer } from '../avatar/AudioVisualizer';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { chatHistory } from '../../lib/store/chatHistory';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { BOT_NAME } from '../../config/bot-profile';
 
 type Role = 'user' | 'model';
 interface Message {
@@ -17,10 +18,10 @@ interface Message {
   text: string;
 }
 
-export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: boolean, isPetMode?: boolean }) {
+export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
   const [messages, setMessages] = useState<Message[]>([
-    { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Myra. How can I assist you?' },
+    { id: crypto.randomUUID(), role: 'model', text: `System ready. I am ${BOT_NAME}. How can I assist you?` },
   ]);
   const [input, setInput] = useState('');
   const [initialized, setInitialized] = useState(false);
@@ -120,7 +121,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
   }, [setSpeaking]);
 
   const initSystem = () => {
-    logger.add('info', 'System Boot', 'Initializing MyraOS and Gemini connection...');
+    logger.add('info', 'System Boot', `Initializing ${BOT_NAME}OS and Gemini connection...`);
     setInitialized(true);
 
     const apiKey = localStorage.getItem('myra_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
@@ -313,7 +314,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
   const clearChat = () => {
     if (window.confirm("Are you sure you want to clear the conversation?")) {
       setMessages([
-        { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Myra. How can I assist you?' },
+        { id: crypto.randomUUID(), role: 'model', text: `System ready. I am ${BOT_NAME}. How can I assist you?` },
       ]);
       modelBubbleIdRef.current = '';
       logger.add('info', 'Chat Action', 'Cleared chat history.');
@@ -323,16 +324,16 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
   const exportChat = () => {
     try {
       const markdown = messages.map(m => {
-        const roleName = m.role === 'user' ? 'User' : 'Myra';
+        const roleName = m.role === 'user' ? 'User' : BOT_NAME;
         return `### **${roleName}**\n\n${m.text}\n\n---`;
       }).join('\n\n');
       
-      const fileContent = `# Myra Voice Assistant Chat History\nExported on: ${new Date().toLocaleString()}\n\n${markdown}`;
+      const fileContent = `# ${BOT_NAME} Voice Assistant Chat History\nExported on: ${new Date().toLocaleString()}\n\n${markdown}`;
       const blob = new Blob([fileContent], { type: 'text/markdown;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Myra_Chat_History_${Date.now()}.md`);
+      link.setAttribute('download', `${BOT_NAME}_Chat_History_${Date.now()}.md`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -347,7 +348,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
     const handleClear = () => clearChat();
     const handleExport = () => exportChat();
     const handleNewChat = () => {
-      setMessages([{ id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Myra. How can I assist you?' }]);
+      setMessages([{ id: crypto.randomUUID(), role: 'model', text: `System ready. I am ${BOT_NAME}. How can I assist you?` }]);
       setActiveChatId(crypto.randomUUID());
       modelBubbleIdRef.current = '';
     };
@@ -439,7 +440,7 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
       ) : (
         <>
           {/* ── Top Status Bar ────────────────────────────────────── */}
-          {!isMiniMode && (
+          {(
             <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-none' : 'justify-end border-b border-white/5 bg-black/10'}`}>
             <div 
               className={`flex items-center gap-2 font-mono transition-all ${isPetMode ? 'text-[10px] opacity-70 hover:opacity-100 pointer-events-auto' : 'text-xs'} ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-105' : ''}`}
@@ -457,63 +458,8 @@ export function Chat({ isMiniMode = false, isPetMode = false }: { isMiniMode?: b
           )}
 
           {/* ── Content Area ─────────────────────────────────────────── */}
-          {isMiniMode ? (
-            <div 
-              className="flex-1 flex items-center justify-between px-6 bg-transparent"
-              data-tauri-drag-region
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-            >
-              <button
-                type="button"
-                onClick={toggleMic}
-                disabled={isMicPending}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all ${isListening
-                    ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
-                    : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
-                  } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isListening ? <Mic className="w-5 h-5" /> : (isMicPending ? <Activity className="w-5 h-5 animate-spin" /> : <MicOff className="w-5 h-5" />)}
-              </button>
-
-              <div 
-                className="flex-1 h-20 mx-4 cursor-pointer hover:bg-white/5 rounded-2xl transition-colors flex items-center justify-center"
-                onClick={() => window.dispatchEvent(new CustomEvent('myra-restore'))}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                title="Click to expand window"
-              >
-                {isListening ? (
-                  <AudioVisualizer analyser={inputAnalyser} isActive={isListening} type="input" />
-                ) : (
-                  <AudioVisualizer analyser={outputAnalyser} isActive={isSpeaking} type="output" />
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={toggleMute}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMuted
-                    ? 'bg-red-600/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.5)]'
-                    : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
-                  }`}
-              >
-                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              </button>
-            </div>
-          ) : isPetMode ? (
+          {/* Mini mode removed — always show full chat */}
+          {isPetMode ? (
             <div 
               onPointerDown={handlePetPointerDown}
               onPointerMove={handlePetPointerMove}

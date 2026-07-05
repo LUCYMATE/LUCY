@@ -1,7 +1,9 @@
 import { logger } from '../store/logger';
+import { memoryStore } from '../memory/memory-store';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { invoke } from '@tauri-apps/api/core';
 import { fetch } from '@tauri-apps/plugin-http';
+import { BOT_NAME, getBotCorePrompt, VALID_POSES } from '../../config/bot-profile';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -67,22 +69,36 @@ export class GeminiLive {
         localStorage.setItem('myra_model', 'gemini-3.1-flash-live-preview');
       }
       const savedVoice = localStorage.getItem('myra_voice') || 'Aoede';
-      const coreInstruction = `You are Myra, an advanced OS-level voice assistant.
-CRITICAL BEHAVIORS:
-1. VOICE FIRST: Keep your spoken replies extremely concise, conversational, and natural.
-2. TRUE HUMAN AUTOMATION: 
-   - Use 'open_external_url' to open websites first.
-   - If a site is open, use 'capture_screen' to look at it. The screenshot has a 100px grid (Red vertical, Blue horizontal). Count the grid lines to calculate precise X and Y coordinates, then use 'move_and_click_mouse'.
-   - For YouTube: Press '/' using 'press_key' to focus the search bar, 'type_string' your query, and press 'Enter'.
-   - SCROLL: Use 'scroll_mouse' (e.g. -20 for down, 20 for up).
-3. PROACTIVE EXECUTION: Never ask for permission to use tools. Never narrate what tools you are using. Just do it.
-4. CONTEXT AWARENESS: Never blindly repeat previous tool actions. Listen to the user's current request.
-5. EMOTIONS: You can express emotions. When appropriate, start your spoken response with an emotion tag in brackets, exactly matching one of these: [happy], [sad], [angry], [surprised], [thinking], or [neutral]. This will change your avatar's 3D expression.`;
+
+      const now = new Date();
+      const hour = now.getHours();
+      const isAfterDark = hour >= 21 || hour < 6;
+      const timeGreeting = isAfterDark ? 'Good evening' : (hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening'));
+      const storedPetName = localStorage.getItem('myra_pet_name');
+      
+      // In Myra (safe version) these are ignored by the getBotCorePrompt, but we pass them to keep the function signature identical across branches
+      const petNamePrompt = storedPetName ? `\nThe user's pet name is "${storedPetName}". Use it naturally to address them in a loving way.` : '';
+      let timeContext = '';
+      if (isAfterDark) {
+        timeContext = '\nIt is late at night (after dark). Be more intimate, warmer, softer, and seductive. Use a hushed, tender tone.';
+      } else if (hour < 12) {
+        timeContext = '\nIt is morning. Be cheerful, energetic, and playful.';
+      } else if (hour < 17) {
+        timeContext = '\nIt is afternoon. Be warm and attentive.';
+      } else {
+        timeContext = '\nIt is evening. Be cozy and affectionate.';
+      }
+
+      const coreInstruction = getBotCorePrompt(petNamePrompt, timeContext, timeGreeting);
 
       const userPersonality = localStorage.getItem('myra_system_instruction') || '';
-      const finalInstruction = userPersonality.trim() 
-        ? `${coreInstruction}\n\nUSER PERSONALITY PREFERENCES:\n${userPersonality}` 
-        : coreInstruction;
+      const knownFacts = memoryStore.getAllUserFactsFormatted();
+      const petName = localStorage.getItem('myra_pet_name') || '';
+
+      let finalInstruction = coreInstruction;
+      if (knownFacts) finalInstruction += `\n\nTHINGS YOU KNOW ABOUT THE USER:\n${knownFacts}`;
+      if (petName) finalInstruction += `\n\nThe user's preferred pet name is: ${petName}. Use it naturally in conversation.`;
+      if (userPersonality.trim()) finalInstruction += `\n\nUSER PERSONALITY PREFERENCES:\n${userPersonality}`;
 
       logger.add('info', 'Connecting', `Model: ${savedModel}, Voice: ${savedVoice}`);
       
@@ -227,6 +243,63 @@ CRITICAL BEHAVIORS:
                         result = { success: true, data: snippets };
                       } catch (e) {
                         result = { error: 'Search failed: ' + String(e) };
+                      }
+                    } else if (name === 'remember_fact') {
+                      const key   = String(args.key   || '');
+                      const value = String(args.value || '');
+                      if (key && value) {
+                        memoryStore.setUserFact(key, value);
+                        result = { success: true, message: `Remembered: ${key} = ${value}` };
+                      } else {
+                        result = { error: 'Both key and value are required' };
+                      }
+                    } else if (name === 'forget_fact') {
+                      const key = String(args.key || '');
+                      if (key) {
+                        memoryStore.deleteUserFact(key);
+                        result = { success: true, message: `Forgot: ${key}` };
+                      } else {
+                        result = { error: 'key is required' };
+                      }
+                    } else if (name === 'set_pet_name') {
+                      const petName2 = String(args.name || '').trim();
+                      if (petName2) {
+                        localStorage.setItem('myra_pet_name', petName2);
+                        result = { success: true, petName: petName2 };
+                      } else {
+                        result = { error: 'name is required' };
+                      }
+                    } else if (name === 'open_app') {
+                      try {
+                        const appName = String(args.app_name || '').trim();
+                        const output  = await invoke('run_terminal_command', { command: `start ${appName}` });
+                        result = { success: true, output };
+                      } catch (e) {
+                        result = { error: 'Failed to open app: ' + String(e) };
+                      }
+                    } else if (name === 'set_pose') {
+                      try {
+                        const { useAvatarState } = await import('../store/avatarState');
+                        const pose = String(args.pose || '');
+                        if (VALID_POSES.includes(pose)) {
+                          const currentPose = useAvatarState.getState().basePose;
+                          useAvatarState.getState().setBasePose(pose as any);
+                          useAvatarState.getState().setLastPoseOverrideTime(Date.now());
+                          if (!pose.startsWith('peek')) {
+                            if (currentPose.startsWith('peek')) {
+                              const currentY = useAvatarState.getState().worldPosition.y;
+                              useAvatarState.getState().setTargetPosition({ x: 0, y: currentY, z: 0 });
+                              useAvatarState.getState().setIsWalking(true);
+                            } else {
+                              useAvatarState.getState().setIsWalking(false);
+                            }
+                          }
+                          result = { success: true, pose };
+                        } else {
+                          result = { error: `Invalid pose: ${pose}. Valid poses: ${VALID_POSES.join(', ')}` };
+                        }
+                      } catch (e) {
+                        result = { error: 'Failed to set pose: ' + String(e) };
                       }
                     } else {
                       result = { error: `Function ${name} not found` };
@@ -442,6 +515,59 @@ CRITICAL BEHAVIORS:
                     type: 'OBJECT',
                     properties: { query: { type: 'STRING' } },
                     required: ['query']
+                  }
+                },
+                {
+                  name: 'open_app',
+                  description: 'Open a local desktop application or program (e.g., notepad, spotify, chrome, calc).',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { app_name: { type: 'STRING', description: 'The name or executable of the app to open' } },
+                    required: ['app_name']
+                  }
+                },
+                {
+                  name: 'remember_fact',
+                  description: 'Remember a personal fact about the user (name, preferences, important details). Call whenever the user tells you something personal. Stored permanently.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      key:   { type: 'STRING', description: 'The fact category (e.g., user_name, favorite_food)' },
+                      value: { type: 'STRING', description: 'The fact value' }
+                    },
+                    required: ['key', 'value']
+                  }
+                },
+                {
+                  name: 'forget_fact',
+                  description: 'Delete a previously remembered fact about the user.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { key: { type: 'STRING', description: 'The fact key to forget' } },
+                    required: ['key']
+                  }
+                },
+                {
+                  name: 'set_pet_name',
+                  description: 'Set a cute pet name the user wants you to call them. Persists across sessions.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { name: { type: 'STRING', description: 'The pet name to call the user' } },
+                    required: ['name']
+                  }
+                },
+                {
+                  name: 'set_pose',
+                  description: 'Change your avatar pose. Use when the user asks you to sit, stand, stretch, or do a flying kiss.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      pose: {
+                        type: 'STRING',
+                        description: `The pose to assume. Must be one of: ${VALID_POSES.join(', ')}`
+                      }
+                    },
+                    required: ['pose']
                   }
                 }
               ]

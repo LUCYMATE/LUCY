@@ -7,21 +7,29 @@ interface AvatarState {
   isListening: boolean;
   emotion: Emotion;
   basePose: BasePose;
+  lastPoseOverrideTime: number;
   isWalking: boolean;
   worldPosition: { x: number; y: number; z: number };
   targetPosition: { x: number; y: number; z: number } | null;
   isDragging: boolean;
-  
+  affectionLevel: number;
+  isPetMode: boolean;
+  avatarScale: number;
+  isHearingSound: boolean;
+
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
   setListening: (val: boolean) => void;
   setEmotion: (val: Emotion) => void;
   setBasePose: (val: BasePose) => void;
+  setLastPoseOverrideTime: (val: number) => void;
   setIsWalking: (val: boolean) => void;
   setWorldPosition: (pos: { x: number; y: number; z: number }) => void;
   setTargetPosition: (pos: { x: number; y: number; z: number } | null) => void;
   setIsDragging: (val: boolean) => void;
-  isHearingSound: boolean;
+  setAffectionLevel: (val: number) => void;
+  setIsPetMode: (val: boolean) => void;
+  setAvatarScale: (val: number) => void;
   setHearingSound: (val: boolean) => void;
 }
 
@@ -31,20 +39,28 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isListening: false,
   emotion: 'neutral',
   basePose: 'sit',
+  lastPoseOverrideTime: 0,
   isWalking: false,
   worldPosition: { x: 0, y: -0.5, z: 0 },
   targetPosition: null,
   isDragging: false,
   isHearingSound: false,
-  
+  affectionLevel: parseInt(localStorage.getItem('myra_affection') ?? '30', 10),
+  isPetMode: false,
+  avatarScale: parseFloat(localStorage.getItem('myra_avatar_size') ?? '100') / 100,
+
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
   setListening: (val) => set({ isListening: val }),
   setEmotion: (val) => set({ emotion: val }),
   setBasePose: (val) => set({ basePose: val }),
+  setLastPoseOverrideTime: (val) => set({ lastPoseOverrideTime: val }),
   setIsWalking: (val) => set({ isWalking: val }),
   setWorldPosition: (pos) => set({ worldPosition: pos }),
   setTargetPosition: (pos) => set({ targetPosition: pos }),
   setIsDragging: (val) => set({ isDragging: val }),
   setHearingSound: (val) => set({ isHearingSound: val }),
+  setAffectionLevel: (val) => set({ affectionLevel: val }),
+  setIsPetMode: (val) => set({ isPetMode: val }),
+  setAvatarScale: (val) => set({ avatarScale: val }),
 }));

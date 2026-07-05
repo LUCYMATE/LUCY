@@ -8,13 +8,11 @@ import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
 
 export default function App() {
-  const [isMiniMode, setIsMiniMode] = useState(false);
   const [isPetMode, setIsPetMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const normalSizeRef = useRef<{width: number, height: number} | null>(null);
-  const normalPosRef = useRef<{x: number, y: number} | null>(null);
-  const miniPosRef = useRef<{x: number, y: number} | null>(null);
+  const normalPosRef  = useRef<{x: number, y: number} | null>(null);
   const petModePosRef = useRef<{x: number, y: number} | null>(null);
 
   const restoreWindow = async () => {
@@ -23,30 +21,17 @@ export default function App() {
     };
     try {
       const win = getCurrentWindow();
-      
-      // Save mini mode position before restoring
-      try {
-        const pos = await win.outerPosition();
-        const factor = await win.scaleFactor();
-        const logicalPos = pos.toLogical(factor);
-        miniPosRef.current = { x: logicalPos.x, y: logicalPos.y };
-      } catch (e) {
-        console.warn("Could not save mini position", e);
-      }
 
       await safe(win.setMaxSize(null));
       await safe(win.setAlwaysOnTop(false));
       await safe(win.setIgnoreCursorEvents(false));
 
       try {
-        // Always restore the normal size first so the OS remembers the correct unmaximized size
         if (normalSizeRef.current) {
           await win.setSize(new LogicalSize(normalSizeRef.current.width, normalSizeRef.current.height));
         } else {
           await win.setSize(new LogicalSize(1000, 700));
         }
-
-        // Restore normal position
         if (normalPosRef.current) {
           await win.setPosition(new LogicalPosition(normalPosRef.current.x, normalPosRef.current.y));
         }
@@ -55,11 +40,9 @@ export default function App() {
       }
 
       await safe(win.setMinSize(new LogicalSize(800, 600)));
-      setIsMiniMode(false);
       setIsPetMode(false);
     } catch (e) {
       console.warn("Fallback: window api totally failed", e);
-      setIsMiniMode(false); 
       setIsPetMode(false);
     }
   };
@@ -106,7 +89,6 @@ export default function App() {
         await safe(win.setIgnoreCursorEvents(true));
 
         setIsPetMode(true);
-        setIsMiniMode(false);
       } else {
         await restoreWindow();
       }
@@ -136,6 +118,10 @@ export default function App() {
     const timer = setTimeout(async () => {
       try {
         await getCurrentWindow().show();
+        // Auto-launch into pet mode if the user has it enabled
+        if (localStorage.getItem('myra_launch_pet_mode') === 'true') {
+          togglePetMode();
+        }
       } catch (e) {
         // Not running in Tauri or permission missing
       }
@@ -244,12 +230,11 @@ export default function App() {
   return (
     <div 
       className={`h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col ${isPetMode ? 'bg-transparent' : 'bg-[#020617]'}`}
-      data-tauri-drag-region={isMiniMode ? true : undefined}
     >
-      {!isPetMode && <div className="mesh-bg" data-tauri-drag-region={isMiniMode ? true : undefined}></div>}
+      {!isPetMode && <div className="mesh-bg"></div>}
       
       {/* Custom Titlebar */}
-      {!isMiniMode && !isPetMode && (
+      {!isPetMode && (
         <TitleBar 
           onOpenMenu={() => setSidebarOpen(true)}
           onMinimize={minimize}
@@ -260,12 +245,12 @@ export default function App() {
       )}
 
       {/* ── Sliding Sidebar Overlay ── */}
-      {!isMiniMode && !isPetMode && sidebarOpen && (
+      {!isPetMode && sidebarOpen && (
         <Sidebar onClose={() => setSidebarOpen(false)} />
       )}
 
-      <div className="flex-1 relative flex min-h-0" data-tauri-drag-region={isMiniMode ? true : undefined}>
-        <MyraOS isMiniMode={isMiniMode} isPetMode={isPetMode} />
+      <div className="flex-1 relative flex min-h-0">
+        <MyraOS isPetMode={isPetMode} />
       </div>
     </div>
   );

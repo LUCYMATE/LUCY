@@ -8,8 +8,9 @@ export interface BoneRest {
   };
 }
 
-export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right';
-export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'thinking';
+export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'stretch' | 'lean' | 'flying-kiss' | 'caress';
+export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'thinking' | 'flirty';
+
 
 // The global smoothing factor
 export const SMOOTHING = 0.07;
