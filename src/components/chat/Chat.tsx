@@ -18,6 +18,13 @@ interface Message {
   text: string;
 }
 
+const cleanMessageText = (text: string) => {
+  let cleaned = text.replace(/^\[.*?\]\s*/, '');
+  cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+  cleaned = cleaned.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+  return cleaned;
+};
+
 export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
   const [messages, setMessages] = useState<Message[]>([
@@ -505,7 +512,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
                         : 'bg-pink-500/10 border border-pink-500/20 text-pink-50 rounded-bl-none backdrop-blur-md'
                       }`}>
                       <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap">
-                        {m.text}
+                        {m.role === 'model' ? cleanMessageText(m.text) : m.text}
                       </div>
                     </div>
                   </div>

@@ -30,11 +30,18 @@ function Stool({ visible }: { visible: boolean }) {
 function FlyingKisses({ active }: { active: boolean }) {
   const [particles, setParticles] = useState<any[]>([]);
   const hasSpawnedRef = useRef<boolean>(false);
+  const lastSpawnTimeRef = useRef<number>(0);
 
   useFrame((_state, delta) => {
     if (active) {
       const lastOverride = useAvatarState.getState().lastPoseOverrideTime;
       const localTime = (Date.now() - lastOverride) / 1000.0;
+
+      if (lastOverride !== lastSpawnTimeRef.current) {
+        lastSpawnTimeRef.current = lastOverride;
+        hasSpawnedRef.current = false;
+        setParticles([]);
+      }
 
       // Spawn exactly once when the hand extends at t=1.2s
       if (localTime >= 1.2 && !hasSpawnedRef.current) {

@@ -101,21 +101,22 @@ export function VrmModel({
             const s = joint.settings;
             if (!s) return;
 
-            // Force gravity strictly downward on EVERY joint
+            // Exclude ears, tails, and breasts from the artificial gravity
+            const boneName = (joint.bone?.name || '').toLowerCase();
+            if (boneName.includes('ear') || boneName.includes('kemomimi') || 
+                boneName.includes('tail') || boneName.includes('shippo') ||
+                boneName.includes('breast') || boneName.includes('bust')) {
+              return;
+            }
+
+            // Force gentle gravity strictly downward for hair/skirt to pull it to earth
             if (!s.gravityDir) {
               s.gravityDir = new THREE.Vector3(0, -1, 0);
             } else {
               s.gravityDir.set(0, -1, 0);
             }
-
-            // Strong gravity so skirt/hair fall quickly and don't float
-            s.gravityPower = Math.max(s.gravityPower ?? 0, 0.5);
-
-            // Higher stiffness → bones stay near rest pose, less free-floating
-            s.stiffness = Math.max(s.stiffness ?? 0, 2.5);
-
-            // Higher drag → oscillations die out faster (no bouncing)
-            s.dragForce = Math.max(s.dragForce ?? 0, 0.7);
+            // Use a gentle gravity pull, but leave stiffness and drag alone so it waves naturally
+            s.gravityPower = Math.max(s.gravityPower ?? 0, 0.15);
           });
 
           // ── Store ALL collider radii for sit/stand toggling ──────────────

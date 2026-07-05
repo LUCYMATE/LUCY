@@ -105,9 +105,13 @@ export function applyFlirty(
     const rUpperIdle   = { dx: 0.1,  dy: 0,    dz: -1.2 };
     const rLowerIdle   = { dx: 0,    dy: 0,    dz: 0    };
     const rHandIdle    = { dx: 0,    dy: 0,    dz: 0    };
-    const rUpperMouth  = { dx: 0.2,  dy: -0.2, dz: -1.2 };
-    const rLowerMouth  = { dx: 0,    dy: 2.2,  dz: 0.3  };
-    const rHandMouth   = { dx: 0.5,  dy: 0,    dz: 0    };
+    // Completely new independent calculation for hand-to-mouth:
+    // Z controls Up/Down (0 is horizontal shoulder level). 
+    // X controls Forward (Positive is forward).
+    // Y bends the elbow inward.
+    const rUpperMouth  = { dx: 0.5,  dy: 0.5, dz: 0.0 }; 
+    const rLowerMouth  = { dx: 0.0,  dy: 2.0, dz: 0.0 }; 
+    const rHandMouth   = { dx: -0.3, dy: 0.0, dz: 0.0 };
     const rUpperExtend = { dx: -0.3, dy: 0.2,  dz: -1.0 };
     const rLowerExtend = { dx: 0,    dy: 0.4,  dz: 0    };
     const rHandExtend  = { dx: -0.2, dy: 0,    dz: 0.2  };

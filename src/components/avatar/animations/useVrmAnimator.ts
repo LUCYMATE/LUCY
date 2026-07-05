@@ -102,15 +102,17 @@ export function useVrmAnimator({
       applyFlirtyIdleSway(vrm, rest, t);
     }
 
+    const shouldSpeak = isSpeaking && basePose !== 'flying-kiss';
+
     // ── Step 3: Upper-body gestures (arms, head, neck) ────────────────────
     applyGestures(
       vrm, rest, t,
-      isGreeting, isSpeaking, isThinking, actuallyHearing,
+      isGreeting, shouldSpeak, isThinking, actuallyHearing,
       isWalking, emotion, isSitting
     );
 
     // ── Step 4: Expressions (face, blink, lip sync) ───────────────────────
-    applyExpressions(vrm, t, isSpeaking, actuallyHearing, isThinking, emotion);
+    applyExpressions(vrm, t, shouldSpeak, actuallyHearing, isThinking, emotion);
 
     // ── Step 5: High-priority active animations ───────────────────────────
     // flying-kiss must override talking gestures, so it runs last

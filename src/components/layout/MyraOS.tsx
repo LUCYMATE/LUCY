@@ -106,24 +106,27 @@ export function MyraOS({ isPetMode = false }: { isPetMode?: boolean }) {
                </span>
              </div>
              <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 relative">
-               {logs.length === 0 ? (
-                 <div className="text-white/30 text-xs italic text-center mt-4">Waiting for activity...</div>
-               ) : (
-                 logs.map(log => (
-                   <div key={log.id} className="flex flex-col gap-1 text-xs border-l-2 pl-2 py-1 border-white/10 hover:bg-white/5 transition-colors animate-in slide-in-from-left-2 fade-in duration-300">
-                     <div className="flex items-center gap-1.5 opacity-70">
-                       <span className="font-mono text-[9px]">{new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}</span>
-                       <span className={`text-[10px] font-bold uppercase tracking-wider
-                         ${log.level === 'error' ? 'text-red-400' :
-                           log.level === 'warning' ? 'text-yellow-400' :
-                           log.level === 'success' ? 'text-green-400' : 'text-blue-400'}`
-                       }>{log.level}</span>
+               {(() => {
+                 const displayLogs = logs.filter(log => log.level === 'error' || log.level === 'warning' || (log.level === 'success' && !log.action.includes('Tool')));
+                 return displayLogs.length === 0 ? (
+                   <div className="text-white/30 text-xs italic text-center mt-4">Waiting for activity...</div>
+                 ) : (
+                   displayLogs.map(log => (
+                     <div key={log.id} className="flex flex-col gap-1 text-xs border-l-2 pl-2 py-1 border-white/10 hover:bg-white/5 transition-colors animate-in slide-in-from-left-2 fade-in duration-300">
+                       <div className="flex items-center gap-1.5 opacity-70">
+                         <span className="font-mono text-[9px]">{new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}</span>
+                         <span className={`text-[10px] font-bold uppercase tracking-wider
+                           ${log.level === 'error' ? 'text-red-400' :
+                             log.level === 'warning' ? 'text-yellow-400' :
+                             log.level === 'success' ? 'text-green-400' : 'text-blue-400'}`
+                         }>{log.level}</span>
+                       </div>
+                       <div className="font-medium text-white/90">{log.action}</div>
+                       <div className="text-white/60 text-[10px] leading-tight break-words">{log.detail}</div>
                      </div>
-                     <div className="font-medium text-white/90">{log.action}</div>
-                     <div className="text-white/60 text-[10px] leading-tight break-words">{log.detail}</div>
-                   </div>
-                 ))
-               )}
+                   ))
+                 );
+               })()}
                {/* Auto-scroll anchor */}
                <div className="h-1 shrink-0" ref={logsEndRef} />
              </div>
