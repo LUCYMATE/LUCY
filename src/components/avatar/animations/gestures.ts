@@ -27,11 +27,11 @@ export function applyGestures(
 
   const idleSway = Math.sin(t * 0.8) * 0.02;
 
-  const rArmBase = { x: 0.2, y: 0.4, z: -1.25 };
+  const rArmBase = { x: 0.2, y: 0.4, z: -1.4 };
   const rElbowBase = { x: 0, y: 1.4, z: 0 }; 
   const rHandBase = { x: -0.1, y: 0, z: -0.1 };
 
-  const lArmBase = { x: 0.2, y: -0.4, z: 1.25 };
+  const lArmBase = { x: 0.2, y: -0.4, z: 1.4 };
   const lElbowBase = { x: 0, y: -1.4, z: 0 }; 
   const lHandBase = { x: -0.1, y: 0, z: 0.1 };
 
@@ -158,11 +158,11 @@ export function applyGestures(
         const walkSpeed = 6.0;
         const wt = t * walkSpeed;
         const armSwing = 0.3;
-        // Right arm swings with left leg
-        fr(VRMHumanBoneName.RightUpperArm, -Math.sin(wt) * armSwing, 0, -1.0, 0.2);
+        // Right arm swings with left leg (tucked in)
+        fr(VRMHumanBoneName.RightUpperArm, -Math.sin(wt) * armSwing, 0, -1.4, 0.2);
         fr(VRMHumanBoneName.RightLowerArm, 0, 0.5, 0, 0.2);
-        // Left arm swings with right leg
-        fr(VRMHumanBoneName.LeftUpperArm, -Math.sin(wt + Math.PI) * armSwing, 0, 1.0, 0.2);
+        // Left arm swings with right leg (tucked in)
+        fr(VRMHumanBoneName.LeftUpperArm, -Math.sin(wt + Math.PI) * armSwing, 0, 1.4, 0.2);
         fr(VRMHumanBoneName.LeftLowerArm, 0, -0.5, 0, 0.2);
       } else {
         // Calculate slow random sways
@@ -180,12 +180,12 @@ export function applyGestures(
           fr(VRMHumanBoneName.LeftLowerArm, 0, -0.9 - elbowSway, 0, SMOOTHING * 0.4);
           fr(VRMHumanBoneName.LeftHand, -0.2, 0, 0, SMOOTHING * 0.4);
         } else {
-          // Hanging straight down by sides (downward Z rotation)
-          fr(VRMHumanBoneName.RightUpperArm, 0.1 + idleArmSwayX, 0, -1.25 + idleArmSwayZ, SMOOTHING * 0.4);
+          // Hanging straight down by sides (downward Z rotation tucked inwards to 'A' pose)
+          fr(VRMHumanBoneName.RightUpperArm, 0.1 + idleArmSwayX, 0, -1.4 + idleArmSwayZ, SMOOTHING * 0.4);
           fr(VRMHumanBoneName.RightLowerArm, 0, 0.1 + elbowSway, 0, SMOOTHING * 0.4);
           fr(VRMHumanBoneName.RightHand, 0, 0, 0, SMOOTHING * 0.4);
 
-          fr(VRMHumanBoneName.LeftUpperArm, 0.1 + idleArmSwayX, 0, 1.25 - idleArmSwayZ, SMOOTHING * 0.4);
+          fr(VRMHumanBoneName.LeftUpperArm, 0.1 + idleArmSwayX, 0, 1.4 - idleArmSwayZ, SMOOTHING * 0.4);
           fr(VRMHumanBoneName.LeftLowerArm, 0, -0.1 - elbowSway, 0, SMOOTHING * 0.4);
           fr(VRMHumanBoneName.LeftHand, 0, 0, 0, SMOOTHING * 0.4);
         }

@@ -115,7 +115,7 @@ export function useVrmAnimator({
     // Runs on top of locomotion. applyFlirty overwrites body bones via slerp
     // so the flirty shape blends in over the sit/stand base.
     // Active animations like 'flying-kiss' are skipped here and run at the very end to override talking.
-    if (isFlirtyPose && !isWalking && basePose !== 'flying-kiss') {
+    if (isFlirtyPose && !isWalking) {
       applyFlirty(vrm, rest, t, basePose);
     }
 

@@ -2,7 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-
+``
 // Suppress benign THREE.Clock deprecation warning from @react-three/fiber
 const originalWarn = console.warn;
 console.warn = (...args) => {
@@ -10,7 +10,7 @@ console.warn = (...args) => {
   originalWarn(...args);
 };
 
-function showCustomAlert(msg: string) {
+function showCustomAlert(msg: string) {``
   const overlay = document.createElement('div');
   overlay.style.position = 'fixed';
   overlay.style.top = '0';

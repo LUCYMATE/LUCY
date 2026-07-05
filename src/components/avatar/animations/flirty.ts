@@ -403,6 +403,7 @@ export function applyFlirtyIdleSway(
     Math.cos(t * 0.5) * 0.04,
     0, 0.03);
 
-  fr(VRMHumanBoneName.RightUpperArm,  Math.sin(t * 0.7) * 0.02, 0, -1.3, SMOOTHING * 0.4);
-  fr(VRMHumanBoneName.LeftUpperArm,   Math.sin(t * 0.7 + 0.5) * 0.02, 0, 1.3, SMOOTHING * 0.4);
+  // Adjusted to be halfway between T-pose (0) and A-pose (1.45) -> ~0.8
+  fr(VRMHumanBoneName.RightUpperArm,  Math.sin(t * 0.7) * 0.02, 0, -0.8, SMOOTHING * 0.4);
+  fr(VRMHumanBoneName.LeftUpperArm,   Math.sin(t * 0.7 + 0.5) * 0.02, 0, 0.8, SMOOTHING * 0.4);
 }

@@ -143,7 +143,6 @@ CRITICAL BEHAVIORS:
                 
                 for (const fc of functionCalls) {
                   const { name, id, args } = fc;
-                  logger.add('info', `Tool Call Received: ${name}`, JSON.stringify(args));
                   
                   let result: any = null;
                   try {
@@ -170,6 +169,11 @@ CRITICAL BEHAVIORS:
                     } else if (name === 'run_terminal_command') {
                       const output = await invoke('run_terminal_command', { command: args.command });
                       result = { success: true, output };
+                    } else if (name === 'open_app') {
+                      const appName = args.app_name as string;
+                      // Use cmd 'start' to launch the app on Windows
+                      const output = await invoke('run_terminal_command', { command: `start ${appName}` });
+                      result = { success: true, message: `Opened ${appName}`, output };
                     } else if (name === 'press_key') {
                       await invoke('press_key', { key: args.key });
                       result = { success: true };
@@ -242,25 +246,28 @@ CRITICAL BEHAVIORS:
                     } else if (name === 'search_web') {
                       try {
                         const query = args.query || '';
-                        const url = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query as string);
-                        const response = await fetch(url, {
-                          method: 'GET',
+                        const response = await fetch("https://lite.duckduckgo.com/lite/", {
+                          method: 'POST',
                           headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-                          }
+                          },
+                          body: 'q=' + encodeURIComponent(query as string)
                         });
                         const html = await response.text();
-                        const matches = [...html.matchAll(/class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/gis)];
-                        const altMatches = [...html.matchAll(/class="result__body"[^>]*>[\s\S]*?<a[^>]*class="result__a"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gis)];
+                        
+                        // Extract text from the result-snippet table cells in DDG Lite
+                        const matches = [...html.matchAll(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/gis)];
                         let snippets: string[] = [];
+                        
                         if (matches.length > 0) {
-                          snippets = matches.map(m => m[1].replace(/<[^>]+>/g, '').trim()).slice(0, 3);
-                        } else if (altMatches.length > 0) {
-                          snippets = altMatches.map(m => (m[1] + ': ' + m[2]).replace(/<[^>]+>/g, '').trim()).slice(0, 3);
+                          snippets = matches.map(m => m[1].replace(/<[^>]+>/g, '').trim()).filter(s => s.length > 10).slice(0, 3);
                         } else {
+                          // Fallback to searching for any generic link with class result
                           const genericMatches = [...html.matchAll(/<a[^>]*class="[^"]*result[^"]*"[^>]*>([\s\S]*?)<\/a>/gis)];
                           snippets = genericMatches.map(m => m[1].replace(/<[^>]+>/g, '').trim()).filter(s => s.length > 10).slice(0, 3);
                         }
+                        
                         result = { success: true, data: snippets.length > 0 ? snippets : ['No results found'] };
                       } catch (e) {
                         result = { error: 'Search failed: ' + String(e) };
@@ -270,7 +277,6 @@ CRITICAL BEHAVIORS:
                       const value = String(args.value || '');
                       if (key && value) {
                         memoryStore.setUserFact(key, value);
-                        logger.add('success', 'Memory Stored', `${key}: ${value}`);
                         result = { success: true, message: `Remembered: ${key} = ${value}` };
                       } else {
                         result = { error: 'Both key and value are required' };
@@ -279,7 +285,6 @@ CRITICAL BEHAVIORS:
                       const key = String(args.key || '');
                       if (key) {
                         memoryStore.deleteUserFact(key);
-                        logger.add('info', 'Memory Forgotten', key);
                         result = { success: true, message: `Forgot: ${key}` };
                       } else {
                         result = { error: 'key is required' };
@@ -288,7 +293,6 @@ CRITICAL BEHAVIORS:
                       const petName = String(args.name || '').trim();
                       if (petName) {
                         localStorage.setItem('syra_pet_name', petName);
-                        logger.add('info', 'Pet Name Set', petName);
                         result = { success: true, petName };
                       } else {
                         result = { error: 'name is required' };
@@ -497,6 +501,15 @@ CRITICAL BEHAVIORS:
                     type: 'OBJECT',
                     properties: { script: { type: 'STRING' } },
                     required: ['script']
+                  }
+                },
+                {
+                  name: 'open_app',
+                  description: 'Open a local desktop application or program on the user\'s computer (e.g., notepad, spotify, chrome, calc).',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { app_name: { type: 'STRING', description: 'The name or executable of the app to open' } },
+                    required: ['app_name']
                   }
                 },
                 {
