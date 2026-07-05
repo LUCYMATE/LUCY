@@ -11,6 +11,11 @@ export default defineConfig({
   optimizeDeps: {
     include: ['three', '@react-three/fiber', '@react-three/drei', 'lucide-react', '@pixiv/three-vrm']
   },
+  server: {
+    watch: {
+      ignored: ['**/src-tauri/**']
+    }
+  },
   build: {
     chunkSizeWarningLimit: 1000,
     rollupOptions: {

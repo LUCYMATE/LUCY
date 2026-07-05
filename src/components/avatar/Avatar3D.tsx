@@ -297,8 +297,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             className="cursor-grab active:cursor-grabbing pointer-events-auto"
-            style={getHandleStyle(y_head, 160, 160)}
-            title={`Drag ${BOT_NAME} (Head)`}
+            style={getHandleStyle(y_head, 120, 120)}
           />
           <div
             onPointerDown={handlePointerDown}
@@ -306,8 +305,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             className="cursor-grab active:cursor-grabbing pointer-events-auto"
-            style={getHandleStyle(y_waist, 200, 240)}
-            title={`Drag ${BOT_NAME} (Waist)`}
+            style={getHandleStyle(y_waist, 160, 200)}
           />
           <div
             onPointerDown={handlePointerDown}
@@ -315,8 +313,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             className="cursor-grab active:cursor-grabbing pointer-events-auto"
-            style={getHandleStyle(y_feet, 220, 120)}
-            title={`Drag ${BOT_NAME} (Feet)`}
+            style={getHandleStyle(y_feet, 180, 100)}
           />
         </div>
       </Html>
