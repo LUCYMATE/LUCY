@@ -33,6 +33,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [systemInstruction, setSystemInstruction] = useState<string>(() => localStorage.getItem('myra_system_instruction') || 'You are a helpful voice assistant. Keep replies conversational, concise, and natural for back-and-forth spoken chat.');
   const [mainApiKey, setMainApiKey] = useState<string>(() => localStorage.getItem('myra_main_api_key') || '');
   const [altApiKey, setAltApiKey] = useState<string>(() => localStorage.getItem('myra_alt_api_key') || '');
+  const [tavilyApiKey, setTavilyApiKey] = useState<string>(() => localStorage.getItem('myra_tavily_api_key') || '');
   const [changed, setChanged] = useState(false);
   const [launchPetMode, setLaunchPetMode] = useState<boolean>(
     () => localStorage.getItem('myra_launch_pet_mode') === 'true'
@@ -131,6 +132,12 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const handleAltApiKeyChange = (val: string) => {
     setAltApiKey(val);
     localStorage.setItem('myra_alt_api_key', val);
+    setChanged(true);
+  };
+
+  const handleTavilyApiKeyChange = (val: string) => {
+    setTavilyApiKey(val);
+    localStorage.setItem('myra_tavily_api_key', val);
     setChanged(true);
   };
 
@@ -377,6 +384,18 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                   placeholder="AIzaSy..."
                 />
                 <p className="text-xs text-white/40 mt-2">A fallback API key. The system will automatically try to use this key if the main key hits a rate limit or fails to connect.</p>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <label className="block text-sm font-medium text-white mb-2">Tavily Search API Key</label>
+                <input
+                  type="password"
+                  value={tavilyApiKey}
+                  onChange={(e) => handleTavilyApiKeyChange(e.target.value)}
+                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
+                  placeholder="tvly-dev-..."
+                />
+                <p className="text-xs text-white/40 mt-2">API key used for real-time web searches. If left blank, a default developer key will be used.</p>
               </div>
             </div>
           )}

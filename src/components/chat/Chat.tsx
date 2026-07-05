@@ -39,7 +39,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
 
-  const { setSpeaking, setThinking, setListening, setEmotion, isListening, isSpeaking } = useAvatarState();
+  const { setSpeaking, setThinking, setListening, setEmotion, isListening, isSpeaking, isToolAgentRunning } = useAvatarState();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -448,7 +448,18 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
         <>
           {/* ── Top Status Bar ────────────────────────────────────── */}
           {(
-            <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-none' : 'justify-end border-b border-white/5 bg-black/10'}`}>
+            <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-none' : 'justify-between border-b border-white/5 bg-black/10'}`}>
+            {isToolAgentRunning ? (
+              <div className="flex items-center gap-2 text-pink-400 font-mono text-xs animate-pulse">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500"></span>
+                </span>
+                SYSTEM AGENT RUNNING…
+              </div>
+            ) : (
+              <div /> // empty placeholder for layout balance
+            )}
             <div 
               className={`flex items-center gap-2 font-mono transition-all ${isPetMode ? 'text-[10px] opacity-70 hover:opacity-100 pointer-events-auto' : 'text-xs'} ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-105' : ''}`}
               onClick={() => {

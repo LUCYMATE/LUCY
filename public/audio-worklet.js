@@ -8,7 +8,7 @@ class AudioWorklet extends AudioWorkletProcessor {
     // Voice Activity Detection (VAD) properties
     this.threshold = 0.015; // Amplitude threshold (~1.5% of max volume)
     this.framesSinceLastLoud = 100000; // Start assumed silent
-    this.tailFrames = 16000 * 3.0; // Send audio for 3.0s after last loud sound
+    this.tailFrames = 16000 * 1.5; // Send audio for 1.5s after last loud sound
   }
 
   process(inputs, outputs, parameters) {
