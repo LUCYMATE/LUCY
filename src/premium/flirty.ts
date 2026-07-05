@@ -1,6 +1,6 @@
 import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
-import { slerpFromRest, translateFromRest, BoneRest, SMOOTHING } from './core';
-import { useAvatarState } from '../../../lib/store/avatarState';
+import { slerpFromRest, translateFromRest, BoneRest, SMOOTHING } from '../components/avatar/animations/core';
+import { useAvatarState } from '../lib/store/avatarState';
 
 export function applyFlirty(
   vrm: VRM,

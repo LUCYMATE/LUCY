@@ -17,26 +17,26 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [selectedCamera, setSelectedCamera] = useState<string>('');
 
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    const model = (localStorage.getItem('syra_model') ?? localStorage.getItem('syra_model')) || 'gemini-3.1-flash-live-preview';
+    const model = (localStorage.getItem('myra_model') ?? localStorage.getItem('myra_model')) || 'gemini-3.1-flash-live-preview';
     if (model !== 'gemini-3.1-flash-live-preview') {
-      localStorage.setItem('syra_model', 'gemini-3.1-flash-live-preview');
+      localStorage.setItem('myra_model', 'gemini-3.1-flash-live-preview');
       return 'gemini-3.1-flash-live-preview';
     }
     return model;
   });
-  const [selectedVoice, setSelectedVoice] = useState<string>(() => (localStorage.getItem('syra_voice') ?? localStorage.getItem('syra_voice')) || 'Aoede');
+  const [selectedVoice, setSelectedVoice] = useState<string>(() => (localStorage.getItem('myra_voice') ?? localStorage.getItem('myra_voice')) || 'Aoede');
   const [avatarSize, setAvatarSize] = useState<string>(() => {
-    const val = localStorage.getItem('syra_avatar_size') ?? localStorage.getItem('syra_avatar_size');
+    const val = localStorage.getItem('myra_avatar_size') ?? localStorage.getItem('myra_avatar_size');
     if (!val || ['Small', 'Medium', 'Large'].includes(val)) return '100';
     return val;
   });
-  const [systemInstruction, setSystemInstruction] = useState<string>(() => (localStorage.getItem('syra_system_instruction') ?? localStorage.getItem('syra_system_instruction')) || 'You are Syra, a sexy, affectionate, flirty AI girlfriend. Keep replies conversational, warm, and natural for back-and-forth spoken chat. Use emotion tags like [flirty], [happy], [surprised] naturally.');
-  const [mainApiKey, setMainApiKey] = useState<string>(() => (localStorage.getItem('syra_main_api_key') ?? localStorage.getItem('syra_main_api_key')) || '');
-  const [altApiKey, setAltApiKey] = useState<string>(() => (localStorage.getItem('syra_alt_api_key') ?? localStorage.getItem('syra_alt_api_key')) || '');
+  const [systemInstruction, setSystemInstruction] = useState<string>(() => (localStorage.getItem('myra_system_instruction') ?? localStorage.getItem('myra_system_instruction')) || 'You are Syra, a sexy, affectionate, flirty AI girlfriend. Keep replies conversational, warm, and natural for back-and-forth spoken chat. Use emotion tags like [flirty], [happy], [surprised] naturally.');
+  const [mainApiKey, setMainApiKey] = useState<string>(() => (localStorage.getItem('myra_main_api_key') ?? localStorage.getItem('myra_main_api_key')) || '');
+  const [altApiKey, setAltApiKey] = useState<string>(() => (localStorage.getItem('myra_alt_api_key') ?? localStorage.getItem('myra_alt_api_key')) || '');
   const [connectionChanged, setConnectionChanged] = useState(false);
   const [deviceChanged, setDeviceChanged] = useState(false);
   const [wearClothes, setWearClothesLocal] = useState(() => useAvatarState.getState().wearClothes);
-  const [launchPetMode, setLaunchPetMode] = useState(() => localStorage.getItem('syra_launch_pet_mode') === 'true');
+  const [launchPetMode, setLaunchPetMode] = useState(() => localStorage.getItem('myra_launch_pet_mode') === 'true');
   useEffect(() => {
     async function loadDevices() {
       try {
@@ -47,23 +47,23 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
         // Microphones
         const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
         setDevices(audioInputs);
-        const savedMicId = localStorage.getItem('syra_mic_id');
+        const savedMicId = localStorage.getItem('myra_mic_id');
         if (savedMicId && audioInputs.some(d => d.deviceId === savedMicId)) {
           setSelectedMic(savedMicId);
         } else if (audioInputs.length > 0) {
           setSelectedMic(audioInputs[0].deviceId);
-          localStorage.setItem('syra_mic_id', audioInputs[0].deviceId);
+          localStorage.setItem('myra_mic_id', audioInputs[0].deviceId);
         }
 
         // Cameras
         const videoInputs = allDevices.filter(d => d.kind === 'videoinput');
         setVideoDevices(videoInputs);
-        const savedCamId = localStorage.getItem('syra_camera_id');
+        const savedCamId = localStorage.getItem('myra_camera_id');
         if (savedCamId && videoInputs.some(d => d.deviceId === savedCamId)) {
           setSelectedCamera(savedCamId);
         } else if (videoInputs.length > 0) {
           setSelectedCamera(videoInputs[0].deviceId);
-          localStorage.setItem('syra_camera_id', videoInputs[0].deviceId);
+          localStorage.setItem('myra_camera_id', videoInputs[0].deviceId);
         }
         
       } catch (e) {
@@ -76,7 +76,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const handleMicChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedMic(val);
-    localStorage.setItem('syra_mic_id', val);
+    localStorage.setItem('myra_mic_id', val);
     setDeviceChanged(true);
     logger.add('success', 'Settings', 'Microphone changed to ' + val);
   };
@@ -84,34 +84,34 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const handleCameraChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedCamera(val);
-    localStorage.setItem('syra_camera_id', val);
+    localStorage.setItem('myra_camera_id', val);
     setDeviceChanged(true);
     logger.add('success', 'Settings', 'Camera changed to ' + val);
   };
 
   const handleModelChange = (val: string) => {
     setSelectedModel(val);
-    localStorage.setItem('syra_model', val);
+    localStorage.setItem('myra_model', val);
     setConnectionChanged(true);
     logger.add('success', 'Settings', 'Model changed to ' + val);
   };
 
   const handleVoiceChange = (val: string) => {
     setSelectedVoice(val);
-    localStorage.setItem('syra_voice', val);
+    localStorage.setItem('myra_voice', val);
     setConnectionChanged(true);
     logger.add('success', 'Settings', 'Voice changed to ' + val);
   };
 
   const handleInstructionChange = (val: string) => {
     setSystemInstruction(val);
-    localStorage.setItem('syra_system_instruction', val);
+    localStorage.setItem('myra_system_instruction', val);
     setConnectionChanged(true);
   };
 
   const handleAvatarSizeChange = (val: string) => {
     setAvatarSize(val);
-    localStorage.setItem('syra_avatar_size', val);
+    localStorage.setItem('myra_avatar_size', val);
     const scaleVal = parseInt(val, 10);
     if (!isNaN(scaleVal)) {
       useAvatarState.getState().setAvatarScale(scaleVal / 100);
@@ -120,13 +120,13 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
 
   const handleMainApiKeyChange = (val: string) => {
     setMainApiKey(val);
-    localStorage.setItem('syra_main_api_key', val);
+    localStorage.setItem('myra_main_api_key', val);
     setConnectionChanged(true);
   };
 
   const handleAltApiKeyChange = (val: string) => {
     setAltApiKey(val);
-    localStorage.setItem('syra_alt_api_key', val);
+    localStorage.setItem('myra_alt_api_key', val);
     setConnectionChanged(true);
   };
 
@@ -136,9 +136,9 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
       if (onSettingsChanged) {
         onSettingsChanged();
       }
-      window.dispatchEvent(new CustomEvent('syra-settings-changed'));
+      window.dispatchEvent(new CustomEvent('myra-settings-changed'));
     } else if (deviceChanged) {
-      window.dispatchEvent(new CustomEvent('syra-devices-changed'));
+      window.dispatchEvent(new CustomEvent('myra-devices-changed'));
     }
     onClose();
   };
@@ -208,7 +208,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     onClick={() => {
                       const next = !launchPetMode;
                       setLaunchPetMode(next);
-                      localStorage.setItem('syra_launch_pet_mode', String(next));
+                      localStorage.setItem('myra_launch_pet_mode', String(next));
                     }}
                     className={`relative w-12 h-6 rounded-full transition-colors ${launchPetMode ? 'bg-pink-500' : 'bg-white/20'}`}
                   >

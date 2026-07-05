@@ -14,7 +14,7 @@ export class AudioPlayer {
     this.analyser.fftSize = 256;
     
     this.gainNode = this.audioContext.createGain();
-    this.muted = (localStorage.getItem('syra_muted') ?? localStorage.getItem('syra_muted')) === 'true';
+    this.muted = (localStorage.getItem('myra_muted') ?? localStorage.getItem('myra_muted')) === 'true';
     this.gainNode.gain.value = this.muted ? 0 : 1;
 
     // Connect: source -> gainNode -> analyser -> destination
@@ -30,7 +30,7 @@ export class AudioPlayer {
 
   setMuted(muted: boolean) {
     this.muted = muted;
-    localStorage.setItem('syra_muted', String(muted));
+    localStorage.setItem('myra_muted', String(muted));
     if (this.gainNode) {
       this.gainNode.gain.value = muted ? 0 : 1;
     }

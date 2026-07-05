@@ -14,8 +14,8 @@ class MemoryStore {
   private facts: UserFacts = {};
   private summaries: ChatSummary[] = [];
   private subscribers: Set<Subscriber> = new Set();
-  private readonly FACTS_KEY = 'syra_user_facts';
-  private readonly SUMMARIES_KEY = 'syra_chat_summaries';
+  private readonly FACTS_KEY = 'myra_user_facts';
+  private readonly SUMMARIES_KEY = 'myra_chat_summaries';
 
   constructor() {
     this.load();

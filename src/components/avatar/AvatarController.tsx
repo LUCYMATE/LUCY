@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 // Suppress missing declaration file error when @types/react-dom is not installed
 // @ts-ignore
 import { createPortal } from 'react-dom';
-import { Syra3D } from './Syra3D';
+import { Avatar3D } from './Avatar3D';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { BasePose } from './animations/core';
 
@@ -122,7 +122,7 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
   return createPortal(
     <>
       <div className="fixed inset-0 pointer-events-none z-[50]">
-        <Syra3D isPetMode={isPetMode} />
+        <Avatar3D isPetMode={isPetMode} />
       </div>
     </>,
     document.body

@@ -123,7 +123,7 @@ export default function App() {
     const timer = setTimeout(async () => {
       try {
         await getCurrentWindow().show();
-        if (localStorage.getItem('syra_launch_pet_mode') === 'true') {
+        if (localStorage.getItem('myra_launch_pet_mode') === 'true') {
           togglePetMode();
         }
       } catch (e) {
@@ -139,13 +139,13 @@ export default function App() {
       restoreWindow();
     };
     
-    window.addEventListener('syra-restore', onRestore);
-    window.addEventListener('syra-exit-pet-mode', onExitPetMode);
+    window.addEventListener('myra-restore', onRestore);
+    window.addEventListener('myra-exit-pet-mode', onExitPetMode);
 
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('syra-restore', onRestore);
-      window.removeEventListener('syra-exit-pet-mode', onExitPetMode);
+      window.removeEventListener('myra-restore', onRestore);
+      window.removeEventListener('myra-exit-pet-mode', onExitPetMode);
     };
   }, []);
 
@@ -210,13 +210,13 @@ export default function App() {
     const setupShortcuts = async () => {
       try {
         await register('CommandOrControl+Shift+M', () => {
-          window.dispatchEvent(new CustomEvent('syra-toggle-mic'));
+          window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
         });
         await register('CommandOrControl+Shift+X', () => {
-          window.dispatchEvent(new CustomEvent('syra-exit-pet-mode'));
+          window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
         });
         await register('CommandOrControl+Shift+S', () => {
-          window.dispatchEvent(new CustomEvent('syra-toggle-mute'));
+          window.dispatchEvent(new CustomEvent('myra-toggle-mute'));
         });
       } catch (e) {
         console.warn('Failed to register global shortcuts', e);

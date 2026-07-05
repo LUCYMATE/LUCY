@@ -10,6 +10,7 @@ import { AudioVisualizer } from '../avatar/AudioVisualizer';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { chatHistory } from '../../lib/store/chatHistory';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { BOT_NAME } from '../../config/bot-profile';
 
 const FLIRTY_PROMPTS = [
   "[flirty] Hey... couldn't sleep without saying something sweet to you...",
@@ -32,30 +33,16 @@ interface Message {
 }
 
 export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
-  const [activeChatId, setActiveChatId] = useState<string>(() => {
-    if (localStorage.getItem('syra_launch_pet_mode') === 'true') {
-      const chats = chatHistory.getChats();
-      if (chats.length > 0) return chats[0].id;
-    }
-    return crypto.randomUUID();
-  });
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (localStorage.getItem('syra_launch_pet_mode') === 'true') {
-      const chats = chatHistory.getChats();
-      if (chats.length > 0 && chats[0].messages.length > 0) {
-        return chats[0].messages;
-      }
-    }
-    return [
-      { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' },
-    ];
-  });
+  const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
+  const [messages, setMessages] = useState<Message[]>([
+    { id: crypto.randomUUID(), role: 'model', text: `System ready. I am ${BOT_NAME}. How can I assist you?` },
+  ]);
   const [input, setInput] = useState('');
   const [initialized, setInitialized] = useState(true);
   const [isMicPending, setIsMicPending] = useState(false);
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle');
   const [statusDetail, setStatusDetail] = useState('');
-  const [isMuted, setIsMuted] = useState(() => (localStorage.getItem('syra_muted') ?? localStorage.getItem('syra_muted')) === 'true');
+  const [isMuted, setIsMuted] = useState(() => (localStorage.getItem('myra_muted') ?? localStorage.getItem('myra_muted')) === 'true');
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
 
@@ -148,11 +135,11 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   }, [setSpeaking]);
 
   const initSystem = () => {
-    logger.add('info', 'System Boot', 'Initializing SyraOS and Gemini connection...');
+    logger.add('info', 'System Boot', `Initializing ${BOT_NAME}OS and Gemini connection...`);
     setInitialized(true);
 
-    const apiKey = localStorage.getItem('syra_main_api_key') || localStorage.getItem('syra_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-    const altApiKey = localStorage.getItem('syra_alt_api_key') || localStorage.getItem('syra_alt_api_key') || undefined;
+    const apiKey = localStorage.getItem('myra_main_api_key') || localStorage.getItem('myra_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    const altApiKey = localStorage.getItem('myra_alt_api_key') || localStorage.getItem('myra_alt_api_key') || undefined;
     
     if (!apiKey) {
       logger.add('error', 'API Key Missing', 'No API key found in Settings or .env');
@@ -283,7 +270,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
         }, 800);
       }
     };
-    window.addEventListener('syra-settings-changed', handleSettingsChanged);
+    window.addEventListener('myra-settings-changed', handleSettingsChanged);
     
     const handleDevicesChanged = async () => {
       logger.add('info', 'System Update', 'Audio/Video device changed. Restarting mic if active...');
@@ -302,11 +289,11 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
         }
       }
     };
-    window.addEventListener('syra-devices-changed', handleDevicesChanged);
+    window.addEventListener('myra-devices-changed', handleDevicesChanged);
 
     return () => {
-      window.removeEventListener('syra-settings-changed', handleSettingsChanged);
-      window.removeEventListener('syra-devices-changed', handleDevicesChanged);
+      window.removeEventListener('myra-settings-changed', handleSettingsChanged);
+      window.removeEventListener('myra-devices-changed', handleDevicesChanged);
     };
   }, [initialized, setListening, setSpeaking, setThinking, isListening]);
 
@@ -357,17 +344,17 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     }).then(f => unlisten = f);
     
     const handleWindowToggle = () => toggleMicRef.current();
-    window.addEventListener('syra-toggle-mic', handleWindowToggle);
+    window.addEventListener('myra-toggle-mic', handleWindowToggle);
 
     const handleToggleMute = () => {
       window.dispatchEvent(new CustomEvent('internal-toggle-mute'));
     };
-    window.addEventListener('syra-toggle-mute', handleToggleMute);
+    window.addEventListener('myra-toggle-mute', handleToggleMute);
     
     return () => { 
       if (unlisten) unlisten(); 
-      window.removeEventListener('syra-toggle-mic', handleWindowToggle);
-      window.removeEventListener('syra-toggle-mute', handleToggleMute);
+      window.removeEventListener('myra-toggle-mic', handleWindowToggle);
+      window.removeEventListener('myra-toggle-mute', handleToggleMute);
     };
   }, []);
 
@@ -388,7 +375,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     if (window.confirm("Are you sure you want to clear the conversation?")) {
       chatHistory.deleteChat(activeChatId);
       setMessages([
-        { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' },
+        { id: crypto.randomUUID(), role: 'model', text: `System ready. I am ${BOT_NAME}. How can I assist you?` },
       ]);
       setActiveChatId(crypto.randomUUID());
       modelBubbleIdRef.current = '';
@@ -399,16 +386,16 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   const exportChat = () => {
     try {
       const markdown = messages.map(m => {
-        const roleName = m.role === 'user' ? 'User' : 'Syra';
+        const roleName = m.role === 'user' ? 'User' : BOT_NAME;
         return `### **${roleName}**\n\n${m.text}\n\n---`;
       }).join('\n\n');
       
-      const fileContent = `# Syra Voice Assistant Chat History\nExported on: ${new Date().toLocaleString()}\n\n${markdown}`;
+      const fileContent = `# ${BOT_NAME} Voice Assistant Chat History\nExported on: ${new Date().toLocaleString()}\n\n${markdown}`;
       const blob = new Blob([fileContent], { type: 'text/markdown;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Syra_Chat_History_${Date.now()}.md`);
+      link.setAttribute('download', `${BOT_NAME}_Chat_History_${Date.now()}.md`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -423,7 +410,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     const handleClear = () => clearChat();
     const handleExport = () => exportChat();
     const handleNewChat = () => {
-      setMessages([{ id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' }]);
+      setMessages([{ id: crypto.randomUUID(), role: 'model', text: `System ready. I am ${BOT_NAME}. How can I assist you?` }]);
       setActiveChatId(crypto.randomUUID());
       modelBubbleIdRef.current = '';
     };
@@ -439,24 +426,24 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
       const detail = e.detail;
       if (detail && detail.id === activeChatId) {
         setMessages([
-          { id: crypto.randomUUID(), role: 'model', text: 'System ready. I am Syra. How can I assist you?' },
+          { id: crypto.randomUUID(), role: 'model', text: `System ready. I am ${BOT_NAME}. How can I assist you?` },
         ]);
         setActiveChatId(crypto.randomUUID());
         modelBubbleIdRef.current = '';
       }
     };
 
-    window.addEventListener('syra-clear-chat', handleClear);
-    window.addEventListener('syra-export-chat', handleExport);
-    window.addEventListener('syra-new-chat', handleNewChat);
-    window.addEventListener('syra-load-chat', handleLoadChat);
-    window.addEventListener('syra-chat-deleted', handleChatDeleted);
+    window.addEventListener('myra-clear-chat', handleClear);
+    window.addEventListener('myra-export-chat', handleExport);
+    window.addEventListener('myra-new-chat', handleNewChat);
+    window.addEventListener('myra-load-chat', handleLoadChat);
+    window.addEventListener('myra-chat-deleted', handleChatDeleted);
     return () => {
-      window.removeEventListener('syra-clear-chat', handleClear);
-      window.removeEventListener('syra-export-chat', handleExport);
-      window.removeEventListener('syra-new-chat', handleNewChat);
-      window.removeEventListener('syra-load-chat', handleLoadChat);
-      window.removeEventListener('syra-chat-deleted', handleChatDeleted);
+      window.removeEventListener('myra-clear-chat', handleClear);
+      window.removeEventListener('myra-export-chat', handleExport);
+      window.removeEventListener('myra-new-chat', handleNewChat);
+      window.removeEventListener('myra-load-chat', handleLoadChat);
+      window.removeEventListener('myra-chat-deleted', handleChatDeleted);
     };
   }, [messages, activeChatId]);
 
@@ -544,7 +531,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
               </button>
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent('syra-exit-pet-mode'))}
+                onClick={() => window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'))}
                 title="Exit Pet Mode"
                 className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center border border-white/10 bg-black/40 text-white/40 hover:border-white/30 hover:text-white/70 hover:bg-red-600/30 hover:text-red-400 hover:border-red-500/50 transition-all cursor-pointer"
               >

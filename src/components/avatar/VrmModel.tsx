@@ -92,7 +92,7 @@ export function VrmModel({
         if (loadedVrm.springBoneManager) {
           const manager = loadedVrm.springBoneManager as any;
 
-          // Collect all joints (works for both v1 Set and v2 array)
+          // Collect all joints — handle both v1 (Set) and v2 (array/iterable)
           const rawJoints: any[] = [];
           if (manager.joints) {
             manager.joints.forEach((j: any) => rawJoints.push(j));
@@ -100,42 +100,43 @@ export function VrmModel({
             manager.springBones.forEach((j: any) => rawJoints.push(j));
           }
 
-          // Log bone names for debugging (remove later)
-          console.log('[VRM] Spring bone joints:', rawJoints.map(j => j.bone?.name || 'unnamed'));
-
           rawJoints.forEach((joint) => {
             const s = joint.settings;
             if (!s) return;
 
-            // Force gravity DOWN with real power on every single joint
+            // Force gravity strictly downward on EVERY joint
             if (!s.gravityDir) {
               s.gravityDir = new THREE.Vector3(0, -1, 0);
             } else {
               s.gravityDir.set(0, -1, 0);
             }
 
-            // Ensure gravity is active — many VRM exports have 0
-            s.gravityPower = Math.max(s.gravityPower ?? 0, 0.08);
+            // Strong gravity so skirt/hair fall quickly and don't float
+            s.gravityPower = Math.max(s.gravityPower ?? 0, 0.5);
 
-            // Increase stiffness so things stay near rest pose (prevents flying)
-            s.stiffness = Math.max(s.stiffness ?? 0, 1.0);
+            // Higher stiffness → bones stay near rest pose, less free-floating
+            s.stiffness = Math.max(s.stiffness ?? 0, 2.5);
 
-            // Increase drag so things don't keep swinging
-            s.dragForce = Math.max(s.dragForce ?? 0, 0.5);
+            // Higher drag → oscillations die out faster (no bouncing)
+            s.dragForce = Math.max(s.dragForce ?? 0, 0.7);
           });
 
           // ── Store ALL collider radii for sit/stand toggling ──────────────
-          const colliders: any[] = Array.isArray(manager.colliders)
-            ? manager.colliders
-            : [];
-
-          // Log collider parents for debugging
-          console.log('[VRM] Collider parents:', colliders.map(c => c.parent?.name || 'unnamed'));
+          // Collect colliders robustly — may be Array, Set, or Map
+          const rawColliders: any[] = [];
+          if (manager.colliders) {
+            if (Array.isArray(manager.colliders)) {
+              rawColliders.push(...manager.colliders);
+            } else if (typeof manager.colliders.forEach === 'function') {
+              manager.colliders.forEach((c: any) => rawColliders.push(c));
+            }
+          }
 
           colliderOrigRadii.current.clear();
-          colliders.forEach((collider) => {
+          rawColliders.forEach((collider) => {
             const shape = collider.shape;
             if (shape && typeof shape.radius === 'number') {
+              // Store even zero-radius colliders so we can restore them correctly
               colliderOrigRadii.current.set(collider, shape.radius);
             }
           });
@@ -160,20 +161,40 @@ export function VrmModel({
   // ─── Sitting: disable ALL colliders so skirt/hair fall naturally ───────────
   // When seated the legs bend upward and colliders push spring-bone cloth UP.
   // Zeroing ALL radii while sitting lets gravity alone position the fabric.
+  // We also reset the spring simulation so cloth immediately falls from rest
+  // instead of staying stuck in the "pushed up" state.
   useEffect(() => {
     if (!vrm?.springBoneManager) return;
     const manager = vrm.springBoneManager as any;
-    const colliders: any[] = Array.isArray(manager.colliders) ? manager.colliders : [];
 
-    colliders.forEach((collider) => {
+    // Collect robustly (matches how we stored them at load)
+    const rawColliders: any[] = [];
+    if (manager.colliders) {
+      if (Array.isArray(manager.colliders)) {
+        rawColliders.push(...manager.colliders);
+      } else if (typeof manager.colliders.forEach === 'function') {
+        manager.colliders.forEach((c: any) => rawColliders.push(c));
+      }
+    }
+
+    rawColliders.forEach((collider) => {
       const savedRadius = colliderOrigRadii.current.get(collider);
       if (savedRadius === undefined) return;
       const shape = collider.shape;
       if (shape && typeof shape.radius === 'number') {
+        // When sitting: shrink all colliders to near-zero so legs don't push cloth up.
+        // When standing: restore original radius.
         shape.radius = isSitting ? 0.001 : savedRadius;
       }
     });
+
+    // Reset spring bone simulation so cloth re-settles from rest by gravity
+    // instead of remaining frozen in whatever position the colliders pushed it to.
+    if (isSitting) {
+      manager.reset?.();
+    }
   }, [isSitting, vrm]);
+
 
   // ─── Add pendant accessory ────────────────────────────────────────────────
   useEffect(() => {

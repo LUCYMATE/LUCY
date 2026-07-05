@@ -7,7 +7,7 @@ import { applyLocomotion } from './locomotion';
 import { applyGestures } from './gestures';
 import { applyPeek } from './peek';
 import { applyExpressions } from './expressions';
-import { applyFlirty, applyFlirtyIdleSway } from './flirty';
+import { applyFlirty, applyFlirtyIdleSway } from '../../../premium/flirty';
 
 function lerpAngle(a: number, b: number, t: number) {
   const dt = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
