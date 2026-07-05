@@ -385,12 +385,27 @@ export class GeminiLive {
             if (this.connectionId !== currentConnectionId) return;
             const reason = event?.reason || 'none';
             const code = event?.code || 0;
-            logger.add('warning', 'WebSocket Closed', `Code: ${code}, Reason: ${reason}`);
-            console.log(`[GeminiLive] WS closed ${code} — ${reason}`);
+            
             this.setupComplete = false;
             this.session = null;
             
             if (!this.isIntentionalDisconnect && this.lastApiKey) {
+              // 1008 is sent by Gemini when the session duration limit is reached (GoAway).
+              // We should just reconnect seamlessly.
+              if (code === 1008) {
+                logger.add('info', 'Session Refresh', 'Session duration reached. Seamlessly reconnecting...');
+                console.log(`[GeminiLive] Session duration reached (1008). Reconnecting...`);
+                this.retryCount = 0; // Reset retry count for a fresh session
+                this.setState('connecting');
+                this.reconnectTimeout = setTimeout(() => {
+                  if (this.lastApiKey) this.connect(this.lastApiKey, this.altApiKey || undefined, true, this.currentlyUsingAlt);
+                }, 500); // Quick reconnect
+                return;
+              }
+
+              logger.add('warning', 'WebSocket Closed', `Code: ${code}, Reason: ${reason}`);
+              console.log(`[GeminiLive] WS closed ${code} — ${reason}`);
+
               if (this.retryCount < 3) {
                 this.retryCount++;
                 const delay = this.retryCount * 2000;
@@ -411,6 +426,9 @@ export class GeminiLive {
                 this.setState('disconnected', 'Max retries reached');
               }
             } else {
+              if (!this.isIntentionalDisconnect) {
+                logger.add('info', 'WebSocket Closed', `Code: ${code}, Reason: ${reason}`);
+              }
               this.setState('disconnected', reason || `code ${code}`);
             }
           },

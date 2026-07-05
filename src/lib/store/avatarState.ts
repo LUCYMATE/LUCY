@@ -16,6 +16,7 @@ interface AvatarState {
   isPetMode: boolean;
   avatarScale: number;
   isHearingSound: boolean;
+  isAvatarLocked: boolean;
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -31,6 +32,7 @@ interface AvatarState {
   setIsPetMode: (val: boolean) => void;
   setAvatarScale: (val: number) => void;
   setHearingSound: (val: boolean) => void;
+  setIsAvatarLocked: (val: boolean) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -48,6 +50,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   affectionLevel: parseInt(localStorage.getItem('myra_affection') ?? '30', 10),
   isPetMode: false,
   avatarScale: parseFloat(localStorage.getItem('myra_avatar_size') ?? '100') / 100,
+  isAvatarLocked: localStorage.getItem('myra_avatar_locked') === 'true',
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -63,4 +66,5 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setAffectionLevel: (val) => set({ affectionLevel: val }),
   setIsPetMode: (val) => set({ isPetMode: val }),
   setAvatarScale: (val) => set({ avatarScale: val }),
+  setIsAvatarLocked: (val) => set({ isAvatarLocked: val }),
 }));

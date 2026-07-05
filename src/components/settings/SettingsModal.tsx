@@ -37,6 +37,9 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [launchPetMode, setLaunchPetMode] = useState<boolean>(
     () => localStorage.getItem('myra_launch_pet_mode') === 'true'
   );
+  const [avatarLocked, setAvatarLocked] = useState<boolean>(
+    () => localStorage.getItem('myra_avatar_locked') === 'true'
+  );
 
   useEffect(() => {
     async function loadDevices() {
@@ -206,6 +209,27 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     className={`relative w-12 h-6 rounded-full transition-colors ${launchPetMode ? 'bg-pink-500' : 'bg-white/20'}`}
                   >
                     <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${launchPetMode ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Avatar Lock Toggle */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-white">Lock Avatar Position</label>
+                    <p className="text-xs text-white/40 mt-1">Keep the avatar in its current spot. It won't wander around but will still pose and peek.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !avatarLocked;
+                      setAvatarLocked(next);
+                      localStorage.setItem('myra_avatar_locked', String(next));
+                      useAvatarState.getState().setIsAvatarLocked(next);
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${avatarLocked ? 'bg-pink-500' : 'bg-white/20'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${avatarLocked ? 'translate-x-6' : 'translate-x-0'}`} />
                   </button>
                 </div>
               </div>

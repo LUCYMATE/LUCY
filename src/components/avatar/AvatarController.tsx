@@ -68,16 +68,22 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
         if (casualR < 0.33) targetPose = 'stretch';
         else if (casualR < 0.66) targetPose = 'lean';
         else targetPose = 'stand';
-        targetX = (Math.random() - 0.5) * (innerMaxX * 2);
-        targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+        if (!s.isAvatarLocked) {
+          targetX = (Math.random() - 0.5) * (innerMaxX * 2);
+          targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+        }
       } else if (r < 0.70) {
         targetPose = 'stand';
-        targetX = (Math.random() - 0.5) * (innerMaxX * 2);
-        targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+        if (!s.isAvatarLocked) {
+          targetX = (Math.random() - 0.5) * (innerMaxX * 2);
+          targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+        }
       } else if (r < 0.85) {
         targetPose = 'sit';
-        targetX = (Math.random() - 0.5) * (innerMaxX * 2);
-        targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+        if (!s.isAvatarLocked) {
+          targetX = (Math.random() - 0.5) * (innerMaxX * 2);
+          targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+        }
       } else if (r < 0.95) {
         targetPose = 'stand';
         targetX = currentX;
