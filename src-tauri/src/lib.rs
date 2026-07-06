@@ -1,9 +1,11 @@
 use enigo::{Enigo, KeyboardControllable, MouseButton, MouseControllable, Key};
 use std::sync::Mutex;
 use sysinfo::System;
-use tauri::{Manager, Emitter};
+use tauri::{Emitter, Manager};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton as TrayMouseButton};
+use tauri::menu::{Menu, MenuItem};
+use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
-use tauri_plugin_global_shortcut::{Builder as ShortcutBuilder, Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use screenshots::Screen;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
@@ -171,15 +173,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(
-            ShortcutBuilder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        let _ = app.emit("toggle-mic", ());
-                    }
-                })
-                .build(),
-        )
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
         })
@@ -203,9 +196,64 @@ pub fn run() {
                 )?;
             }
 
-            // Register global shortcut Alt+Space
-            let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
-            app.global_shortcut().register(shortcut)?;
+            app.handle().plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_shortcuts(["ctrl+alt+x", "ctrl+alt+s", "ctrl+alt+m"])?
+                    .with_handler(|app, shortcut, event| {
+                        if event.state == ShortcutState::Pressed {
+                            if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyX) {
+                                let _ = app.emit("myra-exit-pet-mode", ());
+                            }
+                            if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyS) {
+                                let _ = app.emit("myra-toggle-mute", ());
+                            }
+                            if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyM) {
+                                let _ = app.emit("myra-toggle-mic", ());
+                            }
+                        }
+                    })
+                    .build(),
+            )?;
+
+            // Tray Menu
+            let show_i = MenuItem::with_id(app, "show", "Show Myra", true, None::<&str>)?;
+            let pet_mode_i = MenuItem::with_id(app, "pet_mode", "Exit Pet Mode", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &pet_mode_i, &quit_i])?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    "show" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            win.show().unwrap();
+                            win.set_focus().unwrap();
+                        }
+                    }
+                    "pet_mode" => {
+                        let _ = app.emit("myra-exit-pet-mode", ());
+                        if let Some(win) = app.get_webview_window("main") {
+                            win.show().unwrap();
+                            win.set_focus().unwrap();
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::Click { button: TrayMouseButton::Left, .. } => {
+                        let app = tray.app_handle();
+                        if let Some(win) = app.get_webview_window("main") {
+                            win.show().unwrap();
+                            win.set_focus().unwrap();
+                        }
+                    }
+                    _ => {}
+                })
+                .build(app)?;
 
             let win = app
                 .get_webview_window("main")

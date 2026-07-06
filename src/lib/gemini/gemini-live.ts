@@ -835,6 +835,20 @@ Continue calling tools in sequence until the user's request has been fully compl
     });
   }
 
+  // Tell Gemini the user has stopped speaking
+  endTurn() {
+    if (!this.isReady()) return;
+    try {
+      this.session.sendClientContent({
+        turns: [],
+        turnComplete: true
+      });
+      this.audioChunksSent = 0; // reset for next turn
+    } catch (e) {
+      console.error('[GeminiLive] Error ending turn:', e);
+    }
+  }
+
   // ---------------------------------------------------------------
   disconnect() {
     this.isIntentionalDisconnect = true;

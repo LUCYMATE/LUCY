@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Activity, Mic, MicOff, Volume2, VolumeX, Send, X } from 'lucide-react';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { GeminiLive } from '../../lib/gemini/gemini-live';
 import { AudioRecorder } from '../../lib/audio/audio-recorder';
 import { AudioPlayer } from '../../lib/audio/audio-player';
@@ -32,14 +32,21 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   ]);
   const [input, setInput] = useState('');
   const [initialized, setInitialized] = useState(false);
-  const [isMicPending, setIsMicPending] = useState(false);
+  const isMicPendingRef = useRef(false);
+  const [isMicPending, setIsMicPendingState] = useState(false);
+
+  const setIsMicPending = (val: boolean) => {
+    isMicPendingRef.current = val;
+    setIsMicPendingState(val);
+  };
+  
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle');
   const [statusDetail, setStatusDetail] = useState('');
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem('myra_muted') === 'true');
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
 
-  const { setSpeaking, setThinking, setListening, setEmotion, isListening, isSpeaking, isToolAgentRunning } = useAvatarState();
+  const { setSpeaking, setThinking, setListening, setEmotion, setIsMicOn, isMicOn, isListening, isSpeaking, isToolAgentRunning } = useAvatarState();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -235,6 +242,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
         setInputAnalyser(null);
         setOutputAnalyser(null);
         setListening(false);
+        setIsMicOn(false);
         setSpeaking(false);
         setThinking(false);
         modelBubbleIdRef.current = '';
@@ -251,9 +259,11 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   }, [initialized, setListening, setSpeaking, setThinking]);
 
   const toggleMic = async () => {
-    if (isMicPending) return; 
+    if (isMicPendingRef.current) return; 
 
-    if (!isListening) {
+    const currentMicOn = useAvatarState.getState().isMicOn;
+
+    if (!currentMicOn) {
       setIsMicPending(true);
       try {
         logger.add('info', 'User Action', 'Toggled microphone ON');
@@ -268,12 +278,15 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
           };
         }
         setListening(true);
+        setIsMicOn(true);
       } catch (e) {
         console.error('Mic error:', e);
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(), role: 'model',
           text: '⚠️ Microphone access denied or unavailable.',
         }]);
+        setListening(false);
+        setIsMicOn(false);
       } finally {
         setIsMicPending(false);
       }
@@ -281,38 +294,25 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
       setIsMicPending(true);
       try {
         logger.add('info', 'User Action', 'Toggled microphone OFF');
-        recorderRef.current?.stop();
+        try {
+          recorderRef.current?.stop();
+        } catch (e) {
+          console.error("Error stopping recorder:", e);
+        }
+        try {
+          // Tell Gemini the turn is complete so it processes the audio
+          geminiRef.current?.endTurn();
+        } catch (e) {
+          console.error("Error sending turnComplete:", e);
+        }
         setInputAnalyser(null);
         setListening(false);
+        setIsMicOn(false);
       } finally {
         setIsMicPending(false);
       }
     }
   };
-
-  const toggleMicRef = useRef(toggleMic);
-  toggleMicRef.current = toggleMic;
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen('toggle-mic', () => {
-      toggleMicRef.current();
-    }).then(f => unlisten = f);
-    
-    const handleWindowToggle = () => toggleMicRef.current();
-    window.addEventListener('myra-toggle-mic', handleWindowToggle);
-
-    const handleToggleMute = () => {
-      window.dispatchEvent(new CustomEvent('internal-toggle-mute'));
-    };
-    window.addEventListener('myra-toggle-mute', handleToggleMute);
-    
-    return () => { 
-      if (unlisten) unlisten(); 
-      window.removeEventListener('myra-toggle-mic', handleWindowToggle);
-      window.removeEventListener('myra-toggle-mute', handleToggleMute);
-    };
-  }, []);
 
   const toggleMute = () => {
     const newMuted = !isMuted;
@@ -321,11 +321,29 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     logger.add('info', 'Audio Output', newMuted ? 'Muted spoken response.' : 'Unmuted spoken response.');
   };
 
+  const toggleMicRef = useRef(toggleMic);
+  toggleMicRef.current = toggleMic;
+
+  const toggleMuteRef = useRef(toggleMute);
+  toggleMuteRef.current = toggleMute;
+
   useEffect(() => {
-    const handleToggleMute = () => toggleMute();
-    window.addEventListener('internal-toggle-mute', handleToggleMute);
-    return () => window.removeEventListener('internal-toggle-mute', handleToggleMute);
-  }, [toggleMute]);
+    const fns: (() => void)[] = [];
+    let mounted = true;
+
+    listen('myra-toggle-mic', () => {
+      if (mounted) toggleMicRef.current();
+    }).then(fn => { if (mounted) fns.push(fn); else fn(); });
+
+    listen('myra-toggle-mute', () => {
+      if (mounted) toggleMuteRef.current();
+    }).then(fn => { if (mounted) fns.push(fn); else fn(); });
+
+    return () => {
+      mounted = false;
+      fns.forEach(fn => fn());
+    };
+  }, []);
 
   const clearChat = () => {
     if (window.confirm("Are you sure you want to clear the conversation?")) {
@@ -425,7 +443,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
         connectionState === 'idle' ? 'text-white/40' : 'text-yellow-400';
 
   const statusLabel =
-    connectionState === 'connected' ? (isListening ? 'CONNECTED (MIC ON)' : 'CONNECTED (MIC OFF)') :
+    connectionState === 'connected' ? (isMicOn ? 'CONNECTED (MIC ON)' : 'CONNECTED (MIC OFF)') :
       connectionState === 'connecting' ? 'CONNECTING…' :
         connectionState === 'error' ? `ERROR${statusDetail ? `: ${statusDetail.slice(0, 40)}` : ''}` :
           connectionState === 'disconnected' ? 'DISCONNECTED' : 'IDLE';
@@ -501,16 +519,16 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
                 type="button"
                 onClick={toggleMic}
                 disabled={isMicPending}
-                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isListening
+                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMicOn
                     ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
                     : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
                   } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                {isListening ? <Mic className="w-3.5 h-3.5" /> : (isMicPending ? <Activity className="w-3.5 h-3.5 animate-spin" /> : <MicOff className="w-3.5 h-3.5" />)}
+                {isMicOn ? <Mic className="w-3.5 h-3.5" /> : (isMicPending ? <Activity className="w-3.5 h-3.5 animate-spin" /> : <MicOff className="w-3.5 h-3.5" />)}
               </button>
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'))}
+                onClick={() => emit('myra-exit-pet-mode')}
                 title="Exit Pet Mode"
                 className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center border border-white/10 bg-black/40 text-white/40 hover:border-white/30 hover:text-white/70 hover:bg-red-600/30 hover:text-red-400 hover:border-red-500/50 transition-all cursor-pointer"
               >
@@ -560,13 +578,13 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
                     type="button"
                     onClick={toggleMic}
                     disabled={isMicPending}
-                    title={isListening ? 'Stop microphone' : 'Start microphone'}
-                    className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all ${isListening
+                    title={isMicOn ? 'Stop microphone' : 'Start microphone'}
+                    className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all ${isMicOn
                         ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
                         : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
                       } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {isListening ? <Mic className="w-5 h-5" /> : (isMicPending ? <Activity className="w-5 h-5 animate-spin" /> : <MicOff className="w-5 h-5" />)}
+                    {isMicOn ? <Mic className="w-5 h-5" /> : (isMicPending ? <Activity className="w-5 h-5 animate-spin" /> : <MicOff className="w-5 h-5" />)}
                   </button>
 
                   <button

@@ -5,6 +5,7 @@ interface AvatarState {
   isSpeaking: boolean;
   isThinking: boolean;
   isListening: boolean;
+  isMicOn: boolean;
   emotion: Emotion;
   basePose: BasePose;
   lastPoseOverrideTime: number;
@@ -22,6 +23,7 @@ interface AvatarState {
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
   setListening: (val: boolean) => void;
+  setIsMicOn: (val: boolean) => void;
   setEmotion: (val: Emotion) => void;
   setBasePose: (val: BasePose) => void;
   setLastPoseOverrideTime: (val: number) => void;
@@ -41,6 +43,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isSpeaking: false,
   isThinking: false,
   isListening: false,
+  isMicOn: false,
   emotion: 'neutral',
   basePose: 'sit',
   lastPoseOverrideTime: 0,
@@ -58,6 +61,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
   setListening: (val) => set({ isListening: val }),
+  setIsMicOn: (val) => set({ isMicOn: val }),
   setEmotion: (val) => set({ emotion: val }),
   setBasePose: (val) => set({ basePose: val }),
   setLastPoseOverrideTime: (val) => set({ lastPoseOverrideTime: val }),

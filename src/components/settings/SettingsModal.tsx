@@ -408,14 +408,6 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
                 <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
                   <div>
-                    <h4 className="text-lg font-medium text-white">Toggle Microphone</h4>
-                    <p className="text-sm text-white/50">Mute or unmute your microphone</p>
-                  </div>
-                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + M</kbd>
-                </div>
-                
-                <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
-                  <div>
                     <h4 className="text-lg font-medium text-white">Toggle Speaker</h4>
                     <p className="text-sm text-white/50">Mute or unmute Myra's spoken responses</p>
                   </div>
@@ -428,6 +420,14 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     <p className="text-sm text-white/50">Return to the standard window view</p>
                   </div>
                   <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + X</kbd>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-white/10">
+                  <div>
+                    <h4 className="text-lg font-medium text-white">Toggle Microphone</h4>
+                    <p className="text-sm text-white/50">Turn the microphone on or off</p>
+                  </div>
+                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + M</kbd>
                 </div>
               </div>
             </div>

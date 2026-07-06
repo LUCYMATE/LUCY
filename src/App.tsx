@@ -4,8 +4,8 @@ import { TitleBar } from './components/layout/TitleBar';
 import { Minus, Square, X, Menu } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { getCurrentWindow, currentMonitor, cursorPosition } from '@tauri-apps/api/window';
-import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
-import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
+import { listen } from '@tauri-apps/api/event';
+import { LogicalSize, LogicalPosition, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/dpi';
 
 export default function App() {
   const [isPetMode, setIsPetMode] = useState(false);
@@ -27,6 +27,8 @@ export default function App() {
       await safe(win.setFullscreen(false));
       await safe(win.setSkipTaskbar(false));
       await safe(win.setIgnoreCursorEvents(false));
+      await safe(win.setShadow(true));
+      await safe(win.setResizable(true));
 
       try {
         if (normalSizeRef.current) {
@@ -84,12 +86,22 @@ export default function App() {
           console.warn("Could not read window size/pos", e);
         }
 
-        await safe(win.setMaxSize(null));
-        await safe(win.setFullscreen(true));
         await safe(win.setSkipTaskbar(true));
-        
+        await safe(win.setMaxSize(null));
+        await safe(win.setFullscreen(false));
+        await safe(win.setShadow(false));
+        await safe(win.setResizable(false));
         await safe(win.setAlwaysOnTop(true));
         await safe(win.setIgnoreCursorEvents(true));
+
+        const monitor = await currentMonitor();
+        if (monitor) {
+          await safe(win.maximize());
+        }
+
+        await safe(win.setSkipTaskbar(true));
+        await safe(win.hide());
+        await safe(win.show());
 
         setIsPetMode(true);
       } else {
@@ -120,7 +132,18 @@ export default function App() {
   useEffect(() => {
     const initWindow = async () => {
       try {
-        await getCurrentWindow().show();
+        const win = getCurrentWindow();
+        await win.show();
+
+        win.onCloseRequested(async (event) => {
+          event.preventDefault();
+          try {
+            await win.hide();
+          } catch (err) {
+            console.error("Failed to hide window", err);
+          }
+        });
+
         // Auto-launch into pet mode if the user has it enabled
         if (localStorage.getItem('myra_launch_pet_mode') === 'true') {
           togglePetMode();
@@ -135,16 +158,16 @@ export default function App() {
       restoreWindow();
     };
     
-    const onExitPetMode = () => {
-      restoreWindow();
-    };
-    
     window.addEventListener('myra-restore', onRestore);
-    window.addEventListener('myra-exit-pet-mode', onExitPetMode);
+
+    let unlistenExit: (() => void) | undefined;
+    listen('myra-exit-pet-mode', () => {
+      restoreWindow();
+    }).then(fn => { unlistenExit = fn; });
 
     return () => {
       window.removeEventListener('myra-restore', onRestore);
-      window.removeEventListener('myra-exit-pet-mode', onExitPetMode);
+      unlistenExit?.();
     };
   }, []);
 
@@ -204,31 +227,6 @@ export default function App() {
       getCurrentWindow().setIgnoreCursorEvents(false).catch(() => {});
     };
   }, [isPetMode]);
-
-  useEffect(() => {
-    const setupShortcuts = async () => {
-      try {
-        await register('CommandOrControl+Alt+M', () => {
-          window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
-        });
-        await register('CommandOrControl+Alt+X', () => {
-          window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
-        });
-        await register('CommandOrControl+Alt+S', () => {
-          window.dispatchEvent(new CustomEvent('myra-toggle-mute'));
-        });
-      } catch (e) {
-        console.warn('Failed to register global shortcuts', e);
-      }
-    };
-    setupShortcuts();
-
-    return () => {
-      unregister('CommandOrControl+Alt+M').catch(() => {});
-      unregister('CommandOrControl+Alt+X').catch(() => {});
-      unregister('CommandOrControl+Alt+S').catch(() => {});
-    };
-  }, []);
 
   return (
     <div 
