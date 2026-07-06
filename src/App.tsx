@@ -24,6 +24,8 @@ export default function App() {
 
       await safe(win.setMaxSize(null));
       await safe(win.setAlwaysOnTop(false));
+      await safe(win.setFullscreen(false));
+      await safe(win.setSkipTaskbar(false));
       await safe(win.setIgnoreCursorEvents(false));
 
       try {
@@ -83,7 +85,8 @@ export default function App() {
         }
 
         await safe(win.setMaxSize(null));
-        await safe(win.maximize());
+        await safe(win.setFullscreen(true));
+        await safe(win.setSkipTaskbar(true));
         
         await safe(win.setAlwaysOnTop(true));
         await safe(win.setIgnoreCursorEvents(true));
@@ -115,7 +118,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const timer = setTimeout(async () => {
+    const initWindow = async () => {
       try {
         await getCurrentWindow().show();
         // Auto-launch into pet mode if the user has it enabled
@@ -125,7 +128,8 @@ export default function App() {
       } catch (e) {
         // Not running in Tauri or permission missing
       }
-    }, 300);
+    };
+    initWindow();
     
     const onRestore = () => {
       restoreWindow();
@@ -139,7 +143,6 @@ export default function App() {
     window.addEventListener('myra-exit-pet-mode', onExitPetMode);
 
     return () => {
-      clearTimeout(timer);
       window.removeEventListener('myra-restore', onRestore);
       window.removeEventListener('myra-exit-pet-mode', onExitPetMode);
     };
@@ -205,13 +208,13 @@ export default function App() {
   useEffect(() => {
     const setupShortcuts = async () => {
       try {
-        await register('CommandOrControl+Shift+M', () => {
+        await register('CommandOrControl+Alt+M', () => {
           window.dispatchEvent(new CustomEvent('myra-toggle-mic'));
         });
-        await register('CommandOrControl+Shift+X', () => {
+        await register('CommandOrControl+Alt+X', () => {
           window.dispatchEvent(new CustomEvent('myra-exit-pet-mode'));
         });
-        await register('CommandOrControl+Shift+S', () => {
+        await register('CommandOrControl+Alt+S', () => {
           window.dispatchEvent(new CustomEvent('myra-toggle-mute'));
         });
       } catch (e) {
@@ -221,9 +224,9 @@ export default function App() {
     setupShortcuts();
 
     return () => {
-      unregister('CommandOrControl+Shift+M').catch(() => {});
-      unregister('CommandOrControl+Shift+X').catch(() => {});
-      unregister('CommandOrControl+Shift+S').catch(() => {});
+      unregister('CommandOrControl+Alt+M').catch(() => {});
+      unregister('CommandOrControl+Alt+X').catch(() => {});
+      unregister('CommandOrControl+Alt+S').catch(() => {});
     };
   }, []);
 

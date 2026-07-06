@@ -411,7 +411,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     <h4 className="text-lg font-medium text-white">Toggle Microphone</h4>
                     <p className="text-sm text-white/50">Mute or unmute your microphone</p>
                   </div>
-                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Shift + M</kbd>
+                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + M</kbd>
                 </div>
                 
                 <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
@@ -419,7 +419,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     <h4 className="text-lg font-medium text-white">Toggle Speaker</h4>
                     <p className="text-sm text-white/50">Mute or unmute Myra's spoken responses</p>
                   </div>
-                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Shift + S</kbd>
+                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + S</kbd>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -427,7 +427,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     <h4 className="text-lg font-medium text-white">Exit Pet Mode</h4>
                     <p className="text-sm text-white/50">Return to the standard window view</p>
                   </div>
-                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Shift + X</kbd>
+                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + X</kbd>
                 </div>
               </div>
             </div>

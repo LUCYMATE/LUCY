@@ -5,6 +5,12 @@ import * as THREE from 'three';
 import { BasePose, Emotion } from './animations/core';
 import { useVrmAnimator } from './animations/useVrmAnimator';
 
+// Global cache to prevent model from disappearing and reloading on remounts
+let globalCachedVrm: VRM | null = null;
+let globalCachedUrl: string | null = null;
+let isGlobalLoading = false;
+let globalLoadCallbacks: ((vrm: VRM | null) => void)[] = [];
+
 interface VrmModelProps {
   url: string;
   isSpeaking: boolean;
@@ -62,7 +68,27 @@ export function VrmModel({
   // ─── Manual load / dispose cycle ────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-    let loadedVrm: VRM | null = null;
+
+    if (globalCachedUrl === url && globalCachedVrm) {
+      if (mountedRef.current) setVrm(globalCachedVrm);
+      return;
+    }
+
+    if (isGlobalLoading) {
+      const callback = (loaded: VRM | null) => {
+        if (!cancelled && mountedRef.current && loaded) {
+          setVrm(loaded);
+        }
+      };
+      globalLoadCallbacks.push(callback);
+      return () => {
+        cancelled = true;
+        globalLoadCallbacks = globalLoadCallbacks.filter(cb => cb !== callback);
+      };
+    }
+
+    isGlobalLoading = true;
+    globalCachedUrl = url;
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -70,26 +96,24 @@ export function VrmModel({
     loader.load(
       url,
       (gltf) => {
-        if (cancelled || !mountedRef.current) {
-          const staleVrm = gltf.userData.vrm as VRM | undefined;
-          if (staleVrm) disposeVrm(staleVrm);
+        isGlobalLoading = false;
+        
+        if (!gltf?.userData.vrm) {
+          globalLoadCallbacks.forEach(cb => cb(null));
+          globalLoadCallbacks = [];
           return;
         }
-
-        if (!gltf?.userData.vrm) return;
-        loadedVrm = gltf.userData.vrm as VRM;
+        
+        const loadedVrm = gltf.userData.vrm as VRM;
 
         // ── Basic setup ─────────────────────────────────────────────────────
         loadedVrm.scene.traverse((obj) => { obj.frustumCulled = false; });
         loadedVrm.scene.rotation.y = Math.PI;
 
-        // DO NOT touch materials — VRM uses MToon shaders, not MeshStandard.
-
         // ── Fix ALL spring-bone physics ──────────────────────────────────────
         if (loadedVrm.springBoneManager) {
           const manager = loadedVrm.springBoneManager as any;
 
-          // Collect all joints — handle both v1 (Set) and v2 (array/iterable)
           const rawJoints: any[] = [];
           if (manager.joints) {
             manager.joints.forEach((j: any) => rawJoints.push(j));
@@ -101,7 +125,6 @@ export function VrmModel({
             const s = joint.settings;
             if (!s) return;
 
-            // Exclude ears, tails, and breasts from the artificial gravity
             const boneName = (joint.bone?.name || '').toLowerCase();
             if (boneName.includes('ear') || boneName.includes('kemomimi') || 
                 boneName.includes('tail') || boneName.includes('shippo') ||
@@ -109,17 +132,14 @@ export function VrmModel({
               return;
             }
 
-            // Force gentle gravity strictly downward for hair/skirt to pull it to earth
             if (!s.gravityDir) {
               s.gravityDir = new THREE.Vector3(0, -1, 0);
             } else {
               s.gravityDir.set(0, -1, 0);
             }
-            // Use a gentle gravity pull, but leave stiffness and drag alone so it waves naturally
             s.gravityPower = Math.max(s.gravityPower ?? 0, 0.15);
           });
 
-          // ── Store ALL collider radii for sit/stand toggling ──────────────
           const rawColliders: any[] = [];
           if (manager.colliders) {
             if (Array.isArray(manager.colliders)) {
@@ -138,17 +158,26 @@ export function VrmModel({
           });
         }
 
-        if (mountedRef.current) setVrm(loadedVrm);
+        globalCachedVrm = loadedVrm;
+
+        if (!cancelled && mountedRef.current) {
+          setVrm(loadedVrm);
+        }
+
+        globalLoadCallbacks.forEach(cb => cb(loadedVrm));
+        globalLoadCallbacks = [];
       },
       undefined,
       (err) => {
+        isGlobalLoading = false;
+        globalLoadCallbacks.forEach(cb => cb(null));
+        globalLoadCallbacks = [];
         if (!cancelled) console.error('[VrmModel] load error:', err);
       }
     );
 
     return () => {
       cancelled = true;
-      if (loadedVrm) disposeVrm(loadedVrm);
       if (mountedRef.current) setVrm(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

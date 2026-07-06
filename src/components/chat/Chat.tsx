@@ -220,6 +220,12 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   };
 
   useEffect(() => {
+    if (!initialized && localStorage.getItem('myra_launch_pet_mode') === 'true') {
+      initSystem();
+    }
+  }, []);
+
+  useEffect(() => {
     const handleSettingsChanged = () => {
       if (initialized) {
         logger.add('info', 'System Reconnect', 'Settings changed. Reconnecting core...');
@@ -273,11 +279,14 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
       }
     } else {
       setIsMicPending(true);
-      logger.add('info', 'User Action', 'Toggled microphone OFF');
-      recorderRef.current?.stop();
-      setInputAnalyser(null);
-      setListening(false);
-      setIsMicPending(false);
+      try {
+        logger.add('info', 'User Action', 'Toggled microphone OFF');
+        recorderRef.current?.stop();
+        setInputAnalyser(null);
+        setListening(false);
+      } finally {
+        setIsMicPending(false);
+      }
     }
   };
 
@@ -486,7 +495,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
                 transform: `translate(${petDragOffset.x}px, ${petDragOffset.y}px)`,
                 touchAction: 'none'
               }}
-              className="absolute bottom-6 right-6 pointer-events-auto flex items-center gap-1.5 bg-black/40 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-2xl cursor-grab active:cursor-grabbing select-none"
+              className="absolute bottom-6 right-6 z-[100] pointer-events-auto flex items-center gap-1.5 bg-black/40 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-2xl cursor-grab active:cursor-grabbing select-none"
             >
               <button
                 type="button"
