@@ -82,6 +82,7 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean) {
   const vrmRestWorldCache = useRef<Record<string, THREE.Quaternion>>({});
   const fbxRestPosCache = useRef<Record<string, THREE.Vector3>>({});
   const vrmRestPosCache = useRef<Record<string, THREE.Vector3>>({});
+  const vrmRestLocalPosCache = useRef<Record<string, THREE.Vector3>>({});
 
   useEffect(() => {
     if (!vrm || !fbx) return;
@@ -97,6 +98,7 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean) {
     const vRest: Record<string, THREE.Quaternion> = {};
     const fPosRest: Record<string, THREE.Vector3> = {};
     const vPosRest: Record<string, THREE.Vector3> = {};
+    const vPosLocalRest: Record<string, THREE.Vector3> = {};
 
     for (const [mixamoName, vrmName] of Object.entries(mixamoToVrm)) {
       const fbxNode = fbx.getObjectByName(mixamoName);
@@ -121,6 +123,8 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean) {
            const vPos = new THREE.Vector3();
            vrmNode.getWorldPosition(vPos);
            vPosRest[mixamoName] = vPos;
+           
+           vPosLocalRest[mixamoName] = vrmNode.position.clone();
         }
       }
     }
@@ -131,6 +135,7 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean) {
     vrmRestWorldCache.current = vRest;
     fbxRestPosCache.current = fPosRest;
     vrmRestPosCache.current = vPosRest;
+    vrmRestLocalPosCache.current = vPosLocalRest;
 
   }, [vrm, fbx]);
 
@@ -176,7 +181,8 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean) {
           if (mixamoToVrmName === 'hips') {
             const fPosRest = fbxRestPosCache.current[mixamoName];
             const vPosRest = vrmRestPosCache.current[mixamoName];
-            if (fPosRest && vPosRest && fPosRest.y > 0) {
+            const vPosLocalRest = vrmRestLocalPosCache.current[mixamoName];
+            if (fPosRest && vPosRest && vPosLocalRest && fPosRest.y > 0) {
               const fbxCurrentWorldPos = new THREE.Vector3();
               fbxNode.getWorldPosition(fbxCurrentWorldPos);
               
@@ -185,7 +191,14 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean) {
               const scale = vPosRest.y / fPosRest.y;
               posWorldDelta.multiplyScalar(scale);
               
-              const vrmTargetWorldPos = vPosRest.clone().add(posWorldDelta);
+              // Calculate the current world position of the hips' local rest position
+              const currentRestWorldPos = new THREE.Vector3();
+              currentRestWorldPos.copy(vPosLocalRest);
+              if (vrmNode.parent) {
+                vrmNode.parent.localToWorld(currentRestWorldPos);
+              }
+              
+              const vrmTargetWorldPos = currentRestWorldPos.add(posWorldDelta);
               
               if (vrmNode.parent) {
                 const localTarget = vrmNode.parent.worldToLocal(vrmTargetWorldPos.clone());
