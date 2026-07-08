@@ -69,7 +69,7 @@ async function executeTool(name: string, args: any, deferredMedia?: string[]): P
     }
   } else if (name === 'capture_camera') {
     try {
-      const savedCameraId = localStorage.getItem('myra_camera_id');
+      const savedCameraId = localStorage.getItem('soltini_camera_id');
       const videoConstraints = savedCameraId ? { deviceId: { exact: savedCameraId } } : true;
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       const video = document.createElement('video');
@@ -101,7 +101,7 @@ async function executeTool(name: string, args: any, deferredMedia?: string[]): P
   } else if (name === 'search_web') {
     try {
       const query = args.query || '';
-      const tavilyKey = localStorage.getItem('myra_tavily_api_key') || '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';
+      const tavilyKey = localStorage.getItem('soltini_tavily_api_key') || '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';
       const response = await fetch('https://api.tavily.com/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -137,7 +137,7 @@ async function executeTool(name: string, args: any, deferredMedia?: string[]): P
   } else if (name === 'set_pet_name') {
     const petName2 = String(args.name || '').trim();
     if (petName2) {
-      localStorage.setItem('myra_pet_name', petName2);
+      localStorage.setItem('soltini_pet_name', petName2);
       result = { success: true, petName: petName2 };
     } else {
       result = { error: 'name is required' };
@@ -233,18 +233,18 @@ export class GeminiLive {
       const activeKey = this.currentlyUsingAlt && this.altApiKey ? this.altApiKey : apiKey;
       const ai = new GoogleGenAI({ apiKey: activeKey });
       
-      let savedModel = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
+      let savedModel = localStorage.getItem('soltini_model') || 'gemini-3.1-flash-live-preview';
       if (savedModel !== 'gemini-3.1-flash-live-preview') {
         savedModel = 'gemini-3.1-flash-live-preview';
-        localStorage.setItem('myra_model', 'gemini-3.1-flash-live-preview');
+        localStorage.setItem('soltini_model', 'gemini-3.1-flash-live-preview');
       }
-      const savedVoice = localStorage.getItem('myra_voice') || 'Aoede';
+      const savedVoice = localStorage.getItem('soltini_voice') || 'Aoede';
 
       const now = new Date();
       const hour = now.getHours();
       const isAfterDark = hour >= 21 || hour < 6;
       const timeGreeting = isAfterDark ? 'Good evening' : (hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening'));
-      const storedPetName = localStorage.getItem('myra_pet_name');
+      const storedPetName = localStorage.getItem('soltini_pet_name');
       
       const petNamePrompt = storedPetName ? `\nThe user's pet name is "${storedPetName}". Use it naturally to address them.` : '';
       let timeContext = '';
@@ -265,13 +265,13 @@ CRITICAL BEHAVIORS:
 2. SYSTEM DELEGATION: If the user asks you to perform ANY system automation tasks (like opening websites/YouTube, clicking, scrolling, typing, capturing screen/camera, searching the web, or launching apps), immediately invoke the 'trigger_automation' tool and inform the user you are starting the task in the background. DO NOT explain what tools you use.
 3. CONTEXT AWARENESS: Maintain a warm conversational flow.
 4. EMOTIONS: Start appropriate responses with an emotion tag in brackets: [happy], [sad], [angry], [surprised], [thinking], [flirty], or [neutral] to change your expression.
-5. POSES: Call the 'set_pose' tool if asked to sit, stand, stretch, or do a flying kiss.
+5. POSES: If the user asks you to sit, stand, stretch, or do a flying kiss, you MUST IMMEDIATELY call the 'set_pose' tool! Do NOT just reply with text alone, you must execute the tool!
 
 Greeting context: ${timeGreeting}. ${timeContext} ${petNamePrompt}`;
 
-      const userPersonality = localStorage.getItem('myra_system_instruction') || '';
+      const userPersonality = localStorage.getItem('soltini_system_instruction') || '';
       const knownFacts = memoryStore.getAllUserFactsFormatted();
-      const petName = localStorage.getItem('myra_pet_name') || '';
+      const petName = localStorage.getItem('soltini_pet_name') || '';
 
       let finalInstruction = coreInstruction;
       if (knownFacts) finalInstruction += `\n\nTHINGS YOU KNOW ABOUT THE USER:\n${knownFacts}`;
@@ -515,19 +515,25 @@ Greeting context: ${timeGreeting}. ${timeContext} ${petNamePrompt}`;
     try {
       const ai = new GoogleGenAI({ apiKey: activeKey });
       
-      const userPersonality = localStorage.getItem('myra_system_instruction') || '';
+      const userPersonality = localStorage.getItem('soltini_system_instruction') || '';
       const knownFacts = memoryStore.getAllUserFactsFormatted();
-      const petName = localStorage.getItem('myra_pet_name') || '';
+      const petName = localStorage.getItem('soltini_pet_name') || '';
 
-      let systemPrompt = `You are Myra's background system automation agent. You have direct control over the user's OS via tools. 
+      let systemPrompt = `You are Soltini's background system automation agent. You have direct control over the user's OS via tools. 
 Execute the user's request: "${requestText}" as fast as possible.
-If the request requires opening websites, clicking coordinates, running python scripts, searching the web, taking screenshots, or opening local apps, execute the appropriate tools.
-IMPORTANT: If you need to click on a website or screen element:
-1. First, call open_external_url or ensure it is open.
-2. Call capture_screen to get a visual of the screen.
-3. Analyze the screenshot. The screenshot has a 100px grid (Red vertical, Blue horizontal). Count the grid lines to calculate precise X and Y coordinates.
-4. Call move_and_click_mouse at the calculated X and Y coordinates.
-Continue calling tools in sequence until the user's request has been fully completed. Once done, summarize what you accomplished.`;
+
+CRITICAL RULES FOR AUTOMATION:
+1. SCREEN ANALYSIS & GUI NAVIGATION: You are interacting with a real GUI. You must behave like a human user navigating the visual interface.
+   - ALWAYS call 'capture_screen' FIRST before attempting to click anywhere.
+   - Analyze the screenshot. It contains a 100px grid (Red vertical, Blue horizontal). Count the lines to calculate precise X and Y coordinates of your target element.
+   - NEVER guess coordinates or blindly click. ONLY call 'move_and_click_mouse' AFTER verifying the exact target visually.
+2. AVOID ADS & BLIND CLICKS: When navigating sites like YouTube or Google:
+   - Carefully read the screen to distinguish between Ads/Sponsored content and organic results. DO NOT click on Ads.
+   - Identify the actual search bar, search buttons, and organic video thumbnails carefully before clicking.
+3. TYPING: To search, click the search box, use 'type_string' to input text, and 'press_key' with 'enter' to submit.
+4. AVOID TERMINALS UNLESS NEEDED: Do not use run_terminal_command to open websites. Use open_external_url for websites, and open_app for applications. Only use run_terminal_command for actual shell execution.
+
+Continue calling tools in sequence until the request is fully completed. Once done, summarize what you accomplished.`;
 
       if (knownFacts) systemPrompt += `\n\nTHINGS YOU KNOW ABOUT THE USER:\n${knownFacts}`;
       if (petName) systemPrompt += `\n\nThe user's preferred pet name is: ${petName}`;

@@ -4,6 +4,7 @@ import { VRMLoaderPlugin, VRM } from '@pixiv/three-vrm';
 import * as THREE from 'three';
 import { BasePose, Emotion } from './animations/core';
 import { useVrmAnimator } from './animations/useVrmAnimator';
+import { useFbxAnimation } from './animations/useFbxAnimation';
 
 // Global cache to prevent model from disappearing and reloading on remounts
 let globalCachedVrm: VRM | null = null;
@@ -272,6 +273,8 @@ export function VrmModel({
     emotion,
     moveDirection
   });
+
+  useFbxAnimation(vrm, '/Blow A Kiss.fbx', basePose === 'flying-kiss');
 
   if (!vrm) return null;
 

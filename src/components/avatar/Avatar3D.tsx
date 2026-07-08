@@ -84,12 +84,12 @@ function FlyingKisses({ active }: { active: boolean }) {
             }}>
               <svg viewBox="0 0 32 32" style={{
                 width: '50px', height: '50px',
-                filter: 'drop-shadow(0px 4px 10px rgba(125, 211, 252, 0.6))'
+                filter: 'drop-shadow(0px 4px 10px rgba(236, 72, 153, 0.6))'
               }}>
                 <defs>
                   <linearGradient id={`kissGrad-${p.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%"   stopColor="#bae6fd" />
-                    <stop offset="100%" stopColor="#38bdf8" />
+                    <stop offset="0%"   stopColor="#fbcfe8" />
+                    <stop offset="100%" stopColor="#ec4899" />
                   </linearGradient>
                 </defs>
                 <path
@@ -131,14 +131,14 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   // Listen for settings changes to avatarScale
   useEffect(() => {
     const onSettingsChanged = () => {
-      const val = localStorage.getItem('myra_avatar_size');
+      const val = localStorage.getItem('soltini_avatar_size');
       if (val) {
         const n = parseFloat(val);
         if (!isNaN(n)) useAvatarState.getState().setAvatarScale(n / 100);
       }
     };
-    window.addEventListener('myra-settings-changed', onSettingsChanged);
-    return () => window.removeEventListener('myra-settings-changed', onSettingsChanged);
+    window.addEventListener('soltini-settings-changed', onSettingsChanged);
+    return () => window.removeEventListener('soltini-settings-changed', onSettingsChanged);
   }, []);
 
   // Smoothly move the model towards targetPosition if we aren't dragging

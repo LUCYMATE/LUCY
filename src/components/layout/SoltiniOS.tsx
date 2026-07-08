@@ -7,7 +7,7 @@ import { logger, LogEntry } from '../../lib/store/logger';
 import { AvatarController } from '../avatar/AvatarController';
 
 
-export function MyraOS({ isPetMode = false }: { isPetMode?: boolean }) {
+export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const [latency, setLatency] = useState<string>('checking...');
   const [cpu, setCpu] = useState<number>(0);
@@ -92,8 +92,8 @@ export function MyraOS({ isPetMode = false }: { isPetMode?: boolean }) {
         <aside className="w-16 sm:w-64 shrink-0 flex flex-col gap-4">
           <div className="flex flex-col items-center sm:items-start glass rounded-3xl p-4 sm:p-6 h-full gap-8">
            <div className="flex items-center gap-3 w-full justify-center sm:justify-start shrink-0">
-             <div className="w-3 h-3 rounded-full bg-pink-500 ai-glow shrink-0"></div>
-             <h1 className="text-xl font-bold tracking-tight text-white hidden sm:block">MYRA</h1>
+             <img src="/logo.png" alt="Soltini Logo" className="w-8 h-8 rounded-full object-cover shadow-[0_0_15px_rgba(236,72,153,0.5)] shrink-0" />
+             <h1 className="text-xl font-bold tracking-tight text-white hidden sm:block">SOLTINI</h1>
            </div>
            
            {/* Activity Logs (only visible on desktop) */}

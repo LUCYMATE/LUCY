@@ -16,7 +16,7 @@ type Subscriber = (chats: ChatSession[]) => void;
 class ChatHistoryManager {
   private chats: ChatSession[] = [];
   private subscribers: Set<Subscriber> = new Set();
-  private readonly STORAGE_KEY = 'myra_chat_history';
+  private readonly STORAGE_KEY = 'soltini_chat_history';
 
   constructor() {
     this.loadFromStorage();

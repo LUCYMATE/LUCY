@@ -76,7 +76,8 @@ export function useVrmAnimator({
     const isFlirtyPose =
       basePose === 'caress'      ||
       basePose === 'stretch'     ||
-      basePose === 'lean';
+      basePose === 'lean'        ||
+      basePose === 'flying-kiss';
 
     const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
 
@@ -88,7 +89,7 @@ export function useVrmAnimator({
     // ── Step 1: Body / locomotion (hips, spine, legs) ─────────────────────
     if (isPeeking) {
       applyPeek(vrm, rest, t, isPeekLeft);
-    } else {
+    } else if (basePose !== 'flying-kiss') {
       applyLocomotion(vrm, rest, t, isWalking, isSitting);
     }
 
@@ -105,19 +106,21 @@ export function useVrmAnimator({
     const shouldSpeak = isSpeaking && basePose !== 'flying-kiss';
 
     // ── Step 3: Upper-body gestures (arms, head, neck) ────────────────────
-    applyGestures(
-      vrm, rest, t,
-      isGreeting, shouldSpeak, isThinking, actuallyHearing,
-      isWalking, emotion, isSitting
-    );
+    if (basePose !== 'flying-kiss') {
+      applyGestures(
+        vrm, rest, t,
+        isGreeting, shouldSpeak, isThinking, actuallyHearing,
+        isWalking, emotion, isSitting
+      );
+    }
 
     // ── Step 4: Expressions (face, blink, lip sync) ───────────────────────
     applyExpressions(vrm, t, shouldSpeak, actuallyHearing, isThinking, emotion);
 
     // ── Step 5: High-priority active animations ───────────────────────────
-    // flying-kiss must override talking gestures, so it runs last
-    if (basePose === 'flying-kiss' && !isWalking) {
-      applyFlirty(vrm, rest, t, basePose);
+    // FBX takes over for flying-kiss, so we only do procedural flirty poses for the rest
+    if (basePose === 'caress' || basePose === 'stretch' || basePose === 'lean') {
+      if (!isWalking) applyFlirty(vrm, rest, t, basePose);
     }
 
     // ── Update spring bones, look-at, expression manager ─────────────────

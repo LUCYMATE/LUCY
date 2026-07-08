@@ -2,22 +2,27 @@ using System;
 using System.Speech.Recognition;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
+
+[assembly: AssemblyTitle("myraluncher")]
+[assembly: AssemblyDescription("Myra voice wake word detector")]
+[assembly: AssemblyCompany("Myra")]
+[assembly: AssemblyProduct("myraluncher")]
 
 class Program {
     static void Main(string[] args) {
         try {
             using (SpeechRecognitionEngine recognizer = new SpeechRecognitionEngine()) {
                 Choices choices = new Choices();
-                choices.Add(new string[] { "hey myra", "hello myra", "wake up myra", "hey syra", "hello syra", "wake up syra" });
-                
+                choices.Add(new string[] { "hey myra", "hello myra", "wake up myra", "hey syra", "hello syra", "wake up syra", "launch myra", "launch check" });
+
                 GrammarBuilder gb = new GrammarBuilder();
                 gb.Append(choices);
-                
+
                 Grammar g = new Grammar(gb);
                 recognizer.LoadGrammar(g);
-                
+
                 recognizer.SpeechRecognized += (s, e) => {
-                    // Try to find the app executable and launch it
                     string appPath = Process.GetCurrentProcess().MainModule.FileName;
                     string dir = Path.GetDirectoryName(appPath);
                     string[] possibleExeNames = { "myra.exe", "syra.exe" };
@@ -45,10 +50,10 @@ class Program {
                         }
                     }
                 };
-                
+
                 recognizer.SetInputToDefaultAudioDevice();
                 recognizer.RecognizeAsync(RecognizeMode.Multiple);
-                
+
                 System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite);
             }
         } catch (Exception) {

@@ -53,10 +53,10 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isDragging: false,
   isHearingSound: false,
   isToolAgentRunning: false,
-  affectionLevel: parseInt(localStorage.getItem('myra_affection') ?? '30', 10),
+  affectionLevel: parseInt(localStorage.getItem('soltini_affection') ?? '30', 10),
   isPetMode: false,
-  avatarScale: parseFloat(localStorage.getItem('myra_avatar_size') ?? '100') / 100,
-  isAvatarLocked: localStorage.getItem('myra_avatar_locked') === 'true',
+  avatarScale: parseFloat(localStorage.getItem('soltini_avatar_size') ?? '100') / 100,
+  isAvatarLocked: localStorage.getItem('soltini_avatar_locked') === 'true',
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),

@@ -17,29 +17,29 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [selectedCamera, setSelectedCamera] = useState<string>('');
 
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    const model = localStorage.getItem('myra_model') || 'gemini-3.1-flash-live-preview';
+    const model = localStorage.getItem('soltini_model') || 'gemini-3.1-flash-live-preview';
     if (model !== 'gemini-3.1-flash-live-preview') {
-      localStorage.setItem('myra_model', 'gemini-3.1-flash-live-preview');
+      localStorage.setItem('soltini_model', 'gemini-3.1-flash-live-preview');
       return 'gemini-3.1-flash-live-preview';
     }
     return model;
   });
-  const [selectedVoice, setSelectedVoice] = useState<string>(() => localStorage.getItem('myra_voice') || 'Aoede');
+  const [selectedVoice, setSelectedVoice] = useState<string>(() => localStorage.getItem('soltini_voice') || 'Aoede');
   const [avatarSize, setAvatarSize] = useState<string>(() => {
-    const val = localStorage.getItem('myra_avatar_size');
+    const val = localStorage.getItem('soltini_avatar_size');
     if (!val || ['Small', 'Medium', 'Large'].includes(val)) return '100';
     return val;
   });
-  const [systemInstruction, setSystemInstruction] = useState<string>(() => localStorage.getItem('myra_system_instruction') || 'You are a helpful voice assistant. Keep replies conversational, concise, and natural for back-and-forth spoken chat.');
-  const [mainApiKey, setMainApiKey] = useState<string>(() => localStorage.getItem('myra_main_api_key') || '');
-  const [altApiKey, setAltApiKey] = useState<string>(() => localStorage.getItem('myra_alt_api_key') || '');
-  const [tavilyApiKey, setTavilyApiKey] = useState<string>(() => localStorage.getItem('myra_tavily_api_key') || '');
+  const [systemInstruction, setSystemInstruction] = useState<string>(() => localStorage.getItem('soltini_system_instruction') || 'You are Soltini, a playful and bubbly (Chulbuli) AI assistant.');
+  const [mainApiKey, setMainApiKey] = useState<string>(() => localStorage.getItem('soltini_main_api_key') || '');
+  const [altApiKey, setAltApiKey] = useState<string>(() => localStorage.getItem('soltini_alt_api_key') || '');
+  const [tavilyApiKey, setTavilyApiKey] = useState<string>(() => localStorage.getItem('soltini_tavily_api_key') || '');
   const [changed, setChanged] = useState(false);
   const [launchPetMode, setLaunchPetMode] = useState<boolean>(
-    () => localStorage.getItem('myra_launch_pet_mode') === 'true'
+    () => localStorage.getItem('soltini_launch_pet_mode') === 'true'
   );
   const [avatarLocked, setAvatarLocked] = useState<boolean>(
-    () => localStorage.getItem('myra_avatar_locked') === 'true'
+    () => localStorage.getItem('soltini_avatar_locked') === 'true'
   );
 
   useEffect(() => {
@@ -52,23 +52,23 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
         // Microphones
         const audioInputs = allDevices.filter(d => d.kind === 'audioinput');
         setDevices(audioInputs);
-        const savedMicId = localStorage.getItem('myra_mic_id');
+        const savedMicId = localStorage.getItem('soltini_mic_id');
         if (savedMicId && audioInputs.some(d => d.deviceId === savedMicId)) {
           setSelectedMic(savedMicId);
         } else if (audioInputs.length > 0) {
           setSelectedMic(audioInputs[0].deviceId);
-          localStorage.setItem('myra_mic_id', audioInputs[0].deviceId);
+          localStorage.setItem('soltini_mic_id', audioInputs[0].deviceId);
         }
 
         // Cameras
         const videoInputs = allDevices.filter(d => d.kind === 'videoinput');
         setVideoDevices(videoInputs);
-        const savedCamId = localStorage.getItem('myra_camera_id');
+        const savedCamId = localStorage.getItem('soltini_camera_id');
         if (savedCamId && videoInputs.some(d => d.deviceId === savedCamId)) {
           setSelectedCamera(savedCamId);
         } else if (videoInputs.length > 0) {
           setSelectedCamera(videoInputs[0].deviceId);
-          localStorage.setItem('myra_camera_id', videoInputs[0].deviceId);
+          localStorage.setItem('soltini_camera_id', videoInputs[0].deviceId);
         }
         
       } catch (e) {
@@ -81,7 +81,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const handleMicChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedMic(val);
-    localStorage.setItem('myra_mic_id', val);
+    localStorage.setItem('soltini_mic_id', val);
     setChanged(true);
     logger.add('success', 'Settings', 'Microphone changed to ' + val);
   };
@@ -89,34 +89,34 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const handleCameraChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedCamera(val);
-    localStorage.setItem('myra_camera_id', val);
+    localStorage.setItem('soltini_camera_id', val);
     setChanged(true);
     logger.add('success', 'Settings', 'Camera changed to ' + val);
   };
 
   const handleModelChange = (val: string) => {
     setSelectedModel(val);
-    localStorage.setItem('myra_model', val);
+    localStorage.setItem('soltini_model', val);
     setChanged(true);
     logger.add('success', 'Settings', 'Model changed to ' + val);
   };
 
   const handleVoiceChange = (val: string) => {
     setSelectedVoice(val);
-    localStorage.setItem('myra_voice', val);
+    localStorage.setItem('soltini_voice', val);
     setChanged(true);
     logger.add('success', 'Settings', 'Voice changed to ' + val);
   };
 
   const handleInstructionChange = (val: string) => {
     setSystemInstruction(val);
-    localStorage.setItem('myra_system_instruction', val);
+    localStorage.setItem('soltini_system_instruction', val);
     setChanged(true);
   };
 
   const handleAvatarSizeChange = (val: string) => {
     setAvatarSize(val);
-    localStorage.setItem('myra_avatar_size', val);
+    localStorage.setItem('soltini_avatar_size', val);
     // Update zustand immediately so canvas responds without page reload
     useAvatarState.getState().setAvatarScale(parseFloat(val) / 100);
     setChanged(true);
@@ -125,19 +125,19 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
 
   const handleMainApiKeyChange = (val: string) => {
     setMainApiKey(val);
-    localStorage.setItem('myra_main_api_key', val);
+    localStorage.setItem('soltini_main_api_key', val);
     setChanged(true);
   };
 
   const handleAltApiKeyChange = (val: string) => {
     setAltApiKey(val);
-    localStorage.setItem('myra_alt_api_key', val);
+    localStorage.setItem('soltini_alt_api_key', val);
     setChanged(true);
   };
 
   const handleTavilyApiKeyChange = (val: string) => {
     setTavilyApiKey(val);
-    localStorage.setItem('myra_tavily_api_key', val);
+    localStorage.setItem('soltini_tavily_api_key', val);
     setChanged(true);
   };
 
@@ -147,7 +147,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
       if (onSettingsChanged) {
         onSettingsChanged();
       }
-      window.dispatchEvent(new CustomEvent('myra-settings-changed'));
+      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
     }
     onClose();
   };
@@ -205,13 +205,13 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="block text-sm font-medium text-white">Launch in Pet Mode</label>
-                    <p className="text-xs text-white/40 mt-1">If enabled, Myra opens directly in Pet Mode (fullscreen desktop companion) on every launch.</p>
+                    <p className="text-xs text-white/40 mt-1">If enabled, Soltini opens directly in Pet Mode (fullscreen desktop companion) on every launch.</p>
                   </div>
                   <button
                     onClick={() => {
                       const next = !launchPetMode;
                       setLaunchPetMode(next);
-                      localStorage.setItem('myra_launch_pet_mode', String(next));
+                      localStorage.setItem('soltini_launch_pet_mode', String(next));
                     }}
                     className={`relative w-12 h-6 rounded-full transition-colors ${launchPetMode ? 'bg-pink-500' : 'bg-white/20'}`}
                   >
@@ -231,7 +231,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     onClick={() => {
                       const next = !avatarLocked;
                       setAvatarLocked(next);
-                      localStorage.setItem('myra_avatar_locked', String(next));
+                      localStorage.setItem('soltini_avatar_locked', String(next));
                       useAvatarState.getState().setIsAvatarLocked(next);
                     }}
                     className={`relative w-12 h-6 rounded-full transition-colors ${avatarLocked ? 'bg-pink-500' : 'bg-white/20'}`}
@@ -359,7 +359,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                   className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans resize-none"
                   placeholder="E.g., You love making sarcastic jokes, keep answers under 2 sentences, etc."
                 />
-                <p className="text-xs text-white/40 mt-2">These instructions add custom personality quirks and preferences on top of Myra's core automation system.</p>
+                <p className="text-xs text-white/40 mt-2">These instructions add custom personality quirks and preferences on top of Soltini's core automation system.</p>
               </div>
 
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
@@ -403,13 +403,13 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
           {activeTab === 'shortcuts' && (
             <div className="text-white animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
               <h3 className="text-2xl font-semibold mb-2">Global Shortcuts</h3>
-              <p className="text-sm text-white/60 mb-6">These shortcuts work globally across your OS, even when Myra is minimized or running in the background.</p>
+              <p className="text-sm text-white/60 mb-6">These shortcuts work globally across your OS, even when Soltini is minimized or running in the background.</p>
               
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
                 <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/10">
                   <div>
                     <h4 className="text-lg font-medium text-white">Toggle Speaker</h4>
-                    <p className="text-sm text-white/50">Mute or unmute Myra's spoken responses</p>
+                    <p className="text-sm text-white/50">Mute or unmute Soltini's spoken responses</p>
                   </div>
                   <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + S</kbd>
                 </div>

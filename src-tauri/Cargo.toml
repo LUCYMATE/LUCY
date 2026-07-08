@@ -1,5 +1,5 @@
 [package]
-name = "myra"
+name = "soltini"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
@@ -7,12 +7,21 @@ license = ""
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
+default-run = "soltini"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "soltini"
+path = "src/main.rs"
+
+[[bin]]
+name = "soltini-listener"
+path = "src/bin/listener.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
@@ -33,4 +42,6 @@ base64 = "0.22.1"
 lazy_static = "1.5.0"
 screenshots = "0.8.10"
 image = "0.25.6"
+global-hotkey = "0.8"
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_Security"] }
 tauri-plugin-http = "2"

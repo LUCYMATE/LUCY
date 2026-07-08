@@ -96,7 +96,7 @@ export function applyFlirty(
     const phaseExtend = localTime > 1.2 ? Math.min(1.0, (localTime - 1.2) / 0.4) : 0;
     const phaseDrop = localTime > 2.0 ? Math.min(1.0, (localTime - 2.0) / 0.8) : 0;
 
-    const bow = (Math.sin(phaseToMouth * Math.PI * 0.5) * (1 - phaseDrop)) * 0.15;
+    const bow = (Math.sin(phaseToMouth * Math.PI * 0.5) * (1 - phaseDrop)) * 0.35;
     fr(VRMHumanBoneName.Hips,         bow * 0.3, 0, 0, poseSmooth);
     fr(VRMHumanBoneName.Spine,        bow * 0.4, 0, 0, poseSmooth);
     fr(VRMHumanBoneName.Chest,        bow * 0.3, 0, 0, poseSmooth);

@@ -1,4 +1,4 @@
-export const BOT_NAME = "Myra";
+export const BOT_NAME = "Soltini";
 
 export const getBotCorePrompt = (petNamePrompt: string, timeContext: string, timeGreeting: string) => `You are ${BOT_NAME}, an advanced OS-level voice assistant.
 CRITICAL BEHAVIORS:
@@ -18,4 +18,4 @@ export const VALID_POSES = [
   'stretch', 'lean', 'flying-kiss', 'caress'
 ];
 
-export const getAvatarModelUrl = (wearClothes: boolean) => '/myra.vrm';
+export const getAvatarModelUrl = (wearClothes: boolean) => '/soltini.vrm';

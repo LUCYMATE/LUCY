@@ -1,4 +1,4 @@
-import { MyraOS } from './components/layout/MyraOS';
+import { SoltiniOS } from './components/layout/SoltiniOS';
 import { Sidebar } from './components/layout/Sidebar';
 import { TitleBar } from './components/layout/TitleBar';
 import { Minus, Square, X, Menu } from 'lucide-react';
@@ -132,20 +132,9 @@ export default function App() {
   useEffect(() => {
     const initWindow = async () => {
       try {
-        const win = getCurrentWindow();
-        await win.show();
-
-        win.onCloseRequested(async (event) => {
-          event.preventDefault();
-          try {
-            await win.hide();
-          } catch (err) {
-            console.error("Failed to hide window", err);
-          }
-        });
-
+        await getCurrentWindow().show();
         // Auto-launch into pet mode if the user has it enabled
-        if (localStorage.getItem('myra_launch_pet_mode') === 'true') {
+        if (localStorage.getItem('soltini_launch_pet_mode') === 'true') {
           togglePetMode();
         }
       } catch (e) {
@@ -158,15 +147,15 @@ export default function App() {
       restoreWindow();
     };
     
-    window.addEventListener('myra-restore', onRestore);
+    window.addEventListener('soltini-restore', onRestore);
 
     let unlistenExit: (() => void) | undefined;
-    listen('myra-exit-pet-mode', () => {
+    listen('soltini-exit-pet-mode', () => {
       restoreWindow();
     }).then(fn => { unlistenExit = fn; });
 
     return () => {
-      window.removeEventListener('myra-restore', onRestore);
+      window.removeEventListener('soltini-restore', onRestore);
       unlistenExit?.();
     };
   }, []);
@@ -251,7 +240,7 @@ export default function App() {
       )}
 
       <div className="flex-1 relative flex min-h-0">
-        <MyraOS isPetMode={isPetMode} />
+        <SoltiniOS isPetMode={isPetMode} />
       </div>
     </div>
   );

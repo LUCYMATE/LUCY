@@ -42,7 +42,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle');
   const [statusDetail, setStatusDetail] = useState('');
-  const [isMuted, setIsMuted] = useState(() => localStorage.getItem('myra_muted') === 'true');
+  const [isMuted, setIsMuted] = useState(() => localStorage.getItem('soltini_muted') === 'true');
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
 
@@ -138,8 +138,8 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     logger.add('info', 'System Boot', `Initializing ${BOT_NAME}OS and Gemini connection...`);
     setInitialized(true);
 
-    const apiKey = localStorage.getItem('myra_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-    const altApiKey = localStorage.getItem('myra_alt_api_key') || undefined;
+    const apiKey = localStorage.getItem('soltini_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    const altApiKey = localStorage.getItem('soltini_alt_api_key') || undefined;
     
     if (!apiKey) {
       logger.add('error', 'API Key Missing', 'No API key found in Settings or .env');
@@ -227,7 +227,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   };
 
   useEffect(() => {
-    if (!initialized && localStorage.getItem('myra_launch_pet_mode') === 'true') {
+    if (!initialized && localStorage.getItem('soltini_launch_pet_mode') === 'true') {
       initSystem();
     }
   }, []);
@@ -252,9 +252,9 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
         }, 800);
       }
     };
-    window.addEventListener('myra-settings-changed', handleSettingsChanged);
+    window.addEventListener('soltini-settings-changed', handleSettingsChanged);
     return () => {
-      window.removeEventListener('myra-settings-changed', handleSettingsChanged);
+      window.removeEventListener('soltini-settings-changed', handleSettingsChanged);
     };
   }, [initialized, setListening, setSpeaking, setThinking]);
 
@@ -331,11 +331,11 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     const fns: (() => void)[] = [];
     let mounted = true;
 
-    listen('myra-toggle-mic', () => {
+    listen('soltini-toggle-mic', () => {
       if (mounted) toggleMicRef.current();
     }).then(fn => { if (mounted) fns.push(fn); else fn(); });
 
-    listen('myra-toggle-mute', () => {
+    listen('soltini-toggle-mute', () => {
       if (mounted) toggleMuteRef.current();
     }).then(fn => { if (mounted) fns.push(fn); else fn(); });
 
@@ -395,15 +395,15 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
       }
     };
 
-    window.addEventListener('myra-clear-chat', handleClear);
-    window.addEventListener('myra-export-chat', handleExport);
-    window.addEventListener('myra-new-chat', handleNewChat);
-    window.addEventListener('myra-load-chat', handleLoadChat);
+    window.addEventListener('soltini-clear-chat', handleClear);
+    window.addEventListener('soltini-export-chat', handleExport);
+    window.addEventListener('soltini-new-chat', handleNewChat);
+    window.addEventListener('soltini-load-chat', handleLoadChat);
     return () => {
-      window.removeEventListener('myra-clear-chat', handleClear);
-      window.removeEventListener('myra-export-chat', handleExport);
-      window.removeEventListener('myra-new-chat', handleNewChat);
-      window.removeEventListener('myra-load-chat', handleLoadChat);
+      window.removeEventListener('soltini-clear-chat', handleClear);
+      window.removeEventListener('soltini-export-chat', handleExport);
+      window.removeEventListener('soltini-new-chat', handleNewChat);
+      window.removeEventListener('soltini-load-chat', handleLoadChat);
     };
   }, [messages, activeChatId]);
 
@@ -460,7 +460,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
             <div className="absolute inset-0 bg-pink-500/20 blur-xl rounded-full animate-pulse" />
             <Activity className="w-12 h-12 text-pink-500 relative z-10" />
           </div>
-          <h2 className="text-3xl font-bold tracking-widest uppercase mb-4 text-white">System Myra</h2>
+          <h2 className="text-3xl font-bold tracking-widest uppercase mb-4 text-white">System Soltini</h2>
           <p className="text-white/50 max-w-md mb-12">
             Autonomous intelligence core. Gemini 3.1 Flash Live.
           </p>
@@ -528,7 +528,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
               </button>
               <button
                 type="button"
-                onClick={() => emit('myra-exit-pet-mode')}
+                onClick={() => emit('soltini-exit-pet-mode')}
                 title="Exit Pet Mode"
                 className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center border border-white/10 bg-black/40 text-white/40 hover:border-white/30 hover:text-white/70 hover:bg-red-600/30 hover:text-red-400 hover:border-red-500/50 transition-all cursor-pointer"
               >
@@ -590,7 +590,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
                   <button
                     type="button"
                     onClick={toggleMute}
-                    title={isMuted ? "Unmute Myra's voice" : "Mute Myra's voice"}
+                    title={isMuted ? "Unmute Soltini's voice" : "Mute Soltini's voice"}
                     className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMuted
                         ? 'bg-red-600/30 border-red-500 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.5)]'
                         : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
