@@ -103,6 +103,7 @@ export default function App() {
         await safe(win.hide());
         await safe(win.show());
 
+        window.dispatchEvent(new CustomEvent('soltini-force-init'));
         setIsPetMode(true);
       } else {
         await restoreWindow();
@@ -198,7 +199,9 @@ export default function App() {
 
         if (insideInteractive !== !lastIgnore) {
           lastIgnore = !insideInteractive;
-          await win.setIgnoreCursorEvents(lastIgnore);
+          if (active) {
+            await win.setIgnoreCursorEvents(lastIgnore);
+          }
         }
       } catch (e) {
         console.warn("Error in pet mode mouse tracking:", e);
@@ -226,7 +229,7 @@ export default function App() {
       {/* Custom Titlebar */}
       {!isPetMode && (
         <TitleBar 
-          onOpenMenu={() => setSidebarOpen(true)}
+          onOpenMenu={() => setSidebarOpen(prev => !prev)}
           onMinimize={minimize}
           onMaximize={toggleMaximize}
           onClose={close}

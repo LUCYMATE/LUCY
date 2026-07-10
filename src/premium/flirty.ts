@@ -45,13 +45,11 @@ export function applyFlirty(
 
     tr(VRMHumanBoneName.Hips, 0, 0.05, 0, poseSmooth);
 
-    // Z = +1.4 for RightArm goes UP (0 is T-pose, -1.25 is straight down)
-    // Z = -1.4 for LeftArm goes UP (0 is T-pose, +1.25 is straight down)
-    fr(VRMHumanBoneName.RightUpperArm,  -0.3, 0, 1.4, 0.15);
+    fr(VRMHumanBoneName.RightUpperArm,  -0.3, 0, -0.5, 0.15);
     fr(VRMHumanBoneName.RightLowerArm,  0, 0, 0, 0.15);
     fr(VRMHumanBoneName.RightHand,      0, 0, stretchPhase * 0.2, 0.15);
 
-    fr(VRMHumanBoneName.LeftUpperArm,   -0.3, 0, -1.4, 0.15);
+    fr(VRMHumanBoneName.LeftUpperArm,   -0.3, 0, 0.5, 0.15);
     fr(VRMHumanBoneName.LeftLowerArm,   0, 0, 0, 0.15);
     fr(VRMHumanBoneName.LeftHand,       0, 0, stretchPhase * 0.2, 0.15);
 

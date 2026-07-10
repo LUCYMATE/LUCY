@@ -396,17 +396,23 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
       }
     };
 
+    const handleForceInit = () => {
+      if (!initialized) initSystem();
+    };
+
     window.addEventListener('soltini-clear-chat', handleClear);
     window.addEventListener('soltini-export-chat', handleExport);
     window.addEventListener('soltini-new-chat', handleNewChat);
     window.addEventListener('soltini-load-chat', handleLoadChat);
+    window.addEventListener('soltini-force-init', handleForceInit);
     return () => {
       window.removeEventListener('soltini-clear-chat', handleClear);
       window.removeEventListener('soltini-export-chat', handleExport);
       window.removeEventListener('soltini-new-chat', handleNewChat);
       window.removeEventListener('soltini-load-chat', handleLoadChat);
+      window.removeEventListener('soltini-force-init', handleForceInit);
     };
-  }, [messages, activeChatId]);
+  }, [messages, activeChatId, initialized]);
 
   const handleSendText = () => {
     const trimmed = input.trim();

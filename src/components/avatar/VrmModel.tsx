@@ -119,6 +119,9 @@ export function VrmModel({
         standardizeVrmBoneNames(loadedVrm);
 
 
+        if (globalCachedVrm && globalCachedVrm !== loadedVrm) {
+          disposeVrm(globalCachedVrm);
+        }
         globalCachedVrm = loadedVrm;
 
         if (!cancelled && mountedRef.current) {

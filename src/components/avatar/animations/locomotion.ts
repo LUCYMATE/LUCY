@@ -27,9 +27,9 @@ export function applyLocomotion(
     const kickL = Math.sin(t * 20.0) * 0.4;
     const kickR = Math.sin(t * 20.0 + Math.PI) * 0.4;
     
-    fr(VRMHumanBoneName.LeftUpperLeg, 0.5 + kickL, 0.1, 0, 0.2);
+    fr(VRMHumanBoneName.LeftUpperLeg, 0.1 + kickL, 0.1, 0, 0.2);
     fr(VRMHumanBoneName.LeftLowerLeg, -0.2, 0, 0, 0.2);
-    fr(VRMHumanBoneName.RightUpperLeg, 0.5 + kickR, -0.1, 0, 0.2);
+    fr(VRMHumanBoneName.RightUpperLeg, 0.1 + kickR, -0.1, 0, 0.2);
     fr(VRMHumanBoneName.RightLowerLeg, -0.2, 0, 0, 0.2);
 
     // Bend the spine/chest away from drag direction to show resistance
@@ -37,10 +37,11 @@ export function applyLocomotion(
     // dragOffset.y is positive when cursor is below
     const bendX = Math.max(-0.5, Math.min(0.5, dragOffset.y * 0.3));
     const bendZ = Math.max(-0.5, Math.min(0.5, -dragOffset.x * 0.3));
+    const pitchForward = 0.4;
     
-    fr(VRMHumanBoneName.Spine, bendX, 0, bendZ, 0.1);
-    fr(VRMHumanBoneName.Chest, bendX * 0.5, 0, bendZ * 0.5, 0.1);
-    fr(VRMHumanBoneName.Head, -bendX * 0.5, 0, -bendZ * 0.5, 0.1); // Head tries to look back
+    fr(VRMHumanBoneName.Spine, bendX + pitchForward, 0, bendZ, 0.1);
+    fr(VRMHumanBoneName.Chest, bendX * 0.5 + pitchForward * 0.5, 0, bendZ * 0.5, 0.1);
+    fr(VRMHumanBoneName.Head, -bendX * 0.5 - pitchForward * 0.5, 0, -bendZ * 0.5, 0.1); // Head tries to look back
 
   } else if (basePose === 'sleep') {
     // SLEEP POSE

@@ -72,33 +72,32 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
   }, [isTauri]);
 
   return (
-    <div className={`flex h-full w-full gap-4 sm:gap-6 relative max-w-[1600px] mx-auto min-h-0 ${isPetMode ? 'p-0 max-w-none' : 'p-4 sm:p-6'}`}>
-      {showSettings ? (
-        <div className="flex-1 w-full h-full p-4 sm:p-6">
-          <SettingsPage onClose={() => setShowSettings(false)} />
-        </div>
-      ) : (
-        <>
-          {/* Main Workspace */}
-          <main className="flex-1 flex flex-col min-w-0 min-h-0 h-full p-4 sm:p-6">
-            <section className="flex-1 flex flex-col min-w-0 min-h-0">
-              <div className={`${!isPetMode ? 'glass rounded-[40px]' : ''} flex-1 relative overflow-hidden flex flex-col min-h-0`}>
-                <Chat isPetMode={isPetMode} />
-              </div>
-            </section>
-          </main>
+    <div className={`flex h-full w-full relative min-h-0 ${isPetMode ? 'p-0 max-w-none' : 'px-2 py-1 sm:px-3 gap-2 sm:gap-3'}`}>
+      <div className={`flex-1 w-full h-full glass rounded-[20px] ${showSettings ? 'block' : 'hidden'}`}>
+        {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
+      </div>
 
-          {/* Navigation (originally on left, now shifted to right) */}
+      <div className={`flex h-full w-full gap-2 sm:gap-3 ${showSettings ? 'hidden' : 'flex'}`}>
+        {/* Main Workspace */}
+        <main className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
+          <section className="flex-1 flex flex-col min-w-0 min-h-0">
+            <div className={`${!isPetMode ? 'glass rounded-[20px] shadow-2xl' : ''} flex-1 relative overflow-hidden flex flex-col min-h-0`}>
+              <Chat isPetMode={isPetMode} />
+            </div>
+          </section>
+        </main>
+
+          {/* Navigation */}
           {!isPetMode && (
-            <aside className="w-16 sm:w-64 shrink-0 flex flex-col gap-4 p-4 sm:p-6 pl-0">
-              <div className="flex flex-col items-center sm:items-start glass rounded-3xl p-4 sm:p-6 h-full gap-8">
+            <aside className="w-16 sm:w-80 shrink-0 flex flex-col">
+              <div className="flex flex-col items-center sm:items-start glass rounded-[20px] shadow-2xl p-4 sm:p-6 h-full gap-8 relative z-10">
                <div className="flex items-center gap-3 w-full justify-center sm:justify-start shrink-0">
                  <img src="/logo.png" alt="Soltini Logo" className="w-8 h-8 rounded-full object-cover shadow-[0_0_15px_rgba(236,72,153,0.5)] shrink-0" />
                  <h1 className="text-xl font-bold tracking-tight text-white hidden sm:block">SOLTINI</h1>
                </div>
                
                {/* Activity Logs (only visible on desktop) */}
-               <div className="hidden sm:flex flex-1 overflow-hidden flex-col w-full bg-black/20 rounded-2xl border border-white/5 min-h-0">
+               <div className="hidden sm:flex flex-1 overflow-hidden flex-col w-full bg-black/20 rounded-xl border border-white/5 min-h-0">
                  <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
                    <span className="text-[10px] uppercase tracking-widest text-pink-300 font-medium">Activity Log</span>
                    <span className="flex h-2 w-2 relative">
@@ -134,7 +133,7 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
                </div>
                
                <div className="flex flex-col gap-6 w-full mt-auto shrink-0">
-                  <div className="hidden sm:flex flex-col gap-4 bg-white/5 border border-white/10 rounded-2xl p-4 text-left">
+                  <div className="hidden sm:flex flex-col gap-4 bg-white/5 border border-white/10 rounded-xl p-4 text-left">
                     <div>
                       <p className="text-[10px] uppercase tracking-widest text-pink-300 opacity-60 mb-0.5">Network Latency</p>
                       <p className="text-sm font-mono text-white">{latency}</p>
@@ -158,7 +157,7 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
                     )}
                   </div>
                   
-                  <div className="w-12 h-12 sm:w-full sm:h-12 rounded-2xl glass flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors gap-2" onClick={() => setShowSettings(true)} title="Settings">
+                  <div className="w-12 h-12 sm:w-full sm:h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors gap-2" onClick={() => setShowSettings(true)} title="Settings">
                     <Settings className="w-5 h-5 text-white" />
                     <span className="hidden sm:block text-white font-medium text-sm">Settings</span>
                   </div>
@@ -169,8 +168,7 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
           
           {/* AvatarController mounts the 3D scene. Unmounting it saves all RAM/CPU! */}
           <AvatarController isPetMode={isPetMode} />
-        </>
-      )}
+      </div>
     </div>
   );
 }

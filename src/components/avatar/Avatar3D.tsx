@@ -1,4 +1,5 @@
 import { useState, useEffect, Suspense, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Html, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
@@ -383,12 +384,13 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
           />
         </div>
 
-        {contextMenu && (
+        {contextMenu && createPortal(
           <ContextMenu
             x={contextMenu.x}
             y={contextMenu.y}
             onClose={() => setContextMenu(null)}
-          />
+          />,
+          document.body
         )}
       </Html>
     </group>
@@ -404,10 +406,11 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
   };
 
-  const toggleLock = () => {
+  const handleLockAvatar = () => {
     const val = !isAvatarLocked;
-    localStorage.setItem('soltini_avatar_locked', String(val));
     setIsAvatarLocked(val);
+    localStorage.setItem('soltini_avatar_locked', String(val));
+    setContextMenu(null);
   };
 
   const exitPetMode = () => {
@@ -465,30 +468,10 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
 
       <div className="my-1 border-t border-white/10" />
 
-      <div className="px-2 py-1 flex flex-col gap-1">
-        <span className="text-[10px] text-white/50 uppercase mb-1">Pose</span>
-        <div className="grid grid-cols-2 gap-1">
-          {['sit', 'stand', 'sleep', 'dance', 'stretch'].map(pose => (
-            <button 
-              key={pose}
-              onClick={() => { setBasePose(pose as any); onClose(); }}
-              className="text-[10px] capitalize bg-white/5 hover:bg-white/15 rounded py-1"
-            >
-              {pose}
-            </button>
-          ))}
-        </div>
+      <div className="px-2 py-1.5 flex items-center justify-between text-sm">
+        <span className="text-white/50">Current Pose</span>
+        <span className="capitalize text-pink-400 font-medium">{useAvatarState.getState().basePose}</span>
       </div>
-
-      <div className="my-1 border-t border-white/10" />
-
-      <button onClick={resetPosition} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left mt-1">
-        <Move className="w-4 h-4" /> Reset Position
-      </button>
-
-      <button onClick={exitPetMode} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left text-pink-400">
-        <Monitor className="w-4 h-4" /> Exit Pet Mode
-      </button>
     </div>
   );
 }
@@ -500,7 +483,7 @@ export function Avatar3D({ isPetMode }: { isPetMode?: boolean }) {
     <div className="w-full h-full pointer-events-none">
       <Canvas
         dpr={1}
-        gl={{ powerPreference: "default", antialias: true }}
+        gl={{ powerPreference: "low-power", antialias: true }}
         style={{ pointerEvents: 'none' }}
       >
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />

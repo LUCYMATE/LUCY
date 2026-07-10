@@ -39,8 +39,21 @@ export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerPro
       { speed: -0.12, phaseShift: Math.PI, opacity: 0.15, width: 0.8, frequency: 2 }
     ];
 
-    const draw = () => {
-      if (!canvas || !ctx) return;
+    let lastDrawTime = 0;
+
+    const draw = (time: number) => {
+      animationRef.current = requestAnimationFrame(draw);
+
+      // Smart Sleep: drop to ~5 FPS when completely idle/silent
+      const isIdle = !isActive && amplitudeRef.current <= 0.021;
+      const frameInterval = isIdle ? 200 : 0;
+      if (time - lastDrawTime < frameInterval) return;
+      lastDrawTime = time;
+
+      if (!canvasRef.current) return;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
       const width = canvas.width / window.devicePixelRatio;
       const height = canvas.height / window.devicePixelRatio;
@@ -122,11 +135,9 @@ export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerPro
 
       // Update global phase
       phase += 0.05;
-
-      animationRef.current = requestAnimationFrame(draw);
     };
 
-    draw();
+    animationRef.current = requestAnimationFrame(draw);
 
     return () => {
       window.removeEventListener('resize', resizeCanvas);
