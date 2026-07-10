@@ -24,9 +24,12 @@ export class AudioRecorder {
       const timeoutPromise = (ms: number, msg: string) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms));
 
       const savedDeviceId = localStorage.getItem('soltini_mic_id');
-      const audioConstraints: MediaTrackConstraints | boolean = savedDeviceId 
-        ? { deviceId: { exact: savedDeviceId } } 
-        : true;
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        ...(savedDeviceId ? { deviceId: { exact: savedDeviceId } } : {})
+      };
 
       this.stream = await Promise.race([
         navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),

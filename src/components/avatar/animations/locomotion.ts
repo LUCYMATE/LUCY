@@ -30,8 +30,8 @@ export function applyLocomotion(
     const headLookY = Math.cos(t * 0.4) * 0.05;
     fr(VRMHumanBoneName.Head, headLookX, headLookY, 0, poseSmooth);
     
-    fr(VRMHumanBoneName.LeftUpperLeg,  1.45, 0, 0.05,  poseSmooth); 
-    fr(VRMHumanBoneName.RightUpperLeg, 1.45, 0, -0.05, poseSmooth);
+    fr(VRMHumanBoneName.LeftUpperLeg,  1.45, 0, 0.0,  poseSmooth); 
+    fr(VRMHumanBoneName.RightUpperLeg, 1.45, 0, 0.0, poseSmooth);
     fr(VRMHumanBoneName.LeftLowerLeg,  -1.35, 0, 0, poseSmooth);
     fr(VRMHumanBoneName.RightLowerLeg, -1.35, 0, 0, poseSmooth);
     fr(VRMHumanBoneName.LeftFoot,  0.45, 0, 0, poseSmooth);
@@ -120,8 +120,8 @@ export function applyLocomotion(
     fr(VRMHumanBoneName.Head, headLookX, headLookY, breathSlow * 0.006, poseSmooth * 0.7);
 
     // Legs: very slight natural micro-bend (prevents locked-knee look)
-    fr(VRMHumanBoneName.LeftUpperLeg,  0.05, 0,  0.05, poseSmooth);
-    fr(VRMHumanBoneName.RightUpperLeg, 0.05, 0, -0.05, poseSmooth);
+    fr(VRMHumanBoneName.LeftUpperLeg,  0.05, 0,  0.0, poseSmooth);
+    fr(VRMHumanBoneName.RightUpperLeg, 0.05, 0, 0.0, poseSmooth);
     fr(VRMHumanBoneName.LeftLowerLeg,  -0.02, 0, 0, poseSmooth);
     fr(VRMHumanBoneName.RightLowerLeg, -0.02, 0, 0, poseSmooth);
     fr(VRMHumanBoneName.LeftFoot,  0.015, 0, 0, poseSmooth);
