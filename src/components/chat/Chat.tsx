@@ -159,7 +159,8 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     recorderRef.current = recorder;
 
     player.start();
-    setOutputAnalyser(player.getAnalyser());
+    const outAnalyser = player.getAnalyser();
+    setOutputAnalyser(outAnalyser);
 
     gemini.onStateChange = (state, detail) => {
       setConnectionState(state);

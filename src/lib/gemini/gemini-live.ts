@@ -4,6 +4,7 @@ import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { invoke } from '@tauri-apps/api/core';
 import { fetch } from '@tauri-apps/plugin-http';
 import { BOT_NAME, VALID_POSES } from '../../config/bot-profile';
+import { useAvatarState } from '../store/avatarState';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -35,6 +36,10 @@ async function executeTool(name: string, args: any, deferredMedia?: string[]): P
     result = { success: true, output };
   } else if (name === 'press_key') {
     await invoke('press_key', { key: args.key });
+    result = { success: true };
+  } else if (name === 'press_key_combo') {
+    const keys = args.keys || [];
+    await invoke('press_key_combo', { keys });
     result = { success: true };
   } else if (name === 'capture_screen') {
     const screenData = await invoke<{base64: string, width: number, height: number}>('capture_screen');
@@ -152,7 +157,6 @@ async function executeTool(name: string, args: any, deferredMedia?: string[]): P
     }
   } else if (name === 'set_pose') {
     try {
-      const { useAvatarState } = await import('../store/avatarState');
       const pose = String(args.pose || '');
       if (VALID_POSES.includes(pose)) {
         const currentPose = useAvatarState.getState().basePose;
@@ -340,20 +344,17 @@ Greeting context: ${timeGreeting}. ${timeContext} ${petNamePrompt}`;
                 }
               
                 if (functionResponses.length > 0) {
-                  this.session.sendToolResponse({ functionResponses });
-                  
                   if (deferredMedia.length > 0) {
-                    setTimeout(() => {
-                      for (const base64 of deferredMedia) {
-                        this.session.sendRealtimeInput({
-                          video: {
-                            mimeType: "image/jpeg",
-                            data: base64
-                          }
-                        });
-                      }
-                    }, 50);
+                    for (const base64 of deferredMedia) {
+                      this.session.sendRealtimeInput({
+                        video: {
+                          mimeType: "image/jpeg",
+                          data: base64
+                        }
+                      });
+                    }
                   }
+                  this.session.sendToolResponse({ functionResponses });
                 }
               }
 
@@ -527,11 +528,21 @@ CRITICAL RULES FOR AUTOMATION:
    - ALWAYS call 'capture_screen' FIRST before attempting to click anywhere.
    - Analyze the screenshot. It contains a 100px grid (Red vertical, Blue horizontal). Count the lines to calculate precise X and Y coordinates of your target element.
    - NEVER guess coordinates or blindly click. ONLY call 'move_and_click_mouse' AFTER verifying the exact target visually.
-2. AVOID ADS & BLIND CLICKS: When navigating sites like YouTube or Google:
+2. YOUTUBE & VIDEO NAVIGATION:
+   - To play a specific video (e.g. "second music", "third result"), first take a screenshot after search.
+   - Identify the position of organic (non-sponsored) video results. Scroll down using 'scroll_mouse' with large negative values (e.g. -40) to pass ads.
+   - Take ANOTHER screenshot after scrolling, then calculate the correct coordinates for the desired result.
+   - To type in YouTube search bar, press '/' key using 'press_key', then type query with 'type_string', then press 'enter'.
+   - NEVER open a Google search tab as a substitute for searching within a site.
+3. AVOID ADS & BLIND CLICKS: When navigating sites like YouTube or Google:
    - Carefully read the screen to distinguish between Ads/Sponsored content and organic results. DO NOT click on Ads.
+   - Ads are usually at the top of the page, marked with "Ad" or "Sponsored" labels. Skip them by scrolling down.
    - Identify the actual search bar, search buttons, and organic video thumbnails carefully before clicking.
-3. TYPING: To search, click the search box, use 'type_string' to input text, and 'press_key' with 'enter' to submit.
-4. AVOID TERMINALS UNLESS NEEDED: Do not use run_terminal_command to open websites. Use open_external_url for websites, and open_app for applications. Only use run_terminal_command for actual shell execution.
+4. TYPING: To search, click the search box, use 'type_string' to input text, and 'press_key' with 'enter' to submit.
+5. CLOSING TABS: To close a browser tab, use 'press_key_combo' with keys ["ctrl", "w"]. To close a window, use ["alt", "f4"]. To switch tabs, use ["ctrl", "tab"].
+6. SCROLLING: To scroll the page, ALWAYS use the 'scroll_mouse' tool. NEVER use 'run_terminal_command' for scrolling — it does not exist as a terminal command.
+7. VERIFICATION: After every click, scroll, or keypress, the system will AUTOMATICALLY take a verification screenshot for you. Use these screenshots to confirm your action succeeded before proceeding.
+8. AVOID TERMINALS UNLESS NEEDED: Do not use run_terminal_command to open websites. Use open_external_url for websites, and open_app for applications. Only use run_terminal_command for actual shell execution.
 
 Continue calling tools in sequence until the request is fully completed. Once done, summarize what you accomplished.`;
 
@@ -547,11 +558,13 @@ Continue calling tools in sequence until the request is fully completed. Once do
       let finalResult = '';
       const loopLimit = 8;
 
+      const toolAgentModel = localStorage.getItem('soltini_tool_agent_model') || 'gemini-3.5-flash';
+
       for (let i = 0; i < loopLimit; i++) {
         logger.add('info', 'Tool Agent Thinking', `Running step ${i + 1}/${loopLimit}...`);
         
         const response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
+          model: toolAgentModel,
           contents: contents,
           config: {
             systemInstruction: systemPrompt,
@@ -623,6 +636,15 @@ Continue calling tools in sequence until the request is fully completed. Once do
                     type: Type.OBJECT,
                     properties: { key: { type: Type.STRING } },
                     required: ['key']
+                  }
+                },
+                {
+                  name: 'press_key_combo',
+                  description: 'Press a key combination using modifier keys. For closing browser tabs use ["ctrl","w"], for closing windows use ["alt","f4"], for switching tabs use ["ctrl","tab"]. The first key(s) are held down while the last key is pressed.',
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: { keys: { type: Type.ARRAY, description: 'Array of key names to press in order, e.g. ["ctrl","w"]' } },
+                    required: ['keys']
                   }
                 },
                 {
@@ -721,6 +743,12 @@ Continue calling tools in sequence until the request is fully completed. Once do
             logger.add('info', `Tool Agent Tool Call: ${toolName}`, JSON.stringify(args));
             
             const result = await executeTool(toolName, args, deferredMedia);
+
+            // Post-action verification: auto-screenshot after mutation tools
+            const mutationTools = ['move_and_click_mouse', 'type_string', 'press_key', 'press_key_combo', 'scroll_mouse'];
+            if (mutationTools.includes(toolName) && result?.success !== false) {
+              await executeTool('capture_screen', {}, deferredMedia);
+            }
             
             logger.add('success', `Tool Agent Executed: ${toolName}`, JSON.stringify(result));
             functionResponses.push({

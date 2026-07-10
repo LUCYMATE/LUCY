@@ -15,7 +15,7 @@ CRITICAL BEHAVIORS:
 
 export const VALID_POSES = [
   'sit', 'stand', 'peek-left', 'peek-right', 
-  'stretch', 'lean', 'flying-kiss', 'caress'
+  'stretch', 'lean', 'flying-kiss', 'caress', 'dance'
 ];
 
 export const getAvatarModelUrl = (wearClothes: boolean) => '/soltini.vrm';

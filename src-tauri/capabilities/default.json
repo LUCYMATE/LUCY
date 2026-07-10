@@ -39,6 +39,8 @@
     "allow-run-python-script",
     "allow-run-terminal-command",
     "allow-press-key",
+    "allow-scroll-mouse",
+    "allow-press-key-combo",
     "allow-capture-screen",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",

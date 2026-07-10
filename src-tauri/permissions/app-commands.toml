@@ -57,3 +57,13 @@ commands.allow = ["press_key"]
 identifier = "allow-capture-screen"
 description = "Allows capturing the screen"
 commands.allow = ["capture_screen"]
+
+[[permission]]
+identifier = "allow-scroll-mouse"
+description = "Allows scrolling the mouse wheel"
+commands.allow = ["scroll_mouse"]
+
+[[permission]]
+identifier = "allow-press-key-combo"
+description = "Allows pressing keyboard key combinations (e.g., Ctrl+W)"
+commands.allow = ["press_key_combo"]

@@ -8,7 +8,7 @@ export interface BoneRest {
   };
 }
 
-export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'stretch' | 'lean' | 'flying-kiss' | 'caress';
+export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'stretch' | 'lean' | 'flying-kiss' | 'caress' | 'dance' | 'dancing';
 export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'thinking' | 'flirty';
 
 

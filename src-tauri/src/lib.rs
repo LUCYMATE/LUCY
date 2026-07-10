@@ -43,9 +43,10 @@ fn move_and_click_mouse(x: i32, y: i32) {
 }
 
 #[tauri::command]
-fn scroll_mouse(amount: i32) {
+fn scroll_mouse(amount: i32) -> Result<(), String> {
     let mut enigo = Enigo::new();
     enigo.mouse_scroll_y(amount);
+    Ok(())
 }
 
 #[tauri::command]
@@ -109,7 +110,7 @@ fn run_terminal_command(command: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn press_key(key: String) {
+fn press_key(key: String) -> Result<(), String> {
     let mut enigo = Enigo::new();
     let enigo_key = match key.to_lowercase().as_str() {
         "enter" | "return" => Key::Return,
@@ -129,11 +130,54 @@ fn press_key(key: String) {
             if other.chars().count() == 1 {
                 Key::Layout(other.chars().next().unwrap())
             } else {
-                return;
+                return Err(format!("Unknown key: {}", other));
             }
         }
     };
     enigo.key_click(enigo_key);
+    Ok(())
+}
+
+fn key_to_enigo(key: &str) -> Result<Key, String> {
+    match key.to_lowercase().as_str() {
+        "enter" | "return" => Ok(Key::Return),
+        "tab" => Ok(Key::Tab),
+        "space" => Ok(Key::Space),
+        "backspace" => Ok(Key::Backspace),
+        "escape" => Ok(Key::Escape),
+        "meta" | "windows" | "win" | "command" => Ok(Key::Meta),
+        "shift" => Ok(Key::Shift),
+        "control" | "ctrl" => Ok(Key::Control),
+        "alt" => Ok(Key::Alt),
+        "up" => Ok(Key::UpArrow),
+        "down" => Ok(Key::DownArrow),
+        "left" => Ok(Key::LeftArrow),
+        "right" => Ok(Key::RightArrow),
+        other => {
+            if other.chars().count() == 1 {
+                Ok(Key::Layout(other.chars().next().unwrap()))
+            } else {
+                Err(format!("Unknown key: {}", other))
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn press_key_combo(keys: Vec<String>) -> Result<(), String> {
+    let mut enigo = Enigo::new();
+
+    for key in &keys {
+        let enigo_key = key_to_enigo(key)?;
+        enigo.key_down(enigo_key);
+    }
+
+    for key in keys.iter().rev() {
+        let enigo_key = key_to_enigo(key)?;
+        enigo.key_up(enigo_key);
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -231,6 +275,7 @@ pub fn run() {
             run_python_script,
             run_terminal_command,
             press_key,
+            press_key_combo,
             capture_screen,
         ])
         .setup(|app| {

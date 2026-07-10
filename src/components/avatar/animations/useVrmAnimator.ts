@@ -60,6 +60,23 @@ export function useVrmAnimator({
     return () => clearTimeout(greetingTimer);
   }, [vrm]);
 
+  // 1.5 When transitioning TO an FBX pose, reset skeleton to rest pose ONCE.
+  // This untangles legs/arms if the avatar was previously sitting.
+  useEffect(() => {
+    if (!vrm) return;
+    const isFbx = basePose === 'flying-kiss' || basePose === 'dance' || basePose === 'dancing';
+    if (isFbx) {
+      for (const name of BONE_LIST) {
+        const node = vrm.humanoid?.getNormalizedBoneNode(name);
+        const r = restPose.current[name];
+        if (node && r) {
+          node.quaternion.copy(r.quaternion);
+          if (name === 'hips') node.position.copy(r.position);
+        }
+      }
+    }
+  }, [basePose, vrm]);
+
   // 2. UNIFIED animation loop
   //    Order: locomotion → flirty pose → gestures → expressions → high-priority active
   //    vrm.update() called LAST so spring bones simulate against final posed skeleton.
@@ -81,32 +98,38 @@ export function useVrmAnimator({
 
     const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
 
+    // Detect if the current pose is driven entirely by an FBX animation
+    // (Add any new FBX animation names here!)
+    const isFbxPose = basePose === 'flying-kiss' || basePose === 'dance' || basePose === 'dancing';
+
     // ── Model facing ──────────────────────────────────────────────────────
-    if (vrm.scene) {
+    // Do NOT force model facing if an FBX animation is playing, 
+    // otherwise animations that spin the character around will be blocked!
+    if (vrm.scene && !isFbxPose) {
       vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, moveDirection, 0.1);
     }
 
     // ── Step 1: Body / locomotion (hips, spine, legs) ─────────────────────
     if (isPeeking) {
       applyPeek(vrm, rest, t, isPeekLeft);
-    } else if (basePose !== 'flying-kiss') {
+    } else if (!isFbxPose) {
       applyLocomotion(vrm, rest, t, isWalking, isSitting);
     }
 
     // ── Step 2: Flirty pose (body shape override) ─────────────────────────
-    if (isFlirtyPose && !isWalking) {
+    if (isFlirtyPose && !isWalking && !isFbxPose) {
       applyFlirty(vrm, rest, t, basePose);
     }
 
     // Flirty idle sway when emotion is flirty but no active flirty pose
-    if (!isSpeaking && !isThinking && !isWalking && emotion === 'flirty' && !isFlirtyPose && !isPeeking) {
+    if (!isSpeaking && !isThinking && !isWalking && emotion === 'flirty' && !isFlirtyPose && !isPeeking && !isFbxPose) {
       applyFlirtyIdleSway(vrm, rest, t);
     }
 
-    const shouldSpeak = isSpeaking && basePose !== 'flying-kiss';
+    const shouldSpeak = isSpeaking && !isFbxPose;
 
     // ── Step 3: Upper-body gestures (arms, head, neck) ────────────────────
-    if (basePose !== 'flying-kiss') {
+    if (!isFbxPose) {
       applyGestures(
         vrm, rest, t,
         isGreeting, shouldSpeak, isThinking, actuallyHearing,
