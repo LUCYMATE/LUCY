@@ -14,8 +14,8 @@ CRITICAL BEHAVIORS:
 6. POSES: ALWAYS use the set_pose tool when asked to do a pose, even if you are already currently doing it.`;
 
 const DEFAULT_POSES = [
-  'sit', 'stand', 'dance', 'peek-left', 'peek-right', 
-  'stretch', 'lean', 'flying-kiss', 'caress',  
+  'sit', 'stand', 'dance', 'dancing', 'peek-left', 'peek-right', 
+  'stretch', 'lean', 'flying-kiss', 'caress', 'sleep'
 ];
 
 export const getValidPoses = () => {

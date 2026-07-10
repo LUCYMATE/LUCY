@@ -7,7 +7,8 @@ export function applyExpressions(
   isSpeaking: boolean,
   isListening: boolean,
   isThinking: boolean,
-  emotion: Emotion
+  emotion: Emotion,
+  basePose?: string
 ) {
   if (!vrm.expressionManager) return;
 
@@ -17,8 +18,10 @@ export function applyExpressions(
               : bp < 0.18 ? 1 - (bp - 0.08) / 0.10
               : 0;
   
-  // Don't blink if surprised or angry
-  if (emotion === 'surprised' || emotion === 'angry') {
+  // Don't blink if surprised or angry, or if sleeping
+  if (basePose === 'sleep') {
+    vrm.expressionManager.setValue(VRMExpressionPresetName.Blink, 1.0);
+  } else if (emotion === 'surprised' || emotion === 'angry') {
     vrm.expressionManager.setValue(VRMExpressionPresetName.Blink, 0);
   } else {
     vrm.expressionManager.setValue(VRMExpressionPresetName.Blink, blink);
@@ -44,7 +47,9 @@ export function applyExpressions(
   vrm.expressionManager.setValue(VRMExpressionPresetName.Surprised, 0);
   vrm.expressionManager.setValue(VRMExpressionPresetName.Relaxed, 0);
 
-  if (emotion === 'happy') {
+  if (basePose === 'sleep') {
+    vrm.expressionManager.setValue(VRMExpressionPresetName.Relaxed, 0.8);
+  } else if (emotion === 'happy') {
     // Gently pulse the happy expression so eyes don't close completely and mouth opens just a bit
     const happyIntensity = 0.4 + Math.max(0, Math.sin(t * 2.5)) * 0.3;
     vrm.expressionManager.setValue(VRMExpressionPresetName.Happy, happyIntensity);

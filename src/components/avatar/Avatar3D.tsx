@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import { VrmModel } from './VrmModel';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { BOT_NAME, getAvatarModelUrl } from '../../config/bot-profile';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { X, Lock, Unlock, Move, Maximize2, Monitor } from 'lucide-react';
 
 function Stool({ visible }: { visible: boolean }) {
   if (!visible) return null;
@@ -126,6 +128,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   } = useAvatarState();
 
   const groupRef = useRef<THREE.Group>(null);
+  const cursorTargetRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [internalMoveDir, setInternalMoveDir] = useState(0);
 
   // Listen for settings changes to avatarScale
@@ -167,9 +170,23 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   useFrame((_state, delta) => {
     if (!groupRef.current) return;
 
-    if (isDragging) {
-      groupRef.current.position.set(worldPosition.x, worldPosition.y, worldPosition.z);
-      if (internalMoveDir !== 0) setInternalMoveDir(0);
+    if (isDragging && cursorTargetRef.current) {
+      const deltaX = cursorTargetRef.current.x - groupRef.current.position.x;
+      const deltaY = cursorTargetRef.current.y - groupRef.current.position.y;
+      
+      // Elastic spring lag towards the cursor
+      groupRef.current.position.x += deltaX * 0.15;
+      groupRef.current.position.y += deltaY * 0.15;
+      
+      // Update physics/animator state
+      useAvatarState.getState().setDragOffset({ x: deltaX, y: deltaY });
+      useAvatarState.getState().setWorldPosition({
+        x: groupRef.current.position.x,
+        y: groupRef.current.position.y,
+        z: groupRef.current.position.z
+      });
+
+      if (internalMoveDir !== Math.PI) setInternalMoveDir(Math.PI);
     } else if (targetPosition) {
       const diffX = targetPosition.x - groupRef.current.position.x;
       const diffY = targetPosition.y - groupRef.current.position.y;
@@ -212,37 +229,37 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   });
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return; // Only left click for dragging
     if (groupRef.current) {
-      useAvatarState.getState().setWorldPosition({
+      const currentPos = {
         x: groupRef.current.position.x,
         y: groupRef.current.position.y,
         z: groupRef.current.position.z
-      });
+      };
+      useAvatarState.getState().setWorldPosition(currentPos);
+      cursorTargetRef.current = { ...currentPos };
     }
     setIsDragging(true);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (isDragging) {
-      const currentPos = useAvatarState.getState().worldPosition;
+    if (isDragging && cursorTargetRef.current) {
       const movementX = e.movementX / ZOOM;
       const movementY = -e.movementY / ZOOM;
 
       const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
       const edgeX = (ww / 2) / ZOOM;
 
-      const newPos = {
-        x: Math.max(-edgeX - 0.5, Math.min(edgeX + 0.5, currentPos.x + movementX)),
-        y: currentPos.y + movementY,
-        z: currentPos.z
-      };
-      setWorldPosition(newPos);
+      cursorTargetRef.current.x = Math.max(-edgeX - 0.5, Math.min(edgeX + 0.5, cursorTargetRef.current.x + movementX));
+      cursorTargetRef.current.y = cursorTargetRef.current.y + movementY;
     }
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     setIsDragging(false);
+    useAvatarState.getState().setDragOffset({ x: 0, y: 0 });
     const finalPos = useAvatarState.getState().worldPosition;
     setTargetPosition({ ...finalPos });
     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -253,6 +270,23 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
       useAvatarState.getState().setIsWalking(false);
     }
   };
+
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      // Don't close if clicking inside the menu
+      if ((e.target as HTMLElement).closest('.pet-context-menu')) return;
+      setContextMenu(null);
+    };
+    window.addEventListener('pointerdown', handleClick);
+    return () => window.removeEventListener('pointerdown', handleClick);
+  }, []);
 
   useEffect(() => {
     if (groupRef.current) {
@@ -325,6 +359,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
+            onContextMenu={handleContextMenu}
             className="cursor-grab active:cursor-grabbing pointer-events-auto"
             style={getHandleStyle(y_head, 120, 120)}
           />
@@ -333,6 +368,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
+            onContextMenu={handleContextMenu}
             className="cursor-grab active:cursor-grabbing pointer-events-auto"
             style={getHandleStyle(y_waist, 160, 200)}
           />
@@ -341,12 +377,119 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
+            onContextMenu={handleContextMenu}
             className="cursor-grab active:cursor-grabbing pointer-events-auto"
             style={getHandleStyle(y_feet, 180, 100)}
           />
         </div>
+
+        {contextMenu && (
+          <ContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onClose={() => setContextMenu(null)}
+          />
+        )}
       </Html>
     </group>
+  );
+}
+
+function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+  const { isAvatarLocked, setIsAvatarLocked, avatarScale, setAvatarScale, setBasePose, setTargetPosition } = useAvatarState();
+
+  const setSize = (pct: number) => {
+    localStorage.setItem('soltini_avatar_size', pct.toString());
+    setAvatarScale(pct / 100);
+    window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+  };
+
+  const toggleLock = () => {
+    const val = !isAvatarLocked;
+    localStorage.setItem('soltini_avatar_locked', String(val));
+    setIsAvatarLocked(val);
+  };
+
+  const exitPetMode = () => {
+    try {
+      window.dispatchEvent(new CustomEvent('soltini-exit-pet-mode'));
+    } catch (e) {}
+    onClose();
+  };
+
+  const resetPosition = () => {
+    setTargetPosition({ x: 0, y: -0.5, z: 0 });
+    onClose();
+  };
+
+  // Keep menu within screen bounds
+  const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
+  const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
+  
+  const menuW = 200;
+  const menuH = 340;
+  const finalX = x + menuW > ww ? ww - menuW - 10 : x;
+  const finalY = y + menuH > wh ? wh - menuH - 10 : y;
+
+  return (
+    <div
+      className="pet-context-menu fixed glass pointer-events-auto flex flex-col p-2 z-[9999] rounded-2xl border border-pink-500/20 shadow-xl shadow-pink-500/10 text-white font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+      style={{ left: finalX, top: finalY, width: menuW, backdropFilter: 'blur(16px)' }}
+    >
+      <div className="text-xs font-bold uppercase tracking-wider text-pink-400 mb-2 px-2 pt-1 flex justify-between items-center">
+        Avatar Options
+        <X className="w-3 h-3 cursor-pointer opacity-50 hover:opacity-100" onClick={onClose} />
+      </div>
+
+      <button onClick={toggleLock} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left">
+        {isAvatarLocked ? <Lock className="w-4 h-4 text-pink-400" /> : <Unlock className="w-4 h-4" />}
+        {isAvatarLocked ? 'Unlock Position' : 'Lock Position'}
+      </button>
+
+      <div className="my-1 border-t border-white/10" />
+
+      <div className="px-2 py-1 flex flex-col gap-1">
+        <span className="text-[10px] text-white/50 uppercase">Size</span>
+        <input 
+          type="range" min="50" max="200" step="10" 
+          value={Math.round(avatarScale * 100)} 
+          onChange={(e) => setSize(parseInt(e.target.value))}
+          className="w-full h-1 bg-white/20 rounded-full appearance-none accent-pink-500 cursor-pointer"
+        />
+        <div className="flex gap-1 mt-1">
+          <button onClick={() => setSize(70)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">S</button>
+          <button onClick={() => setSize(100)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">M</button>
+          <button onClick={() => setSize(150)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">L</button>
+        </div>
+      </div>
+
+      <div className="my-1 border-t border-white/10" />
+
+      <div className="px-2 py-1 flex flex-col gap-1">
+        <span className="text-[10px] text-white/50 uppercase mb-1">Pose</span>
+        <div className="grid grid-cols-2 gap-1">
+          {['sit', 'stand', 'sleep', 'dance', 'stretch'].map(pose => (
+            <button 
+              key={pose}
+              onClick={() => { setBasePose(pose as any); onClose(); }}
+              className="text-[10px] capitalize bg-white/5 hover:bg-white/15 rounded py-1"
+            >
+              {pose}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="my-1 border-t border-white/10" />
+
+      <button onClick={resetPosition} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left mt-1">
+        <Move className="w-4 h-4" /> Reset Position
+      </button>
+
+      <button onClick={exitPetMode} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left text-pink-400">
+        <Monitor className="w-4 h-4" /> Exit Pet Mode
+      </button>
+    </div>
   );
 }
 

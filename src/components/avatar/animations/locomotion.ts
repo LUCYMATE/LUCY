@@ -6,17 +6,68 @@ export function applyLocomotion(
   rest: BoneRest,
   t: number,
   isWalking: boolean,
-  isSitting: boolean
+  isSitting: boolean,
+  isDragging: boolean,
+  dragOffset: { x: number; y: number },
+  basePose: string
 ) {
-  const fr = (name: VRMHumanBoneName, dx: number, dy: number, dz: number, alpha = SMOOTHING) =>
+  if (!vrm.humanoid) return;
+
+  const fr = (name: VRMHumanBoneName, dx: number, dy: number, dz: number, alpha: number) =>
     slerpFromRest(vrm.humanoid?.getNormalizedBoneNode(name), rest[name]?.quaternion, dx, dy, dz, alpha);
 
-  const tr = (name: VRMHumanBoneName, dx: number, dy: number, dz: number, alpha = SMOOTHING) =>
+  const tr = (name: VRMHumanBoneName, dx: number, dy: number, dz: number, alpha: number) =>
     translateFromRest(vrm.humanoid?.getNormalizedBoneNode(name), rest[name]?.position, dx, dy, dz, alpha);
 
   const poseSmooth = 0.05;
 
-  if (isSitting && !isWalking) {
+  if (isDragging) {
+    // DRAGGING PHYSICS
+    // Rapid leg kicking cycle
+    const kickL = Math.sin(t * 20.0) * 0.4;
+    const kickR = Math.sin(t * 20.0 + Math.PI) * 0.4;
+    
+    fr(VRMHumanBoneName.LeftUpperLeg, 0.5 + kickL, 0.1, 0, 0.2);
+    fr(VRMHumanBoneName.LeftLowerLeg, -0.2, 0, 0, 0.2);
+    fr(VRMHumanBoneName.RightUpperLeg, 0.5 + kickR, -0.1, 0, 0.2);
+    fr(VRMHumanBoneName.RightLowerLeg, -0.2, 0, 0, 0.2);
+
+    // Bend the spine/chest away from drag direction to show resistance
+    // dragOffset.x is positive when cursor is to the right
+    // dragOffset.y is positive when cursor is below
+    const bendX = Math.max(-0.5, Math.min(0.5, dragOffset.y * 0.3));
+    const bendZ = Math.max(-0.5, Math.min(0.5, -dragOffset.x * 0.3));
+    
+    fr(VRMHumanBoneName.Spine, bendX, 0, bendZ, 0.1);
+    fr(VRMHumanBoneName.Chest, bendX * 0.5, 0, bendZ * 0.5, 0.1);
+    fr(VRMHumanBoneName.Head, -bendX * 0.5, 0, -bendZ * 0.5, 0.1); // Head tries to look back
+
+  } else if (basePose === 'sleep') {
+    // SLEEP POSE
+    const breath = Math.sin(t * 1.5) * 0.003;
+    
+    // Slump Hips & Spine
+    fr(VRMHumanBoneName.Hips, 0.2, 0, 0, poseSmooth);
+    tr(VRMHumanBoneName.Hips, 0, -0.45 + breath, 0, poseSmooth);
+    fr(VRMHumanBoneName.Spine, 0.15, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.Chest, breath, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.Head, 0.25, 0.1, -0.05, poseSmooth);
+
+    // Periodic leg twitching every 6 seconds
+    const twitchCycle = t % 6.0;
+    let legTwitch = 0;
+    if (twitchCycle > 4.5 && twitchCycle < 4.8) {
+      legTwitch = Math.sin(t * 30.0) * 0.08; // High frequency wobble
+    }
+
+    fr(VRMHumanBoneName.LeftUpperLeg, 1.4 + legTwitch, 0.1, 0.0, poseSmooth); 
+    fr(VRMHumanBoneName.RightUpperLeg, 1.4 - legTwitch, -0.1, 0.0, poseSmooth);
+    fr(VRMHumanBoneName.LeftLowerLeg, -1.3 + legTwitch, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.RightLowerLeg, -1.3 - legTwitch, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.LeftFoot, 0.4, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.RightFoot, 0.4, 0, 0, poseSmooth);
+
+  } else if (isSitting && !isWalking) {
     // SITTING POSES
     const breath = Math.sin(t * 2.5) * 0.005;
     const sway = Math.cos(t * 1.2) * 0.01;

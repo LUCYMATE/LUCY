@@ -11,7 +11,9 @@ export function applyGestures(
   isListening: boolean,
   isWalking: boolean,
   emotion: Emotion,
-  isSitting: boolean
+  isSitting: boolean,
+  isDragging: boolean,
+  basePose: string
 ) {
   const fr = (name: VRMHumanBoneName, dx: number, dy: number, dz: number, alpha = SMOOTHING) =>
     slerpFromRest(vrm.humanoid?.getNormalizedBoneNode(name), rest[name]?.quaternion, dx, dy, dz, alpha);
@@ -31,7 +33,21 @@ export function applyGestures(
   const lElbowBase = { x: 0, y: -1.4, z: 0 }; 
   const lHandBase = { x: -0.1, y: 0, z: 0.1 };
 
-  if (isGreeting) {
+  if (isDragging) {
+    // Arms crossed defensively while dangling (annoyed/resisting being dragged)
+    const struggle = Math.sin(t * 12.0) * 0.05; // tiny frustrated wiggle
+    
+    // Right arm
+    fr(VRMHumanBoneName.RightUpperArm, 0.5, -0.3 + struggle, -1.2, SMOOTHING * 2);
+    fr(VRMHumanBoneName.RightLowerArm, 0, 2.2, 0, SMOOTHING * 2); // POSITIVE Y bends right elbow inward
+    fr(VRMHumanBoneName.RightHand, -0.2, 0, 0, SMOOTHING * 2);
+
+    // Left arm
+    fr(VRMHumanBoneName.LeftUpperArm, 0.5, 0.3 - struggle, 1.2, SMOOTHING * 2);
+    fr(VRMHumanBoneName.LeftLowerArm, 0, -2.2, 0, SMOOTHING * 2); // NEGATIVE Y bends left elbow inward
+    fr(VRMHumanBoneName.LeftHand, -0.2, 0, 0, SMOOTHING * 2);
+
+  } else if (isGreeting) {
     // "Hi" wave animation
     const wave = Math.sin(t * 15) * 0.5; // Fast hand wave
     fr(VRMHumanBoneName.RightUpperArm, 0, 0, -1.8, 0.1);
@@ -144,7 +160,15 @@ export function applyGestures(
       const idleArmSwayZ = Math.cos(t * 0.5) * 0.05;
       const elbowSway = Math.sin(t * 0.9) * 0.04;
 
-      if (isSitting) {
+      if (basePose === 'sleep') {
+        fr(VRMHumanBoneName.RightUpperArm, 0.2, 0, -1.4, SMOOTHING * 0.4);
+        fr(VRMHumanBoneName.RightLowerArm, 0, 0.8, 0, SMOOTHING * 0.4);
+        fr(VRMHumanBoneName.RightHand, 0, 0, 0, SMOOTHING * 0.4);
+        
+        fr(VRMHumanBoneName.LeftUpperArm, 0.2, 0, 1.4, SMOOTHING * 0.4);
+        fr(VRMHumanBoneName.LeftLowerArm, 0, -0.8, 0, SMOOTHING * 0.4);
+        fr(VRMHumanBoneName.LeftHand, 0, 0, 0, SMOOTHING * 0.4);
+      } else if (isSitting) {
         // Hands resting on lap (arms perfectly vertical & pulled tightly inward, elbows bent less)
         fr(VRMHumanBoneName.RightUpperArm, 0 + idleArmSwayX, 0, -1.5 + idleArmSwayZ, SMOOTHING * 0.4);
         fr(VRMHumanBoneName.RightLowerArm, 0, 0.9 + elbowSway, 0, SMOOTHING * 0.4);

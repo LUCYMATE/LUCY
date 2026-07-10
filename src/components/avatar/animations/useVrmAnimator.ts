@@ -80,10 +80,9 @@ export function useVrmAnimator({
   // 2. UNIFIED animation loop
   //    Order: locomotion → flirty pose → gestures → expressions → high-priority active
   //    vrm.update() called LAST so spring bones simulate against final posed skeleton.
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (!vrm) return;
 
-    const delta = state.clock.getDelta();
     const t     = state.clock.elapsedTime;
     const rest  = restPose.current;
 
@@ -113,7 +112,7 @@ export function useVrmAnimator({
     if (isPeeking) {
       applyPeek(vrm, rest, t, isPeekLeft);
     } else if (!isFbxPose) {
-      applyLocomotion(vrm, rest, t, isWalking, isSitting);
+      applyLocomotion(vrm, rest, t, isWalking, isSitting, useAvatarState.getState().isDragging, useAvatarState.getState().dragOffset, basePose);
     }
 
     // ── Step 2: Flirty pose (body shape override) ─────────────────────────
@@ -133,12 +132,12 @@ export function useVrmAnimator({
       applyGestures(
         vrm, rest, t,
         isGreeting, shouldSpeak, isThinking, actuallyHearing,
-        isWalking, emotion, isSitting
+        isWalking, emotion, isSitting, useAvatarState.getState().isDragging, basePose
       );
     }
 
     // ── Step 4: Expressions (face, blink, lip sync) ───────────────────────
-    applyExpressions(vrm, t, shouldSpeak, actuallyHearing, isThinking, emotion);
+    applyExpressions(vrm, t, shouldSpeak, actuallyHearing, isThinking, emotion, basePose);
 
     // ── Step 5: High-priority active animations ───────────────────────────
     // FBX takes over for flying-kiss, so we only do procedural flirty poses for the rest

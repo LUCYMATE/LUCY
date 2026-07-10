@@ -13,6 +13,7 @@ interface AvatarState {
   worldPosition: { x: number; y: number; z: number };
   targetPosition: { x: number; y: number; z: number } | null;
   isDragging: boolean;
+  dragOffset: { x: number; y: number };
   affectionLevel: number;
   isPetMode: boolean;
   avatarScale: number;
@@ -31,6 +32,7 @@ interface AvatarState {
   setWorldPosition: (pos: { x: number; y: number; z: number }) => void;
   setTargetPosition: (pos: { x: number; y: number; z: number } | null) => void;
   setIsDragging: (val: boolean) => void;
+  setDragOffset: (val: { x: number; y: number }) => void;
   setAffectionLevel: (val: number) => void;
   setIsPetMode: (val: boolean) => void;
   setAvatarScale: (val: number) => void;
@@ -51,6 +53,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   worldPosition: { x: 0, y: -0.5, z: 0 },
   targetPosition: null,
   isDragging: false,
+  dragOffset: { x: 0, y: 0 },
   isHearingSound: false,
   isToolAgentRunning: false,
   affectionLevel: parseInt(localStorage.getItem('soltini_affection') ?? '30', 10),
@@ -69,6 +72,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setWorldPosition: (pos) => set({ worldPosition: pos }),
   setTargetPosition: (pos) => set({ targetPosition: pos }),
   setIsDragging: (val) => set({ isDragging: val }),
+  setDragOffset: (val) => set({ dragOffset: val }),
   setHearingSound: (val) => set({ isHearingSound: val }),
   setAffectionLevel: (val) => set({ affectionLevel: val }),
   setIsPetMode: (val) => set({ isPetMode: val }),
