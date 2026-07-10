@@ -42,6 +42,10 @@
     "allow-scroll-mouse",
     "allow-press-key-combo",
     "allow-capture-screen",
+    "allow-save-3d-asset",
+    "allow-delete-3d-asset",
+    "allow-list-3d-assets",
+    "allow-get-3d-asset-path",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     {

@@ -45,7 +45,9 @@ export function applyExpressions(
   vrm.expressionManager.setValue(VRMExpressionPresetName.Relaxed, 0);
 
   if (emotion === 'happy') {
-    vrm.expressionManager.setValue(VRMExpressionPresetName.Happy, 1.0);
+    // Gently pulse the happy expression so eyes don't close completely and mouth opens just a bit
+    const happyIntensity = 0.4 + Math.max(0, Math.sin(t * 2.5)) * 0.3;
+    vrm.expressionManager.setValue(VRMExpressionPresetName.Happy, happyIntensity);
   } else if (emotion === 'angry') {
     vrm.expressionManager.setValue(VRMExpressionPresetName.Angry, 1.0);
   } else if (emotion === 'sad') {

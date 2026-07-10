@@ -13,9 +13,24 @@ CRITICAL BEHAVIORS:
 5. EMOTIONS: You can express emotions. When appropriate, start your spoken response with an emotion tag in brackets, exactly matching one of these: [happy], [sad], [angry], [surprised], [thinking], [flirty], or [neutral]. This will change your avatar's 3D expression.
 6. POSES: ALWAYS use the set_pose tool when asked to do a pose, even if you are already currently doing it.`;
 
-export const VALID_POSES = [
-  'sit', 'stand', 'peek-left', 'peek-right', 
-  'stretch', 'lean', 'flying-kiss', 'caress', 'dance'
+const DEFAULT_POSES = [
+  'sit', 'stand', 'dance', 'peek-left', 'peek-right', 
+  'stretch', 'lean', 'flying-kiss', 'caress',  
 ];
+
+export const getValidPoses = () => {
+  try {
+    const custom = JSON.parse(localStorage.getItem('soltini_custom_animations') || '[]');
+    if (Array.isArray(custom)) {
+      return [...DEFAULT_POSES, ...custom];
+    }
+  } catch (e) {
+    // ignore
+  }
+  return DEFAULT_POSES;
+};
+
+// For backward compatibility where it's imported directly, though getValidPoses should be preferred.
+export const VALID_POSES = DEFAULT_POSES;
 
 export const getAvatarModelUrl = (wearClothes: boolean) => '/soltini.vrm';

@@ -141,6 +141,28 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
     return () => window.removeEventListener('soltini-settings-changed', onSettingsChanged);
   }, []);
 
+  const [modelUrl, setModelUrl] = useState<string>('/soltini.vrm');
+
+  useEffect(() => {
+    let cancelled = false;
+    
+    // Fetch custom avatar URL from native Rust backend
+    import('../../lib/system/assetDB').then(({ getAssetUrl, getAsset }) => {
+      getAsset('custom-avatar').then(asset => {
+        if (cancelled || !asset || asset.type !== 'vrm') return;
+        getAssetUrl('custom-avatar').then(url => {
+          if (!cancelled && url) {
+            setModelUrl(url);
+          }
+        });
+      }).catch(e => console.warn('Failed to fetch custom avatar info', e));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Smoothly move the model towards targetPosition if we aren't dragging
   useFrame((_state, delta) => {
     if (!groupRef.current) return;
@@ -284,7 +306,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
         <FlyingKisses active={basePose === 'flying-kiss'} />
 
         <VrmModel
-          url={getAvatarModelUrl(true)}
+          url={modelUrl}
           isSpeaking={isSpeaking}
           isThinking={isThinking}
           isListening={isListening}

@@ -3,7 +3,7 @@ import { memoryStore } from '../memory/memory-store';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { invoke } from '@tauri-apps/api/core';
 import { fetch } from '@tauri-apps/plugin-http';
-import { BOT_NAME, VALID_POSES } from '../../config/bot-profile';
+import { BOT_NAME, getValidPoses } from '../../config/bot-profile';
 import { useAvatarState } from '../store/avatarState';
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -157,8 +157,9 @@ async function executeTool(name: string, args: any, deferredMedia?: string[]): P
     }
   } else if (name === 'set_pose') {
     try {
-      const pose = String(args.pose || '');
-      if (VALID_POSES.includes(pose)) {
+      const pose = String(args.pose || '').toLowerCase();
+      const valid = getValidPoses();
+      if (valid.includes(pose)) {
         const currentPose = useAvatarState.getState().basePose;
         useAvatarState.getState().setBasePose(pose as any);
         useAvatarState.getState().setLastPoseOverrideTime(Date.now());
@@ -171,9 +172,11 @@ async function executeTool(name: string, args: any, deferredMedia?: string[]): P
             useAvatarState.getState().setIsWalking(false);
           }
         }
-        result = { success: true, pose };
+        logger.add('success', 'Tool Call', `set_pose(${pose}) executed successfully`);
+        result = { success: true, active_pose: pose };
       } else {
-        result = { error: `Invalid pose: ${pose}. Valid poses: ${VALID_POSES.join(', ')}` };
+        logger.add('error', 'Tool Call', `set_pose failed: invalid pose ${pose}`);
+        result = { error: `Invalid pose: ${pose}. Valid poses: ${valid.join(', ')}` };
       }
     } catch (e) {
       result = { error: 'Failed to set pose: ' + String(e) };
@@ -269,7 +272,7 @@ CRITICAL BEHAVIORS:
 2. SYSTEM DELEGATION: If the user asks you to perform ANY system automation tasks (like opening websites/YouTube, clicking, scrolling, typing, capturing screen/camera, searching the web, or launching apps), immediately invoke the 'trigger_automation' tool and inform the user you are starting the task in the background. DO NOT explain what tools you use.
 3. CONTEXT AWARENESS: Maintain a warm conversational flow.
 4. EMOTIONS: Start appropriate responses with an emotion tag in brackets: [happy], [sad], [angry], [surprised], [thinking], [flirty], or [neutral] to change your expression.
-5. POSES: If the user asks you to sit, stand, stretch, or do a flying kiss, you MUST IMMEDIATELY call the 'set_pose' tool! Do NOT just reply with text alone, you must execute the tool!
+5. POSES: If the user asks you to do a pose or animation (e.g., ${getValidPoses().join(', ')}), you MUST IMMEDIATELY call the 'set_pose' tool! Do NOT just reply with text alone, you must execute the tool!
 
 Greeting context: ${timeGreeting}. ${timeContext} ${petNamePrompt}`;
 
@@ -467,7 +470,7 @@ Greeting context: ${timeGreeting}. ${timeContext} ${petNamePrompt}`;
               functionDeclarations: [
                 {
                   name: 'set_pose',
-                  description: 'Change your avatar pose. Use when the user asks you to sit, stand, stretch, or do a flying kiss.',
+                  description: `Change your avatar pose. Use when the user asks you to do a pose or animation. Valid options: ${getValidPoses().join(', ')}`,
                   parameters: {
                     type: 'OBJECT',
                     properties: {
@@ -707,7 +710,7 @@ Continue calling tools in sequence until the request is fully completed. Once do
                 },
                 {
                   name: 'set_pose',
-                  description: 'Change your avatar pose.',
+                  description: `Change your avatar pose. Valid options: ${getValidPoses().join(', ')}`,
                   parameters: {
                     type: Type.OBJECT,
                     properties: {

@@ -67,3 +67,23 @@ commands.allow = ["scroll_mouse"]
 identifier = "allow-press-key-combo"
 description = "Allows pressing keyboard key combinations (e.g., Ctrl+W)"
 commands.allow = ["press_key_combo"]
+
+[[permission]]
+identifier = "allow-save-3d-asset"
+description = "Allows saving 3D assets to local storage"
+commands.allow = ["save_3d_asset"]
+
+[[permission]]
+identifier = "allow-delete-3d-asset"
+description = "Allows deleting 3D assets"
+commands.allow = ["delete_3d_asset"]
+
+[[permission]]
+identifier = "allow-list-3d-assets"
+description = "Allows listing 3D assets"
+commands.allow = ["list_3d_assets"]
+
+[[permission]]
+identifier = "allow-get-3d-asset-path"
+description = "Allows getting absolute paths of 3D assets"
+commands.allow = ["get_3d_asset_path"]

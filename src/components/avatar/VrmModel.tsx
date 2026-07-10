@@ -8,6 +8,7 @@ import { useVrmAnimator } from './animations/useVrmAnimator';
 import { useFbxAnimation } from './animations/useFbxAnimation';
 import { standardizeVrmBoneNames } from './animations/vrmAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { getAsset, getAssetUrl } from '../../lib/system/assetDB';
 
 // Global cache to prevent model from disappearing and reloading on remounts
 let globalCachedVrm: VRM | null = null;
@@ -308,11 +309,53 @@ export function VrmModel({
   useFbxAnimation(vrm, '/blowkiss.fbx', basePose === 'flying-kiss');
   useFbxAnimation(vrm, '/dance.fbx', basePose === 'dance' || basePose === 'dancing');
 
+  const isCustomPose = !['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'flying-kiss', 'dance', 'dancing', 'caress'].includes(basePose);
+
   if (!vrm) return null;
 
   return (
     <group>
       <primitive object={vrm.scene} />
+      {isCustomPose && <DynamicFbxPlayer vrm={vrm} slug={basePose} />}
     </group>
   );
+}
+
+
+function DynamicFbxPlayer({ vrm, slug }: { vrm: VRM | null, slug: string }) {
+  const [fbxUrl, setFbxUrl] = useState<string | null>(null);
+  const [assetType, setAssetType] = useState<'fbx' | 'bvh'>('fbx');
+  
+  useEffect(() => {
+    let cancelled = false;
+    
+    const fetchCustom = async () => {
+      try {
+        const asset = await getAsset(slug);
+        if (!asset || (asset.type !== 'fbx' && asset.type !== 'bvh') || cancelled) return;
+        
+        const url = await getAssetUrl(slug);
+        if (!url || cancelled) return;
+
+        setAssetType(asset.type as 'fbx' | 'bvh');
+        setFbxUrl(url);
+      } catch (e) {
+        console.warn('Failed to load dynamic FBX/BVH', e);
+      }
+    };
+    
+    fetchCustom();
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  if (!fbxUrl) return null;
+  return <FbxPlayer vrm={vrm} url={fbxUrl} active={true} type={assetType} />;
+}
+
+function FbxPlayer({ vrm, url, active, type }: { vrm: VRM | null, url: string, active: boolean, type: 'fbx' | 'bvh' }) {
+  useFbxAnimation(vrm, url, active, type);
+  return null;
 }

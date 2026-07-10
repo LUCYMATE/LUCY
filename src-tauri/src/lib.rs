@@ -225,6 +225,100 @@ fn capture_screen() -> Result<serde_json::Value, String> {
     }))
 }
 
+#[tauri::command]
+fn save_3d_asset(app_handle: tauri::AppHandle, id: String, asset_type: String, name: String, data_base64: String) -> Result<(), String> {
+    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let assets_dir = local_data.join("assets");
+    std::fs::create_dir_all(&assets_dir).map_err(|e| e.to_string())?;
+
+    let bytes = STANDARD.decode(&data_base64).map_err(|e| e.to_string())?;
+    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+    std::fs::write(&file_path, bytes).map_err(|e| e.to_string())?;
+
+    let registry_path = assets_dir.join("registry.json");
+    let mut registry: serde_json::Value = if registry_path.exists() {
+        let content = std::fs::read_to_string(&registry_path).unwrap_or_else(|_| "{}".to_string());
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    registry[id.clone()] = serde_json::json!({
+        "id": id,
+        "type": asset_type,
+        "name": name,
+        "timestamp": now
+    });
+
+    std::fs::write(registry_path, serde_json::to_string_pretty(&registry).unwrap()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<(), String> {
+    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let assets_dir = local_data.join("assets");
+    
+    let registry_path = assets_dir.join("registry.json");
+    if registry_path.exists() {
+        let content = std::fs::read_to_string(&registry_path).unwrap_or_else(|_| "{}".to_string());
+        if let Ok(mut registry) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(asset) = registry.get(&id) {
+                if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
+                    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+                    let _ = std::fs::remove_file(file_path);
+                }
+            }
+            if let Some(obj) = registry.as_object_mut() {
+                obj.remove(&id);
+            }
+            let _ = std::fs::write(registry_path, serde_json::to_string_pretty(&registry).unwrap());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn list_3d_assets(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let registry_path = local_data.join("assets").join("registry.json");
+    if registry_path.exists() {
+        let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
+        let registry: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        
+        if let Some(obj) = registry.as_object() {
+            let values: Vec<serde_json::Value> = obj.values().cloned().collect();
+            return Ok(serde_json::Value::Array(values));
+        }
+    }
+    Ok(serde_json::json!([]))
+}
+
+#[tauri::command]
+fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String) -> Result<String, String> {
+    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let assets_dir = local_data.join("assets");
+    
+    let registry_path = assets_dir.join("registry.json");
+    if registry_path.exists() {
+        let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
+        if let Ok(registry) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(asset) = registry.get(&id) {
+                if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
+                    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+                    return Ok(file_path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    Err("Asset not found".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Singleton detection + wake signaling between instances
@@ -277,6 +371,10 @@ pub fn run() {
             press_key,
             press_key_combo,
             capture_screen,
+            save_3d_asset,
+            delete_3d_asset,
+            list_3d_assets,
+            get_3d_asset_path,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
