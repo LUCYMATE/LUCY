@@ -44,6 +44,9 @@ export function AssetLibrary() {
       
       if (vrmInputRef.current) vrmInputRef.current.value = '';
       loadAssets();
+
+      // Notify the live avatar scene to reload with the new model immediately
+      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to upload avatar: ${error}`);
     }
@@ -75,7 +78,11 @@ export function AssetLibrary() {
       
       setAnimSlug('');
       if (animInputRef.current) animInputRef.current.value = '';
-      loadAssets();
+      await loadAssets();
+
+      // Notify the live AI session about the new animation so it can use it immediately
+      window.dispatchEvent(new CustomEvent('soltini-animation-added', { detail: { slug } }));
+      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to save animation: ${error}`);
     }
@@ -92,7 +99,9 @@ export function AssetLibrary() {
         logger.add('info', 'Asset DB', 'Restored default compiled model');
       }
       
-      loadAssets();
+      await loadAssets();
+      // Notify live scene and AI session about the change
+      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
     } catch (e) {
       logger.add('error', 'Asset DB', `Failed to delete asset`);
     }

@@ -8,12 +8,20 @@ export interface BoneRest {
   };
 }
 
-export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'stretch' | 'lean' | 'flying-kiss' | 'caress' | 'dance' | 'dancing' | 'sleep';
+// Built-in poses; string & {} allows any additional custom animation slug.
+export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'stretch' | 'lean' | 'flying-kiss' | 'caress' | 'dance' | 'dancing' | 'sleep' | (string & {});
 export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'thinking' | 'flirty';
 
 
 // The global smoothing factor
 export const SMOOTHING = 0.07;
+
+// Static reusable objects to prevent per-frame garbage collection.
+// These are allocated ONCE at module load time and reused forever.
+const _euler   = new THREE.Euler(0, 0, 0, 'XYZ');
+const _delta   = new THREE.Quaternion();
+const _target  = new THREE.Quaternion();
+const _posTarget = new THREE.Vector3();
 
 /**
  * Slerp a bone's rotation toward a target that is: rest * delta(dx,dy,dz)
@@ -27,9 +35,10 @@ export function slerpFromRest(
   alpha: number
 ) {
   if (!bone || !restQ) return;
-  const delta = new THREE.Quaternion().setFromEuler(new THREE.Euler(dx, dy, dz, 'XYZ'));
-  const target = restQ.clone().multiply(delta);
-  bone.quaternion.slerp(target, alpha);
+  _euler.set(dx, dy, dz);
+  _delta.setFromEuler(_euler);
+  _target.copy(restQ).multiply(_delta);
+  bone.quaternion.slerp(_target, alpha);
 }
 
 /**
@@ -44,8 +53,8 @@ export function translateFromRest(
   alpha: number
 ) {
   if (!bone || !restP) return;
-  const target = new THREE.Vector3(restP.x + dx, restP.y + dy, restP.z + dz);
-  bone.position.lerp(target, alpha);
+  _posTarget.set(restP.x + dx, restP.y + dy, restP.z + dz);
+  bone.position.lerp(_posTarget, alpha);
 }
 
 export const BONE_LIST: VRMHumanBoneName[] = [

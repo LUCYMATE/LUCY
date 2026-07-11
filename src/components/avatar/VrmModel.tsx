@@ -16,8 +16,23 @@ let globalCachedUrl: string | null = null;
 let isGlobalLoading = false;
 let globalLoadCallbacks: ((vrm: VRM | null) => void)[] = [];
 
+/** Called by Avatar3D when a new VRM is uploaded, so the next render triggers a fresh load. */
+export function clearVrmCache() {
+  // Do NOT null out globalCachedVrm here — the old model should stay visible while
+  // the new one loads. We only clear the URL so the cache-miss path is taken.
+  globalCachedUrl = null;
+  isGlobalLoading = false;
+  globalLoadCallbacks = [];
+}
+
+/** Strip ?t=... cache-bust param for comparison purposes */
+function baseUrl(url: string) {
+  return url.split('?')[0];
+}
+
 interface VrmModelProps {
   url: string;
+  reloadKey?: number;  // Increment to force a reload even when url hasn't changed
   isSpeaking: boolean;
   isThinking?: boolean;
   isListening?: boolean;
@@ -50,6 +65,7 @@ function disposeVrm(vrm: VRM) {
 
 export function VrmModel({
   url,
+  reloadKey = 0,
   isSpeaking,
   isThinking = false,
   isListening = false,
@@ -59,7 +75,8 @@ export function VrmModel({
   moveDirection = 0,
   isSitting = false,
 }: VrmModelProps) {
-  const [vrm, setVrm] = useState<VRM | null>(null);
+  // Show cached VRM immediately if available — prevents blank screen during load
+  const [vrm, setVrm] = useState<VRM | null>(globalCachedVrm);
   const pendantRef = useRef<THREE.Group | null>(null);
 
   const mountedRef = useRef(true);
@@ -72,7 +89,7 @@ export function VrmModel({
   useEffect(() => {
     let cancelled = false;
 
-    if (globalCachedUrl === url && globalCachedVrm) {
+    if (globalCachedUrl && baseUrl(globalCachedUrl) === baseUrl(url) && globalCachedVrm) {
       if (mountedRef.current) setVrm(globalCachedVrm);
       return;
     }
@@ -142,10 +159,11 @@ export function VrmModel({
 
     return () => {
       cancelled = true;
-      if (mountedRef.current) setVrm(null);
+      // Do NOT blank vrm state here — keep the old model visible
+      // until the new one has fully loaded and swapped in.
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
+  }, [url, reloadKey]);
 
   // ─── Smart pose-transition detection ───────────────────────────────────────
   // Instead of a hardcoded frame counter, we track the actual angular velocity
@@ -193,9 +211,10 @@ export function VrmModel({
         state.active = false;
       }
 
-      // Clear world-space inertia while transitioning
+      // Clear world-space inertia during the entire transition to prevent hair flying.
+      // We purposefully DO NOT call updateMatrixWorld(true) here to save massive CPU.
+      // Calling reset() alone is very cheap and keeps the hair glued.
       if (state.active) {
-        vrm.scene.updateMatrixWorld(true);
         (vrm.springBoneManager as any).reset?.();
       }
     }
@@ -256,20 +275,24 @@ export function VrmModel({
   // When idle: gentle oscillating micro-wind keeps hair softly alive.
   const prevWorldPos = useRef<THREE.Vector3>(new THREE.Vector3());
   const windVelocity = useRef<THREE.Vector3>(new THREE.Vector3());
+  // Static vectors to avoid per-frame heap allocation in the wind loop
+  const _curPos  = useRef(new THREE.Vector3());
+  const _rawVel  = useRef(new THREE.Vector3());
+  const _finalWind = useRef(new THREE.Vector3());
 
   useFrame((_state, delta) => {
     if (!vrm?.springBoneManager) return;
     const manager = vrm.springBoneManager as any;
 
     const { isDragging, worldPosition } = useAvatarState.getState();
-    const curPos = new THREE.Vector3(worldPosition.x, worldPosition.y, worldPosition.z);
+    _curPos.current.set(worldPosition.x, worldPosition.y, worldPosition.z);
 
-    // Compute velocity from position delta (units/sec)
-    const rawVel = curPos.clone().sub(prevWorldPos.current).divideScalar(Math.max(delta, 0.001));
-    prevWorldPos.current.copy(curPos);
+    // Compute velocity from position delta (units/sec) — no allocations!
+    _rawVel.current.copy(_curPos.current).sub(prevWorldPos.current).divideScalar(Math.max(delta, 0.001));
+    prevWorldPos.current.copy(_curPos.current);
 
     // Smooth velocity so hair doesn't snap
-    windVelocity.current.lerp(rawVel, isDragging ? 0.25 : 0.08);
+    windVelocity.current.lerp(_rawVel.current, isDragging ? 0.25 : 0.08);
 
     const t = _state.clock.elapsedTime;
 
@@ -277,11 +300,10 @@ export function VrmModel({
     const idleWindX = Math.sin(t * 0.6) * 0.015 + Math.sin(t * 1.3) * 0.008;
     const idleWindZ = Math.cos(t * 0.8) * 0.010;
 
-    // Drag contribution: scale velocity to a reasonable wind magnitude
-    // (drag at 2 units/sec = 0.3 wind units — hair flies without over-shooting)
     const dragScale = isDragging ? 0.15 : 0.0;
 
-    const finalWind = new THREE.Vector3(
+    // Reuse static vector — no new THREE.Vector3!
+    _finalWind.current.set(
       -windVelocity.current.x * dragScale + idleWindX,
       0,
       -windVelocity.current.z * dragScale + idleWindZ,
@@ -291,9 +313,9 @@ export function VrmModel({
     // Do NOT fall back to modifying gravityDir per-joint — that overrides the model
     // author's tuning and makes hair robotic. If no externalForce API, skip wind.
     if (manager.externalForce) {
-      manager.externalForce.copy(finalWind);
+      manager.externalForce.copy(_finalWind.current);
     } else if (manager.setExternalForce) {
-      manager.setExternalForce(finalWind);
+      manager.setExternalForce(_finalWind.current);
     }
     // No fallback gravityDir manipulation — Pixiv VRM handles physics natively.
   }, -2); // priority -2: runs before FBX (-1) and animator (0)
@@ -309,9 +331,8 @@ export function VrmModel({
     moveDirection
   });
 
-  useFbxAnimation(vrm, '/blowkiss.fbx', basePose === 'flying-kiss');
-  useFbxAnimation(vrm, '/dance.fbx', basePose === 'dance' || basePose === 'dancing');
-
+  const isFlyingKiss = basePose === 'flying-kiss';
+  const isDancing = basePose === 'dance' || basePose === 'dancing';
   const isCustomPose = !['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'flying-kiss', 'dance', 'dancing', 'caress'].includes(basePose);
 
   if (!vrm) return null;
@@ -319,6 +340,8 @@ export function VrmModel({
   return (
     <group>
       <primitive object={vrm.scene} />
+      {isFlyingKiss && <FbxPlayer vrm={vrm} url="/blowkiss.fbx" active={true} type="fbx" loop={false} />}
+      {isDancing && <FbxPlayer vrm={vrm} url="/dance.fbx" active={true} type="fbx" loop={false} />}
       {isCustomPose && <DynamicFbxPlayer vrm={vrm} slug={basePose} />}
     </group>
   );
@@ -355,10 +378,11 @@ function DynamicFbxPlayer({ vrm, slug }: { vrm: VRM | null, slug: string }) {
   }, [slug]);
 
   if (!fbxUrl) return null;
-  return <FbxPlayer vrm={vrm} url={fbxUrl} active={true} type={assetType} />;
+  // Custom animations play once then return to stand (loop=false)
+  return <FbxPlayer vrm={vrm} url={fbxUrl} active={true} type={assetType} loop={false} />;
 }
 
-function FbxPlayer({ vrm, url, active, type }: { vrm: VRM | null, url: string, active: boolean, type: 'fbx' | 'bvh' }) {
-  useFbxAnimation(vrm, url, active, type);
+function FbxPlayer({ vrm, url, active, type, loop }: { vrm: VRM | null, url: string, active: boolean, type: 'fbx' | 'bvh', loop: boolean }) {
+  useFbxAnimation(vrm, url, active, type, loop);
   return null;
 }

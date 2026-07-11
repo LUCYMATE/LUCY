@@ -253,9 +253,9 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
         }, 800);
       }
     };
-    window.addEventListener('soltini-settings-changed', handleSettingsChanged);
+    window.addEventListener('soltini-core-settings-changed', handleSettingsChanged);
     return () => {
-      window.removeEventListener('soltini-settings-changed', handleSettingsChanged);
+      window.removeEventListener('soltini-core-settings-changed', handleSettingsChanged);
     };
   }, [initialized, setListening, setSpeaking, setThinking]);
 

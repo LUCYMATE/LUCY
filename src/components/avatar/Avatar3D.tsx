@@ -1,13 +1,35 @@
 import { useState, useEffect, Suspense, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Html, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
-import { VrmModel } from './VrmModel';
+import { VrmModel, clearVrmCache } from './VrmModel';
+import { clearFbxCache } from './animations/useFbxAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { BOT_NAME, getAvatarModelUrl } from '../../config/bot-profile';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { X, Lock, Unlock, Move, Maximize2, Monitor } from 'lucide-react';
+
+function FpsLimiter() {
+  const { invalidate } = useThree();
+  const [limit, setLimit] = useState(() => localStorage.getItem('soltini_low_fps') === 'true' ? 30 : 60);
+
+  useEffect(() => {
+    const handleFpsChange = () => setLimit(localStorage.getItem('soltini_low_fps') === 'true' ? 30 : 60);
+    window.addEventListener('soltini-settings-changed', handleFpsChange);
+    return () => window.removeEventListener('soltini-settings-changed', handleFpsChange);
+  }, []);
+
+  useEffect(() => {
+    // Use setInterval instead of a requestAnimationFrame loop.
+    // rAF spins the JS event loop every millisecond even when there is nothing to do.
+    // setInterval fires ONLY at the exact target rate and wakes the GPU gracefully,
+    // preventing the power-state thrashing that causes higher GPU usage at 30fps.
+    const id = setInterval(() => invalidate(), 1000 / limit);
+    return () => clearInterval(id);
+  }, [limit, invalidate]);
+  return null;
+}
 
 function Stool({ visible }: { visible: boolean }) {
   if (!visible) return null;
@@ -111,6 +133,10 @@ function FlyingKisses({ active }: { active: boolean }) {
 
 const ZOOM = 250; // 1 3D unit = 250 pixels.
 
+// Static reusable vector - avoids allocating a new THREE.Vector3 every frame
+// in the render loop, which would cause garbage collection hitches.
+const _lerpTarget = new THREE.Vector3();
+
 function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   const {
     isSpeaking,
@@ -146,25 +172,52 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   }, []);
 
   const [modelUrl, setModelUrl] = useState<string>('/soltini.vrm');
+  const [vrmReloadKey, setVrmReloadKey] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    
-    // Fetch custom avatar URL from native Rust backend
+  // Fetch (or re-fetch) the custom avatar URL from the Rust backend.
+  // Called on mount AND whenever the asset library fires soltini-settings-changed
+  // so a freshly uploaded VRM is picked up without a full app restart.
+  const refreshModelUrl = (forceBustCache = false) => {
     import('../../lib/system/assetDB').then(({ getAssetUrl, getAsset }) => {
       getAsset('custom-avatar').then(asset => {
-        if (cancelled || !asset || asset.type !== 'vrm') return;
+        if (!asset || asset.type !== 'vrm') {
+          // No custom avatar. If we were using one before, switch back to default.
+          if (modelUrl !== '/soltini.vrm' || forceBustCache) {
+            clearVrmCache?.();
+            setModelUrl('/soltini.vrm');
+            setVrmReloadKey(k => k + 1);
+          }
+          return;
+        }
         getAssetUrl('custom-avatar').then(url => {
-          if (!cancelled && url) {
-            setModelUrl(url);
+          if (url) {
+            // Only bust cache and reload if the URL is different, OR if we explicitly force it (e.g. settings changed)
+            if (modelUrl !== url || forceBustCache) {
+              clearVrmCache?.();
+              setModelUrl(url);
+              setVrmReloadKey(k => k + 1);
+            }
           }
         });
       }).catch(e => console.warn('Failed to fetch custom avatar info', e));
     });
+  };
 
-    return () => {
-      cancelled = true;
+  useEffect(() => {
+    // Initial mount: don't force cache bust, just load whatever is resolved
+    refreshModelUrl(false);
+    
+    // When settings change (e.g. new upload), FORCE a cache bust so the new file is read
+    const onSettingsChanged = () => {
+      clearFbxCache(); // Ensure newly uploaded custom animations are fetched freshly
+      refreshModelUrl(true);
     };
+    
+    window.addEventListener('soltini-settings-changed', onSettingsChanged);
+    return () => {
+      window.removeEventListener('soltini-settings-changed', onSettingsChanged);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Smoothly move the model towards targetPosition if we aren't dragging
@@ -205,10 +258,10 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
         }
       } else {
         // Gentle lerp for small corrections when not walking
-        groupRef.current.position.lerp(
-          new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z),
-          delta * 5.0
-        );
+        // IMPORTANT: Reuse a static vector instead of allocating new THREE.Vector3 every frame.
+        // Allocating objects in a hot render loop forces frequent garbage collection which causes frame hitches.
+        _lerpTarget.set(targetPosition.x, targetPosition.y, targetPosition.z);
+        groupRef.current.position.lerp(_lerpTarget, delta * 5.0);
       }
 
       let targetRotY = Math.PI; // default forward
@@ -342,6 +395,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
 
         <VrmModel
           url={modelUrl}
+          reloadKey={vrmReloadKey}
           isSpeaking={isSpeaking}
           isThinking={isThinking}
           isListening={isListening}
@@ -399,6 +453,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
 
 function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
   const { isAvatarLocked, setIsAvatarLocked, avatarScale, setAvatarScale, setBasePose, setTargetPosition } = useAvatarState();
+  const [isLowFps, setIsLowFps] = useState(() => localStorage.getItem('soltini_low_fps') === 'true');
 
   const setSize = (pct: number) => {
     localStorage.setItem('soltini_avatar_size', pct.toString());
@@ -410,7 +465,14 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     const val = !isAvatarLocked;
     setIsAvatarLocked(val);
     localStorage.setItem('soltini_avatar_locked', String(val));
-    setContextMenu(null);
+    onClose();
+  };
+
+  const toggleLowFps = () => {
+    const val = !isLowFps;
+    setIsLowFps(val);
+    localStorage.setItem('soltini_low_fps', String(val));
+    window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
   };
 
   const exitPetMode = () => {
@@ -444,10 +506,20 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
         <X className="w-3 h-3 cursor-pointer opacity-50 hover:opacity-100" onClick={onClose} />
       </div>
 
-      <button onClick={toggleLock} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left">
+      <button onClick={handleLockAvatar} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left">
         {isAvatarLocked ? <Lock className="w-4 h-4 text-pink-400" /> : <Unlock className="w-4 h-4" />}
         {isAvatarLocked ? 'Unlock Position' : 'Lock Position'}
       </button>
+
+      <div className="px-2 py-1 flex items-center justify-between text-sm">
+        <span className="text-white/50 text-xs">Low FPS Mode (30)</span>
+        <button
+          onClick={toggleLowFps}
+          className={`relative w-8 h-4 rounded-full transition-colors ${isLowFps ? 'bg-pink-500' : 'bg-white/20'}`}
+        >
+          <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${isLowFps ? 'translate-x-4' : 'translate-x-0'}`} />
+        </button>
+      </div>
 
       <div className="my-1 border-t border-white/10" />
 
@@ -483,9 +555,11 @@ export function Avatar3D({ isPetMode }: { isPetMode?: boolean }) {
     <div className="w-full h-full pointer-events-none">
       <Canvas
         dpr={1}
-        gl={{ powerPreference: "low-power", antialias: true }}
+        frameloop="demand"
+        gl={{ powerPreference: "low-power", antialias: true, alpha: true }}
         style={{ pointerEvents: 'none' }}
       >
+        <FpsLimiter />
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
 
         <Suspense fallback={null}>

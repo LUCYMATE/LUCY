@@ -208,7 +208,7 @@ export default function App() {
       }
 
       if (active) {
-        setTimeout(checkMouse, 50); // check every 50ms
+        setTimeout(checkMouse, 200); // Check every 200ms to save CPU
       }
     };
 

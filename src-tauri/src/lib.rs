@@ -153,6 +153,23 @@ fn key_to_enigo(key: &str) -> Result<Key, String> {
         "down" => Ok(Key::DownArrow),
         "left" => Ok(Key::LeftArrow),
         "right" => Ok(Key::RightArrow),
+        "f1" => Ok(Key::F1),
+        "f2" => Ok(Key::F2),
+        "f3" => Ok(Key::F3),
+        "f4" => Ok(Key::F4),
+        "f5" => Ok(Key::F5),
+        "f6" => Ok(Key::F6),
+        "f7" => Ok(Key::F7),
+        "f8" => Ok(Key::F8),
+        "f9" => Ok(Key::F9),
+        "f10" => Ok(Key::F10),
+        "f11" => Ok(Key::F11),
+        "f12" => Ok(Key::F12),
+        "delete" | "del" => Ok(Key::Delete),
+        "pageup" | "pgup" => Ok(Key::PageUp),
+        "pagedown" | "pgdn" => Ok(Key::PageDown),
+        "home" => Ok(Key::Home),
+        "end" => Ok(Key::End),
         other => {
             if other.chars().count() == 1 {
                 Ok(Key::Layout(other.chars().next().unwrap()))

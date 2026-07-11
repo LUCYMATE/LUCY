@@ -16,26 +16,80 @@
 
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { useLoader, useFrame } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js';
 import { VRM } from '@pixiv/three-vrm';
 import { useAvatarState } from '../../../lib/store/avatarState';
 import { retargetClip } from './vrmAnimation';
 
-export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, type: 'fbx' | 'bvh' = 'fbx') {
-  const dummyUrl = 'data:application/octet-stream;base64,'; 
-  const safeUrl = url || dummyUrl;
+// Module-level cache: URL → loaded FBX/BVH data.
+// Each file is parsed exactly once; subsequent mounts receive the cached object instantly.
+const fbxCache = new Map<string, any>();
+
+export function clearFbxCache() {
+  fbxCache.clear();
+}
+
+export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, type: 'fbx' | 'bvh' = 'fbx', loop: boolean = false) {
+  // Initialise from cache so the animation starts immediately if already loaded
+  const [loadedData, setLoadedData] = useState<any>(() => fbxCache.get(url) ?? null);
   
-  // Conditionally choose loader
-  const LoaderClass = type === 'bvh' ? BVHLoader : FBXLoader;
-  const loadedData = useLoader(LoaderClass, safeUrl) as any;
+  useEffect(() => {
+    if (!url) return;
+
+    // Already cached — nothing to do
+    if (fbxCache.has(url)) {
+      setLoadedData(fbxCache.get(url));
+      return;
+    }
+
+    let cancelled = false;
+    const LoaderClass = type === 'bvh' ? BVHLoader : FBXLoader;
+    const loader = new LoaderClass();
+    
+    loader.load(url, (data) => {
+      if (!cancelled) {
+        // --- MEMORY OPTIMIZATION ---
+        // The FBX file contains 3D meshes (geometry, materials, textures) which consume GPU VRAM.
+        // We ONLY need the animation clip and the bone hierarchy.
+        // By disposing the geometries and materials instantly, we free the GPU memory 
+        // while safely caching the lightweight animation data in regular RAM!
+        if (data instanceof THREE.Object3D) {
+          data.traverse((obj: any) => {
+            if (obj.isMesh) {
+              obj.geometry?.dispose();
+              if (Array.isArray(obj.material)) {
+                obj.material.forEach((m: any) => m.dispose());
+              } else {
+                obj.material?.dispose();
+              }
+              // Nullify references so garbage collector can sweep them
+              obj.geometry = null;
+              obj.material = null;
+            }
+          });
+        }
+        
+        fbxCache.set(url, data); // cache the lightweight hierarchy for next mount
+        setLoadedData(data);
+      }
+    }, undefined, (err) => {
+      console.warn("Failed to load animation:", err);
+    });
+    
+    return () => {
+      cancelled = true;
+      // Do NOT dispose or null out setLoadedData \u2014 the cached object is shared.
+    };
+  }, [url, type]);
+
 
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionRef = useRef<THREE.AnimationAction | null>(null);
 
   useEffect(() => {
-    if (!vrm || !loadedData || safeUrl === dummyUrl) return;
+    if (!vrm || !loadedData || !url) return;
 
     if (mixerRef.current) {
       mixerRef.current.stopAllAction();
@@ -79,15 +133,33 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
     const mixer = new THREE.AnimationMixer(vrm.scene);
     mixerRef.current = mixer;
 
+    // Determine if this animation should loop forever or play once
+    const shouldLoop = loop;
+
     const action = mixer.clipAction(retargeted);
-    action.setLoop(THREE.LoopOnce, 1);
-    action.clampWhenFinished = true;
+    if (shouldLoop) {
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.clampWhenFinished = false;
+    } else {
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+    }
     actionRef.current = action;
 
-    // When the animation finishes, reset the avatar to the standing pose
-    mixer.addEventListener('finished', () => {
-      useAvatarState.getState().setBasePose('stand');
-    });
+    // When the animation finishes (LoopOnce only), reset to standing pose
+    if (!shouldLoop) {
+      mixer.addEventListener('finished', () => {
+        useAvatarState.getState().setBasePose('stand');
+      });
+    }
+
+    // ── Auto-start if already active when the FBX finishes loading ──────────
+    // The `active` effect below runs on mount but actionRef is null at that point
+    // (FBX hasn't loaded yet), so .play() would be skipped. We must also start
+    // the action here, right after it's created, when active is already true.
+    if (active) {
+      action.reset().fadeIn(0.25).play();
+    }
 
     return () => {
       mixer.stopAllAction();
@@ -97,7 +169,8 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
     };
   }, [vrm, loadedData]);
 
-  // ── Play / stop the action when `active` changes ─────────────────────────
+  // ── Play / stop the action when `active` changes AFTER load ──────────────
+  // This handles the case where active toggles while the FBX is already loaded.
   useEffect(() => {
     if (!actionRef.current) return;
     if (active) {
