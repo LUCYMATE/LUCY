@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Html, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
-import { VrmModel, clearVrmCache } from './VrmModel';
+import { VrmModel, clearVrmCache, clearAssetResolutionCache } from './VrmModel';
 import { clearFbxCache } from './animations/useFbxAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { BOT_NAME, getAvatarModelUrl } from '../../config/bot-profile';
@@ -174,29 +174,35 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   const [modelUrl, setModelUrl] = useState<string>('/soltini.vrm');
   const [vrmReloadKey, setVrmReloadKey] = useState(0);
 
-  // Fetch (or re-fetch) the custom avatar URL from the Rust backend.
+  // Tracks the current blob URL so we can revoke it when creating a new one
+  const blobUrlRef = useRef<string | null>(null);
+
+  // Fetch (or re-fetch) the custom avatar data from the Rust backend.
   // Called on mount AND whenever the asset library fires soltini-settings-changed
   // so a freshly uploaded VRM is picked up without a full app restart.
   const refreshModelUrl = (forceBustCache = false) => {
-    import('../../lib/system/assetDB').then(({ getAssetUrl, getAsset }) => {
+    import('../../lib/system/assetDB').then(({ getAssetDataUrl, getAsset }) => {
       getAsset('custom-avatar').then(asset => {
         if (!asset || asset.type !== 'vrm') {
           // No custom avatar. If we were using one before, switch back to default.
           if (modelUrl !== '/soltini.vrm' || forceBustCache) {
+            if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
             clearVrmCache?.();
             setModelUrl('/soltini.vrm');
             setVrmReloadKey(k => k + 1);
           }
           return;
         }
-        getAssetUrl('custom-avatar').then(url => {
+        getAssetDataUrl('custom-avatar').then(url => {
           if (url) {
-            // Only bust cache and reload if the URL is different, OR if we explicitly force it (e.g. settings changed)
-            if (modelUrl !== url || forceBustCache) {
-              clearVrmCache?.();
-              setModelUrl(url);
-              setVrmReloadKey(k => k + 1);
-            }
+            // Revoke the previous blob URL to avoid memory leaks
+            if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+            blobUrlRef.current = url;
+            clearVrmCache?.();
+            setModelUrl(url);
+            setVrmReloadKey(k => k + 1);
+          } else {
+            console.warn('[Avatar3D] getAssetDataUrl returned null — custom VRM will not load');
           }
         });
       }).catch(e => console.warn('Failed to fetch custom avatar info', e));
@@ -207,15 +213,24 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
     // Initial mount: don't force cache bust, just load whatever is resolved
     refreshModelUrl(false);
     
-    // When settings change (e.g. new upload), FORCE a cache bust so the new file is read
+    // When settings change (e.g. new upload), clear caches so new files are picked up.
+    // Only FORCE a VRM reload when the avatar model itself changed (vrm-change event).
     const onSettingsChanged = () => {
-      clearFbxCache(); // Ensure newly uploaded custom animations are fetched freshly
+      clearFbxCache();
+      clearAssetResolutionCache();
+    };
+    
+    const onVrmChanged = () => {
+      clearFbxCache();
+      clearAssetResolutionCache();
       refreshModelUrl(true);
     };
     
     window.addEventListener('soltini-settings-changed', onSettingsChanged);
+    window.addEventListener('soltini-vrm-changed', onVrmChanged);
     return () => {
       window.removeEventListener('soltini-settings-changed', onSettingsChanged);
+      window.removeEventListener('soltini-vrm-changed', onVrmChanged);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -5,6 +5,13 @@ import { Emotion } from './core';
 // This prevents the VRM expression manager from doing unnecessary GPU updates.
 const prevValues: Record<string, number> = {};
 
+/** Reset the expression cache when a new VRM is loaded */
+export function clearExpressionCache() {
+  for (const key of Object.keys(prevValues)) {
+    delete prevValues[key];
+  }
+}
+
 function setVal(vrm: VRM, name: VRMExpressionPresetName, value: number) {
   const rounded = Math.round(value * 100) / 100; // Round to 2 decimal places
   if (prevValues[name] === rounded) return; // Skip if unchanged

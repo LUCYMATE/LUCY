@@ -317,6 +317,29 @@ fn list_3d_assets(app_handle: tauri::AppHandle) -> Result<serde_json::Value, Str
 }
 
 #[tauri::command]
+fn read_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<String, String> {
+    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let assets_dir = local_data.join("assets");
+
+    let registry_path = assets_dir.join("registry.json");
+    let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
+    let registry: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    if let Some(asset) = registry.get(&id) {
+        if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
+            let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+            let bytes = std::fs::read(&file_path).map_err(|e| e.to_string())?;
+            let b64 = STANDARD.encode(&bytes);
+            return Ok(serde_json::json!({
+                "data": b64,
+                "type": asset_type
+            }).to_string());
+        }
+    }
+    Err("Asset not found".to_string())
+}
+
+#[tauri::command]
 fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String) -> Result<String, String> {
     let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
     let assets_dir = local_data.join("assets");
@@ -391,6 +414,7 @@ pub fn run() {
             save_3d_asset,
             delete_3d_asset,
             list_3d_assets,
+            read_3d_asset,
             get_3d_asset_path,
         ])
         .setup(|app| {

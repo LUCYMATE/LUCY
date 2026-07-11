@@ -46,7 +46,7 @@ export function AssetLibrary() {
       loadAssets();
 
       // Notify the live avatar scene to reload with the new model immediately
-      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+      window.dispatchEvent(new CustomEvent('soltini-vrm-changed'));
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to upload avatar: ${error}`);
     }
@@ -100,8 +100,10 @@ export function AssetLibrary() {
       }
       
       await loadAssets();
-      // Notify live scene and AI session about the change
-      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+      // Notify live scene: if we deleted the avatar, reload the model; otherwise just refresh
+      window.dispatchEvent(new CustomEvent(
+        id === 'custom-avatar' ? 'soltini-vrm-changed' : 'soltini-settings-changed'
+      ));
     } catch (e) {
       logger.add('error', 'Asset DB', `Failed to delete asset`);
     }

@@ -25,21 +25,92 @@ import { retargetClip } from './vrmAnimation';
 
 // Module-level cache: URL → loaded FBX/BVH data.
 // Each file is parsed exactly once; subsequent mounts receive the cached object instantly.
+// Uses LRU eviction: when the cache exceeds FBX_CACHE_MAX, the least-recently-used entry
+// is evicted (and disposed) to prevent unbounded memory growth.
+const FBX_CACHE_MAX = 8;
 const fbxCache = new Map<string, any>();
+const fbxCacheAccess = new Map<string, number>(); // URL → last-access timestamp
+
+function touchCache(url: string) {
+  fbxCacheAccess.set(url, Date.now());
+}
+
+function evictIfNeeded() {
+  if (fbxCache.size <= FBX_CACHE_MAX) return;
+  // Find the least-recently-used entry
+  let oldestUrl: string | null = null;
+  let oldestTime = Infinity;
+  for (const [url, time] of fbxCacheAccess) {
+    // Don't evict built-in animations
+    if (url.startsWith('/')) continue;
+    if (time < oldestTime) {
+      oldestTime = time;
+      oldestUrl = url;
+    }
+  }
+  if (oldestUrl) {
+    const data = fbxCache.get(oldestUrl);
+    if (data && data instanceof THREE.Object3D) {
+      data.traverse((obj: any) => {
+        if (obj.isMesh) {
+          obj.geometry?.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m: any) => m.dispose());
+          } else {
+            obj.material?.dispose();
+          }
+        }
+      });
+    }
+    fbxCache.delete(oldestUrl);
+    fbxCacheAccess.delete(oldestUrl);
+  }
+}
 
 export function clearFbxCache() {
-  fbxCache.clear();
+  // Only dispose and remove custom animations (non-built-in).
+  // Built-in animations (/blowkiss.fbx, /dance.fbx) are bundled with the app,
+  // never change, and should remain cached to avoid slow re-loads.
+  const urlsToRemove: string[] = [];
+  for (const [url] of fbxCache) {
+    if (url.startsWith('/')) continue;
+    urlsToRemove.push(url);
+  }
+  for (const url of urlsToRemove) {
+    const data = fbxCache.get(url);
+    if (data && data instanceof THREE.Object3D) {
+      data.traverse((obj: any) => {
+        if (obj.isMesh) {
+          obj.geometry?.dispose();
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((m: any) => m.dispose());
+          } else {
+            obj.material?.dispose();
+          }
+        }
+      });
+    }
+    fbxCache.delete(url);
+    fbxCacheAccess.delete(url);
+  }
 }
 
 export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, type: 'fbx' | 'bvh' = 'fbx', loop: boolean = false) {
   // Initialise from cache so the animation starts immediately if already loaded
-  const [loadedData, setLoadedData] = useState<any>(() => fbxCache.get(url) ?? null);
+  const [loadedData, setLoadedData] = useState<any>(() => {
+    if (fbxCache.has(url)) {
+      touchCache(url);
+      return fbxCache.get(url);
+    }
+    return null;
+  });
   
   useEffect(() => {
     if (!url) return;
 
     // Already cached — nothing to do
     if (fbxCache.has(url)) {
+      touchCache(url);
       setLoadedData(fbxCache.get(url));
       return;
     }
@@ -49,29 +120,28 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
     const loader = new LoaderClass();
     
     loader.load(url, (data) => {
-      if (!cancelled) {
-        // --- MEMORY OPTIMIZATION ---
-        // The FBX file contains 3D meshes (geometry, materials, textures) which consume GPU VRAM.
-        // We ONLY need the animation clip and the bone hierarchy.
-        // By disposing the geometries and materials instantly, we free the GPU memory 
-        // while safely caching the lightweight animation data in regular RAM!
-        if (data instanceof THREE.Object3D) {
-          data.traverse((obj: any) => {
-            if (obj.isMesh) {
-              obj.geometry?.dispose();
-              if (Array.isArray(obj.material)) {
-                obj.material.forEach((m: any) => m.dispose());
-              } else {
-                obj.material?.dispose();
-              }
-              // Nullify references so garbage collector can sweep them
-              obj.geometry = null;
-              obj.material = null;
+      // Always dispose GPU resources, even when cancelled — the caller
+      // discarded the reference so these meshes will never be used.
+      if (data instanceof THREE.Object3D) {
+        data.traverse((obj: any) => {
+          if (obj.isMesh) {
+            obj.geometry?.dispose();
+            if (Array.isArray(obj.material)) {
+              obj.material.forEach((m: any) => m.dispose());
+            } else {
+              obj.material?.dispose();
             }
-          });
-        }
-        
-        fbxCache.set(url, data); // cache the lightweight hierarchy for next mount
+            obj.geometry = null;
+            obj.material = null;
+          }
+        });
+      }
+
+      if (!cancelled) {
+        // Cache the lightweight hierarchy for next mount
+        fbxCache.set(url, data);
+        touchCache(url);
+        evictIfNeeded(); // Evict oldest entry if over limit
         setLoadedData(data);
       }
     }, undefined, (err) => {
@@ -87,11 +157,16 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
 
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionRef = useRef<THREE.AnimationAction | null>(null);
+  const onFinishedRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!vrm || !loadedData || !url) return;
 
     if (mixerRef.current) {
+      if (onFinishedRef.current) {
+        mixerRef.current.removeEventListener('finished', onFinishedRef.current);
+        onFinishedRef.current = null;
+      }
       mixerRef.current.stopAllAction();
       mixerRef.current.uncacheRoot(vrm.scene);
       mixerRef.current = null;
@@ -129,6 +204,17 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
     vrm.scene.updateMatrixWorld(true);
     const retargeted = retargetClip(rawClip, vrm, sourceHierarchy);
 
+    // Dispose BVH dummy objects after retargeting to free GPU memory
+    if (type === 'bvh') {
+      const dummyMesh = sourceHierarchy as THREE.SkinnedMesh;
+      if (dummyMesh) {
+        dummyMesh.geometry?.dispose();
+        (dummyMesh.material as THREE.Material)?.dispose();
+        // Remove bones from the scene graph so they can be GC'd
+        dummyMesh.removeFromParent();
+      }
+    }
+
     // Create a mixer targeting vrm.scene (same root the ref project uses)
     const mixer = new THREE.AnimationMixer(vrm.scene);
     mixerRef.current = mixer;
@@ -148,9 +234,11 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
 
     // When the animation finishes (LoopOnce only), reset to standing pose
     if (!shouldLoop) {
-      mixer.addEventListener('finished', () => {
+      const onFinished = () => {
         useAvatarState.getState().setBasePose('stand');
-      });
+      };
+      onFinishedRef.current = onFinished;
+      mixer.addEventListener('finished', onFinished);
     }
 
     // ── Auto-start if already active when the FBX finishes loading ──────────
@@ -162,6 +250,10 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
     }
 
     return () => {
+      if (onFinishedRef.current) {
+        mixer.removeEventListener('finished', onFinishedRef.current);
+        onFinishedRef.current = null;
+      }
       mixer.stopAllAction();
       mixer.uncacheRoot(vrm.scene);
       mixerRef.current = null;
@@ -190,43 +282,4 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
   }, -1);
 }
 
-import { getAsset, getAssetUrl } from '../../../lib/system/assetDB';
 
-export function useDynamicFbxAnimation(vrm: VRM | null, slug: string) {
-  const [fbxUrl, setFbxUrl] = useState<string | null>(null);
-  const [assetType, setAssetType] = useState<'fbx' | 'bvh'>('fbx');
-  
-  useEffect(() => {
-    if (!slug) {
-      setFbxUrl(null);
-      return;
-    }
-    
-    let cancelled = false;
-
-    const fetchCustomFbx = async () => {
-      try {
-        const asset = await getAsset(slug);
-        if (!asset || (asset.type !== 'fbx' && asset.type !== 'bvh') || cancelled) return;
-        
-        const url = await getAssetUrl(slug);
-        if (!url || cancelled) return;
-
-        setAssetType(asset.type as 'fbx' | 'bvh');
-        setFbxUrl(url);
-      } catch (e) {
-        console.warn('Failed to load custom FBX/BVH from DB', e);
-      }
-    };
-    
-    fetchCustomFbx();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
-
-  // Use the standard hook with the dynamic URL.
-  // Note: active is always true if fbxUrl is present, because this hook only runs when the basePose == slug.
-  useFbxAnimation(vrm, fbxUrl || '', !!fbxUrl, assetType);
-}

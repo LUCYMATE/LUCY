@@ -65,6 +65,29 @@ export async function listAssets(): Promise<AssetRecord[]> {
 }
 
 /** 
+ * Reads the asset file from Rust (bypasses asset protocol) and returns
+ * a blob:// URL that Three.js loaders can fetch normally.
+ * The blob URL is valid until URL.revokeObjectURL() is called.
+ */
+export async function getAssetDataUrl(id: string): Promise<string | null> {
+  try {
+    const resultStr: string = await invoke('read_3d_asset', { id });
+    const { data: base64, type } = JSON.parse(resultStr);
+    const binaryStr = atob(base64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    const mime = type === 'vrm' ? 'model/gltf-binary' : 'application/octet-stream';
+    const blob = new Blob([bytes], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch (e) {
+    console.error('[getAssetDataUrl] failed:', e);
+    return null;
+  }
+}
+
+/** 
  * Gets the asset's URL mapped to the native asset:// protocol.
  * This completely bypasses loading the file into the JS heap! 
  */

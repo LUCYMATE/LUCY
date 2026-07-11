@@ -6,7 +6,7 @@ import { BoneRest, BONE_LIST, BasePose, Emotion } from './core';
 import { applyLocomotion } from './locomotion';
 import { applyGestures } from './gestures';
 import { applyPeek } from './peek';
-import { applyExpressions } from './expressions';
+import { applyExpressions, clearExpressionCache } from './expressions';
 import { applyFlirty, applyFlirtyIdleSway } from '../../../premium/flirty';
 
 function lerpAngle(a: number, b: number, t: number) {
@@ -41,6 +41,10 @@ export function useVrmAnimator({
   // 1. Capture initial rest pose when VRM loads
   useEffect(() => {
     if (!vrm) return;
+    
+    // Reset expression cache for the new VRM model
+    clearExpressionCache();
+    
     vrm.humanoid.resetNormalizedPose();
 
     const snap: BoneRest = {};

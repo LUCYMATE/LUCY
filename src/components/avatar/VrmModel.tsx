@@ -8,7 +8,7 @@ import { useVrmAnimator } from './animations/useVrmAnimator';
 import { useFbxAnimation } from './animations/useFbxAnimation';
 import { standardizeVrmBoneNames } from './animations/vrmAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
-import { getAsset, getAssetUrl } from '../../lib/system/assetDB';
+import { getAsset, getAssetDataUrl } from '../../lib/system/assetDB';
 
 // Global cache to prevent model from disappearing and reloading on remounts
 let globalCachedVrm: VRM | null = null;
@@ -18,8 +18,9 @@ let globalLoadCallbacks: ((vrm: VRM | null) => void)[] = [];
 
 /** Called by Avatar3D when a new VRM is uploaded, so the next render triggers a fresh load. */
 export function clearVrmCache() {
-  // Do NOT null out globalCachedVrm here — the old model should stay visible while
-  // the new one loads. We only clear the URL so the cache-miss path is taken.
+  // Do NOT dispose globalCachedVrm here — the old model must stay visible while
+  // the new one loads, so React keeps the last-rendered primitive alive.
+  // The old VRM is disposed later in the load-success path (see load callback).
   globalCachedUrl = null;
   isGlobalLoading = false;
   globalLoadCallbacks = [];
@@ -107,8 +108,10 @@ export function VrmModel({
       };
     }
 
+    // Drain any stale callbacks from a previous load attempt that might have hung
     isGlobalLoading = true;
     globalCachedUrl = url;
+    globalLoadCallbacks = [];
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -333,7 +336,7 @@ export function VrmModel({
 
   const isFlyingKiss = basePose === 'flying-kiss';
   const isDancing = basePose === 'dance' || basePose === 'dancing';
-  const isCustomPose = !['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'flying-kiss', 'dance', 'dancing', 'caress'].includes(basePose);
+  const isCustomPose = !['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'flying-kiss', 'dance', 'dancing', 'caress', 'sleep'].includes(basePose);
 
   if (!vrm) return null;
 
@@ -348,6 +351,15 @@ export function VrmModel({
 }
 
 
+/** Module-level counter incremented on each clearAssetResolutionCache call,
+ *  used to force DynamicFbxPlayer to re-fetch even when slug hasn't changed. */
+let _cacheBustCounter = 0;
+
+/** Called when assets are added/deleted so stale resolution caches are cleared */
+export function clearAssetResolutionCache() {
+  _cacheBustCounter++;
+}
+
 function DynamicFbxPlayer({ vrm, slug }: { vrm: VRM | null, slug: string }) {
   const [fbxUrl, setFbxUrl] = useState<string | null>(null);
   const [assetType, setAssetType] = useState<'fbx' | 'bvh'>('fbx');
@@ -360,7 +372,7 @@ function DynamicFbxPlayer({ vrm, slug }: { vrm: VRM | null, slug: string }) {
         const asset = await getAsset(slug);
         if (!asset || (asset.type !== 'fbx' && asset.type !== 'bvh') || cancelled) return;
         
-        const url = await getAssetUrl(slug);
+        const url = await getAssetDataUrl(slug);
         if (!url || cancelled) return;
 
         setAssetType(asset.type as 'fbx' | 'bvh');
@@ -376,6 +388,32 @@ function DynamicFbxPlayer({ vrm, slug }: { vrm: VRM | null, slug: string }) {
       cancelled = true;
     };
   }, [slug]);
+
+  // Re-fetch when asset library changes (cache busted) even if slug is the same
+  useEffect(() => {
+    if (!fbxUrl) return; // Only re-fetch if we already had a URL
+    let cancelled = false;
+    
+    const reFetchCustom = async () => {
+      try {
+        const asset = await getAsset(slug);
+        if (!asset || (asset.type !== 'fbx' && asset.type !== 'bvh') || cancelled) return;
+        
+        const url = await getAssetDataUrl(slug);
+        if (!url || cancelled) return;
+
+        setAssetType(asset.type as 'fbx' | 'bvh');
+        setFbxUrl(url);
+      } catch (e) {
+        console.warn('Failed to reload dynamic FBX/BVH', e);
+      }
+    };
+    
+    reFetchCustom();
+    
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_cacheBustCounter]);
 
   if (!fbxUrl) return null;
   // Custom animations play once then return to stand (loop=false)
