@@ -1082,7 +1082,10 @@ Continue calling tools in sequence until the request is fully completed. Once do
     let binary = '';
     const chunk = 8192;
     for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode(...Array.from(bytes.subarray(i, i + chunk)));
+      const sub = bytes.subarray(i, i + chunk);
+      for (let j = 0; j < sub.length; j++) {
+        binary += String.fromCharCode(sub[j]);
+      }
     }
     return btoa(binary);
   }

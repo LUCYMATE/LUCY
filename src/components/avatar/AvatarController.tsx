@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar3D } from './Avatar3D';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { useShallow } from 'zustand/react/shallow';
 import { BasePose } from './animations/core';
 
 interface AvatarControllerProps {
@@ -14,11 +15,25 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
     isSpeaking,
     isThinking,
     isListening,
+    basePose,
     setBasePose,
     setIsWalking,
+    targetPosition,
     setTargetPosition,
-    isDragging
-  } = useAvatarState();
+    isDragging,
+    isAvatarLocked
+  } = useAvatarState(useShallow(s => ({
+    isSpeaking: s.isSpeaking,
+    isThinking: s.isThinking,
+    isListening: s.isListening,
+    basePose: s.basePose,
+    setBasePose: s.setBasePose,
+    setIsWalking: s.setIsWalking,
+    targetPosition: s.targetPosition,
+    setTargetPosition: s.setTargetPosition,
+    isDragging: s.isDragging,
+    isAvatarLocked: s.isAvatarLocked
+  })));
 
   // Sync isPetMode to state
   useEffect(() => {

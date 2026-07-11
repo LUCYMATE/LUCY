@@ -64,19 +64,16 @@ export function useVrmAnimator({
     return () => clearTimeout(greetingTimer);
   }, [vrm]);
 
-  // 1.5 When transitioning TO an FBX pose, reset skeleton to rest pose ONCE.
-  // This untangles legs/arms if the avatar was previously sitting.
+  // 1.5 When transitioning between poses, reset skeleton to rest pose ONCE.
+  // This cleans up twisted legs/arms/fingers if the avatar was previously in a custom FBX pose or sitting.
   useEffect(() => {
     if (!vrm) return;
-    const isFbx = basePose === 'flying-kiss' || basePose === 'dance' || basePose === 'dancing';
-    if (isFbx) {
-      for (const name of BONE_LIST) {
-        const node = vrm.humanoid?.getNormalizedBoneNode(name);
-        const r = restPose.current[name];
-        if (node && r) {
-          node.quaternion.copy(r.quaternion);
-          if (name === 'hips') node.position.copy(r.position);
-        }
+    for (const name of BONE_LIST) {
+      const node = vrm.humanoid?.getNormalizedBoneNode(name);
+      const r = restPose.current[name];
+      if (node && r) {
+        node.quaternion.copy(r.quaternion);
+        if (name === 'hips') node.position.copy(r.position);
       }
     }
   }, [basePose, vrm]);
@@ -102,8 +99,9 @@ export function useVrmAnimator({
     const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
 
     // Detect if the current pose is driven entirely by an FBX animation
-    // (Add any new FBX animation names here!)
-    const isFbxPose = basePose === 'flying-kiss' || basePose === 'dance' || basePose === 'dancing';
+    // If it's not one of our hardcoded procedural poses, it MUST be a custom FBX animation
+    const proceduralPoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'caress', 'sleep'];
+    const isFbxPose = !proceduralPoses.includes(basePose);
 
     // ── Model facing ──────────────────────────────────────────────────────
     // Do NOT force model facing if an FBX animation is playing, 
@@ -151,6 +149,8 @@ export function useVrmAnimator({
 
     // ── Update spring bones, look-at, expression manager ─────────────────
     // Must be AFTER all bone writes so spring bones simulate against final pose
-    vrm.update(delta);
+    // Clamp delta to prevent physics explosions on frame drops
+    const clampedDelta = Math.min(delta, 1/30);
+    vrm.update(clampedDelta);
   });
 }

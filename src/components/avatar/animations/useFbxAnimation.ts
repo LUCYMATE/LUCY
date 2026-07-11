@@ -27,7 +27,7 @@ import { retargetClip } from './vrmAnimation';
 // Each file is parsed exactly once; subsequent mounts receive the cached object instantly.
 // Uses LRU eviction: when the cache exceeds FBX_CACHE_MAX, the least-recently-used entry
 // is evicted (and disposed) to prevent unbounded memory growth.
-const FBX_CACHE_MAX = 8;
+const FBX_CACHE_MAX = 4;
 const fbxCache = new Map<string, any>();
 const fbxCacheAccess = new Map<string, number>(); // URL → last-access timestamp
 

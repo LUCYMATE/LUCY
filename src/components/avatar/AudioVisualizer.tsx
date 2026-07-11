@@ -87,6 +87,8 @@ export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerPro
         const isHearingNow = targetAmplitude > 0.05;
         const currentState = useAvatarState.getState().isHearingSound;
         if (isHearingNow !== currentState) {
+           // We only update if state changes to avoid unnecessary re-renders. 
+           // But even then, we might flutter. We can use a small delay or just rely on this.
            useAvatarState.getState().setHearingSound(isHearingNow);
         }
       }

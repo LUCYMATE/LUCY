@@ -18,15 +18,26 @@ fn get_system_stats(state: tauri::State<AppState>) -> serde_json::Value {
     let mut sys = state.sys.lock().unwrap();
     sys.refresh_cpu_usage();
     sys.refresh_memory();
+    sys.refresh_processes();
 
     let cpu_usage = sys.global_cpu_info().cpu_usage();
     let total_memory = sys.total_memory();
-    let used_memory = sys.used_memory();
+    
+    // Calculate exact RAM used by this app and its webview child processes
+    let current_pid = sysinfo::get_current_pid().unwrap();
+    let mut app_memory: u64 = 0;
+    
+    for (pid, process) in sys.processes() {
+        if *pid == current_pid || process.parent() == Some(current_pid) {
+            app_memory += process.memory();
+        }
+    }
 
     serde_json::json!({
         "cpu_usage": cpu_usage,
         "total_memory": total_memory,
-        "used_memory": used_memory
+        "used_memory": sys.used_memory(),
+        "app_memory": app_memory
     })
 }
 

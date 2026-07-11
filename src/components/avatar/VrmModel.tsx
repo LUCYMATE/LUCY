@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, VRM } from '@pixiv/three-vrm';
+import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm';
 import * as THREE from 'three';
 import { BasePose, Emotion } from './animations/core';
 import { useVrmAnimator } from './animations/useVrmAnimator';
@@ -16,24 +16,41 @@ let globalCachedUrl: string | null = null;
 let isGlobalLoading = false;
 let globalLoadCallbacks: ((vrm: VRM | null) => void)[] = [];
 
-/** Called by Avatar3D when a new VRM is uploaded, so the next render triggers a fresh load. */
-export function clearVrmCache() {
-  // Do NOT dispose globalCachedVrm here — the old model must stay visible while
-  // the new one loads, so React keeps the last-rendered primitive alive.
-  // The old VRM is disposed later in the load-success path (see load callback).
-  globalCachedUrl = null;
-  isGlobalLoading = false;
-  globalLoadCallbacks = [];
-}
-
 /** Strip ?t=... cache-bust param for comparison purposes */
 function baseUrl(url: string) {
   return url.split('?')[0];
 }
 
+// ─── Dispose helper ───────────────────────────────────────────────────────────
+function disposeVrm(vrm: VRM) {
+  try {
+    if (vrm.scene) {
+      VRMUtils.deepDispose(vrm.scene);
+      vrm.scene.removeFromParent();
+    }
+    // Also explicitly call vrm.dispose() to clear internal springbones/materials if supported
+    if (typeof (vrm as any).dispose === 'function') {
+      (vrm as any).dispose();
+    }
+  } catch (e) { 
+    console.error('Error during VRM disposal:', e);
+  }
+}
+
+/** Called by Avatar3D when a new VRM is uploaded, so the next render triggers a fresh load. */
+export function clearVrmCache() {
+  if (globalCachedVrm) {
+    disposeVrm(globalCachedVrm);
+    globalCachedVrm = null;
+  }
+  globalCachedUrl = null;
+  isGlobalLoading = false;
+  globalLoadCallbacks = [];
+}
+
 interface VrmModelProps {
   url: string;
-  reloadKey?: number;  // Increment to force a reload even when url hasn't changed
+  reloadKey?: number;  
   isSpeaking: boolean;
   isThinking?: boolean;
   isListening?: boolean;
@@ -42,26 +59,6 @@ interface VrmModelProps {
   emotion?: Emotion;
   moveDirection?: number;
   isSitting?: boolean;
-}
-
-// ─── Dispose helper ───────────────────────────────────────────────────────────
-function disposeVrm(vrm: VRM) {
-  try {
-    vrm.scene.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.geometry?.dispose();
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        mats.forEach((m: THREE.Material) => {
-          if (!m) return;
-          Object.values(m).forEach((v) => {
-            if (v instanceof THREE.Texture) v.dispose();
-          });
-          m.dispose();
-        });
-      }
-    });
-  } catch (_) { /* best-effort */ }
 }
 
 export function VrmModel({
@@ -76,7 +73,6 @@ export function VrmModel({
   moveDirection = 0,
   isSitting = false,
 }: VrmModelProps) {
-  // Show cached VRM immediately if available — prevents blank screen during load
   const [vrm, setVrm] = useState<VRM | null>(globalCachedVrm);
   const pendantRef = useRef<THREE.Group | null>(null);
 
@@ -108,7 +104,6 @@ export function VrmModel({
       };
     }
 
-    // Drain any stale callbacks from a previous load attempt that might have hung
     isGlobalLoading = true;
     globalCachedUrl = url;
     globalLoadCallbacks = [];
@@ -129,16 +124,19 @@ export function VrmModel({
         
         const loadedVrm = gltf.userData.vrm as VRM;
 
-        // ── Basic setup ─────────────────────────────────────────────────────
+        // VRAM Optimizations
+        try {
+          VRMUtils.removeUnnecessaryVertices(loadedVrm.scene);
+          VRMUtils.combineSkeletons(loadedVrm.scene);
+          VRMUtils.combineMorphs(loadedVrm.scene);
+        } catch(e) { console.warn("VRM optimization pass failed", e); }
+
         loadedVrm.scene.traverse((obj) => { obj.frustumCulled = false; });
         loadedVrm.scene.rotation.y = Math.PI;
 
-        // ── Standardize humanoid bone names for AnimationMixer targeting ────
-        // Must happen before any animation is retargeted so that track names
-        // like "leftUpperArm.quaternion" resolve to the correct scene nodes.
         standardizeVrmBoneNames(loadedVrm);
 
-
+        // Delete the previous model if one existed in the cache to free RAM immediately
         if (globalCachedVrm && globalCachedVrm !== loadedVrm) {
           disposeVrm(globalCachedVrm);
         }
@@ -162,20 +160,13 @@ export function VrmModel({
 
     return () => {
       cancelled = true;
-      // Do NOT blank vrm state here — keep the old model visible
-      // until the new one has fully loaded and swapped in.
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, reloadKey]);
 
   // ─── Smart pose-transition detection ───────────────────────────────────────
-  // Instead of a hardcoded frame counter, we track the actual angular velocity
-  // of the core skeleton (Hips) to detect exactly when a pose transition is
-  // "completely achieved". This permanently fixes physics for ANY future
-  // animations (short or long), and uses minimal CPU/RAM (O(1) angle check).
   const prevHipsQuat = useRef(new THREE.Quaternion());
   const transitionState = useRef({ active: false, settledCount: 0, frameCount: 0 });
-  
   const prevBasePoseRef = useRef('');
   const prevIsWalkingRef = useRef(false);
 
@@ -199,32 +190,24 @@ export function VrmModel({
       state.frameCount++;
       const angleDiff = hips.quaternion.angleTo(prevHipsQuat.current);
       
-      // If rotation is extremely small (< 0.1 deg/frame), the interpolation is finishing
       if (angleDiff < 0.001) {
         state.settledCount++;
-        // 5 consecutive settled frames = pose completely achieved
         if (state.settledCount > 5) state.active = false;
       } else {
         state.settledCount = 0;
       }
 
-      // Safety fallback: never reset for more than 120 frames (2s) to prevent
-      // looping animations (like walking) from permanently freezing physics.
       if (state.frameCount > 120) {
         state.active = false;
       }
 
-      // Clear world-space inertia during the entire transition to prevent hair flying.
-      // We purposefully DO NOT call updateMatrixWorld(true) here to save massive CPU.
-      // Calling reset() alone is very cheap and keeps the hair glued.
       if (state.active) {
         (vrm.springBoneManager as any).reset?.();
       }
     }
 
-    // Always track previous rotation for the next frame
     prevHipsQuat.current.copy(hips.quaternion);
-  }, -3); // priority -3: runs before wind(-2), FBX(-1), animator(0)
+  }, -3); 
 
   // ─── Add pendant accessory ────────────────────────────────────────────────
   useEffect(() => {
@@ -239,7 +222,6 @@ export function VrmModel({
     if (!neckBone) return;
 
     const pendant = new THREE.Group();
-
     const chainGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.08, 6);
     const chainMat = new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.8, roughness: 0.2 });
     const chain = new THREE.Mesh(chainGeo, chainMat);
@@ -272,56 +254,7 @@ export function VrmModel({
     };
   }, [vrm]);
 
-  // ─── Drag wind + idle micro-wind → natural hair/cloth physics ─────────────
-  // When dragged: measure movement velocity → inject as external wind into the
-  // spring-bone manager so hair trails behind naturally.
-  // When idle: gentle oscillating micro-wind keeps hair softly alive.
-  const prevWorldPos = useRef<THREE.Vector3>(new THREE.Vector3());
-  const windVelocity = useRef<THREE.Vector3>(new THREE.Vector3());
-  // Static vectors to avoid per-frame heap allocation in the wind loop
-  const _curPos  = useRef(new THREE.Vector3());
-  const _rawVel  = useRef(new THREE.Vector3());
-  const _finalWind = useRef(new THREE.Vector3());
-
-  useFrame((_state, delta) => {
-    if (!vrm?.springBoneManager) return;
-    const manager = vrm.springBoneManager as any;
-
-    const { isDragging, worldPosition } = useAvatarState.getState();
-    _curPos.current.set(worldPosition.x, worldPosition.y, worldPosition.z);
-
-    // Compute velocity from position delta (units/sec) — no allocations!
-    _rawVel.current.copy(_curPos.current).sub(prevWorldPos.current).divideScalar(Math.max(delta, 0.001));
-    prevWorldPos.current.copy(_curPos.current);
-
-    // Smooth velocity so hair doesn't snap
-    windVelocity.current.lerp(_rawVel.current, isDragging ? 0.25 : 0.08);
-
-    const t = _state.clock.elapsedTime;
-
-    // Idle micro-wind: subtle sinusoidal breeze when not being dragged hard
-    const idleWindX = Math.sin(t * 0.6) * 0.015 + Math.sin(t * 1.3) * 0.008;
-    const idleWindZ = Math.cos(t * 0.8) * 0.010;
-
-    const dragScale = isDragging ? 0.15 : 0.0;
-
-    // Reuse static vector — no new THREE.Vector3!
-    _finalWind.current.set(
-      -windVelocity.current.x * dragScale + idleWindX,
-      0,
-      -windVelocity.current.z * dragScale + idleWindZ,
-    );
-
-    // Inject wind into spring-bone manager's externalForce if the API exists.
-    // Do NOT fall back to modifying gravityDir per-joint — that overrides the model
-    // author's tuning and makes hair robotic. If no externalForce API, skip wind.
-    if (manager.externalForce) {
-      manager.externalForce.copy(_finalWind.current);
-    } else if (manager.setExternalForce) {
-      manager.setExternalForce(_finalWind.current);
-    }
-    // No fallback gravityDir manipulation — Pixiv VRM handles physics natively.
-  }, -2); // priority -2: runs before FBX (-1) and animator (0)
+  // Custom wind simulation removed to save CPU.
 
   useVrmAnimator({
     vrm,
@@ -351,11 +284,8 @@ export function VrmModel({
 }
 
 
-/** Module-level counter incremented on each clearAssetResolutionCache call,
- *  used to force DynamicFbxPlayer to re-fetch even when slug hasn't changed. */
 let _cacheBustCounter = 0;
 
-/** Called when assets are added/deleted so stale resolution caches are cleared */
 export function clearAssetResolutionCache() {
   _cacheBustCounter++;
 }
@@ -389,9 +319,8 @@ function DynamicFbxPlayer({ vrm, slug }: { vrm: VRM | null, slug: string }) {
     };
   }, [slug]);
 
-  // Re-fetch when asset library changes (cache busted) even if slug is the same
   useEffect(() => {
-    if (!fbxUrl) return; // Only re-fetch if we already had a URL
+    if (!fbxUrl) return; 
     let cancelled = false;
     
     const reFetchCustom = async () => {
@@ -416,7 +345,6 @@ function DynamicFbxPlayer({ vrm, slug }: { vrm: VRM | null, slug: string }) {
   }, [_cacheBustCounter]);
 
   if (!fbxUrl) return null;
-  // Custom animations play once then return to stand (loop=false)
   return <FbxPlayer vrm={vrm} url={fbxUrl} active={true} type={assetType} loop={false} />;
 }
 

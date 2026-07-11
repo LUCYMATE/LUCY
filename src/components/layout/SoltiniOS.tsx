@@ -30,11 +30,11 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
   }, []);
 
   useEffect(() => {
-    // 1. Latency Ping checks
+    let interval: ReturnType<typeof setInterval> | null = null;
+
     const checkPing = async () => {
       try {
         const start = performance.now();
-        // Fetch current origin with a cache-busting query parameter
         await fetch('/index.html?t=' + start, { method: 'HEAD' });
         const rtt = Math.round(performance.now() - start);
         setLatency(`${rtt}ms`);
@@ -43,33 +43,42 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
       }
     };
 
-    // 2. Tauri Stats checks
     const checkStats = async () => {
       if (!isTauri) return;
       try {
         const stats = await getSystemStats();
         if (stats) {
           setCpu(Math.round(stats.cpu_usage));
-          const totalGB = (stats.total_memory / (1024 * 1024 * 1024)).toFixed(1);
-          const usedGB = (stats.used_memory / (1024 * 1024 * 1024)).toFixed(1);
-          setMemory(`${usedGB} / ${totalGB} GB`);
+          const appMB = (stats.app_memory / (1024 * 1024)).toFixed(0);
+          setMemory(`${appMB} MB`);
         }
       } catch (e) {
         console.warn('Failed to fetch system stats:', e);
       }
     };
 
-    // Run immediately, then on interval
-    checkPing();
-    checkStats();
-
-    const interval = setInterval(() => {
+    // Only run stats when sidebar is visible (not in pet mode or when settings is closed)
+    const startPolling = () => {
+      if (isPetMode || showSettings) return;
       checkPing();
       checkStats();
-    }, 3000);
+      interval = setInterval(() => {
+        checkPing();
+        checkStats();
+      }, 15000);
+    };
 
-    return () => clearInterval(interval);
-  }, [isTauri]);
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    startPolling();
+
+    return () => stopPolling();
+  }, [isTauri, isPetMode, showSettings]);
 
   return (
     <div className={`flex h-full w-full relative min-h-0 ${isPetMode ? 'p-0 max-w-none' : 'px-2 py-1 sm:px-3 gap-2 sm:gap-3'}`}>
@@ -150,7 +159,7 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
                           </div>
                         </div>
                         <div>
-                          <p className="text-[10px] uppercase tracking-widest text-pink-300 opacity-60 mb-0.5">Memory Usage</p>
+                          <p className="text-[10px] uppercase tracking-widest text-pink-300 opacity-60 mb-0.5">App RAM Usage</p>
                           <p className="text-sm font-mono text-white">{memory}</p>
                         </div>
                       </>

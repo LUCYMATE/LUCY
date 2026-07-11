@@ -8,6 +8,7 @@ import { logger } from '../../lib/store/logger';
 import { AudioVisualizer } from '../avatar/AudioVisualizer';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { chatHistory } from '../../lib/store/chatHistory';
+import { useShallow } from 'zustand/react/shallow';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { BOT_NAME } from '../../config/bot-profile';
 
@@ -46,7 +47,17 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
 
-  const { setSpeaking, setThinking, setListening, setEmotion, setIsMicOn, isMicOn, isListening, isSpeaking, isToolAgentRunning } = useAvatarState();
+  const { setSpeaking, setThinking, setListening, setEmotion, setIsMicOn, isMicOn, isListening, isSpeaking, isToolAgentRunning } = useAvatarState(useShallow(s => ({
+    setSpeaking: s.setSpeaking,
+    setThinking: s.setThinking,
+    setListening: s.setListening,
+    setEmotion: s.setEmotion,
+    setIsMicOn: s.setIsMicOn,
+    isMicOn: s.isMicOn,
+    isListening: s.isListening,
+    isSpeaking: s.isSpeaking,
+    isToolAgentRunning: s.isToolAgentRunning
+  })));
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -111,12 +122,19 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     dragStartRef.current = null;
   };
 
-  // Auto-scroll and Auto-save
+  // Auto-scroll and Auto-save (debounced to avoid saving on every transcript chunk)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    chatHistory.saveChat(activeChatId, messages);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      chatHistory.saveChat(activeChatId, messages);
+    }, 500);
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [messages, activeChatId]);
 
   const stopSpeakingTimer = () => {

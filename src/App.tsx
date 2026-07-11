@@ -166,37 +166,31 @@ export default function App() {
 
     let active = true;
     let lastIgnore = true;
+    const win = getCurrentWindow();
 
     const checkMouse = async () => {
       if (!active) return;
       try {
-        const win = getCurrentWindow();
         const cursor = await cursorPosition();
         const winPos = await win.outerPosition();
         const factor = await win.scaleFactor();
 
-        // Convert cursor to logical coordinates relative to viewport
         const x = (cursor.x - winPos.x) / factor;
         const y = (cursor.y - winPos.y) / factor;
 
-        // Find elements with pointer-events-auto
         const elements = document.querySelectorAll('.pointer-events-auto');
-        
         let insideInteractive = false;
         for (let i = 0; i < elements.length; i++) {
           const el = elements[i];
           const rect = el.getBoundingClientRect();
           if (
-            x >= rect.left &&
-            x <= rect.right &&
-            y >= rect.top &&
-            y <= rect.bottom
+            x >= rect.left && x <= rect.right &&
+            y >= rect.top && y <= rect.bottom
           ) {
             insideInteractive = true;
             break;
           }
         }
-
         if (insideInteractive !== !lastIgnore) {
           lastIgnore = !insideInteractive;
           if (active) {
@@ -206,9 +200,8 @@ export default function App() {
       } catch (e) {
         console.warn("Error in pet mode mouse tracking:", e);
       }
-
       if (active) {
-        setTimeout(checkMouse, 200); // Check every 200ms to save CPU
+        setTimeout(checkMouse, 500);
       }
     };
 
@@ -216,7 +209,7 @@ export default function App() {
 
     return () => {
       active = false;
-      getCurrentWindow().setIgnoreCursorEvents(false).catch(() => {});
+      win.setIgnoreCursorEvents(false).catch(() => {});
     };
   }, [isPetMode]);
 
