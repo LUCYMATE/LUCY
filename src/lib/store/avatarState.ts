@@ -20,6 +20,7 @@ interface AvatarState {
   isHearingSound: boolean;
   isToolAgentRunning: boolean;
   isAvatarLocked: boolean;
+  isFbxPlaying: boolean;
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -39,6 +40,7 @@ interface AvatarState {
   setHearingSound: (val: boolean) => void;
   setToolAgentRunning: (val: boolean) => void;
   setIsAvatarLocked: (val: boolean) => void;
+  setIsFbxPlaying: (val: boolean) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -60,6 +62,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isPetMode: false,
   avatarScale: parseFloat(localStorage.getItem('soltini_avatar_size') ?? '100') / 100,
   isAvatarLocked: localStorage.getItem('soltini_avatar_locked') === 'true',
+  isFbxPlaying: false,
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -79,4 +82,5 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setAvatarScale: (val) => set({ avatarScale: val }),
   setToolAgentRunning: (val) => set({ isToolAgentRunning: val }),
   setIsAvatarLocked: (val) => set({ isAvatarLocked: val }),
+  setIsFbxPlaying: (val) => set({ isFbxPlaying: val }),
 }));

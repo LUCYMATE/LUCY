@@ -247,6 +247,7 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
     // the action here, right after it's created, when active is already true.
     if (active) {
       action.reset().fadeIn(0.25).play();
+      useAvatarState.getState().setIsFbxPlaying(true);
     }
 
     return () => {
@@ -258,6 +259,7 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
       mixer.uncacheRoot(vrm.scene);
       mixerRef.current = null;
       actionRef.current = null;
+      useAvatarState.getState().setIsFbxPlaying(false);
     };
   }, [vrm, loadedData]);
 
@@ -267,8 +269,10 @@ export function useFbxAnimation(vrm: VRM | null, url: string, active: boolean, t
     if (!actionRef.current) return;
     if (active) {
       actionRef.current.reset().fadeIn(0.25).play();
+      useAvatarState.getState().setIsFbxPlaying(true);
     } else {
       actionRef.current.fadeOut(0.25);
+      useAvatarState.getState().setIsFbxPlaying(false);
     }
   }, [active]);
 

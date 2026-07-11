@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { VRM } from '@pixiv/three-vrm';
+import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import { useAvatarState } from '../../../lib/store/avatarState';
 import { BoneRest, BONE_LIST, BasePose, Emotion } from './core';
 import { applyLocomotion } from './locomotion';
@@ -64,16 +64,28 @@ export function useVrmAnimator({
     return () => clearTimeout(greetingTimer);
   }, [vrm]);
 
-  // 1.5 When transitioning between poses, reset skeleton to rest pose ONCE.
-  // This cleans up twisted legs/arms/fingers if the avatar was previously in a custom FBX pose or sitting.
+  // 1.5 When transitioning between poses, clean up non-driven bones (like fingers).
+  // We DO NOT reset the main body bones here, because we want them to smoothly 
+  // interpolate back to their rest pose organically without a 1-frame T-pose flash.
   useEffect(() => {
     if (!vrm) return;
-    for (const name of BONE_LIST) {
+    const fingerBones = [
+      VRMHumanBoneName.LeftThumbMetacarpal, VRMHumanBoneName.LeftThumbProximal, VRMHumanBoneName.LeftThumbDistal,
+      VRMHumanBoneName.LeftIndexProximal, VRMHumanBoneName.LeftIndexIntermediate, VRMHumanBoneName.LeftIndexDistal,
+      VRMHumanBoneName.LeftMiddleProximal, VRMHumanBoneName.LeftMiddleIntermediate, VRMHumanBoneName.LeftMiddleDistal,
+      VRMHumanBoneName.LeftRingProximal, VRMHumanBoneName.LeftRingIntermediate, VRMHumanBoneName.LeftRingDistal,
+      VRMHumanBoneName.LeftLittleProximal, VRMHumanBoneName.LeftLittleIntermediate, VRMHumanBoneName.LeftLittleDistal,
+      VRMHumanBoneName.RightThumbMetacarpal, VRMHumanBoneName.RightThumbProximal, VRMHumanBoneName.RightThumbDistal,
+      VRMHumanBoneName.RightIndexProximal, VRMHumanBoneName.RightIndexIntermediate, VRMHumanBoneName.RightIndexDistal,
+      VRMHumanBoneName.RightMiddleProximal, VRMHumanBoneName.RightMiddleIntermediate, VRMHumanBoneName.RightMiddleDistal,
+      VRMHumanBoneName.RightRingProximal, VRMHumanBoneName.RightRingIntermediate, VRMHumanBoneName.RightRingDistal,
+      VRMHumanBoneName.RightLittleProximal, VRMHumanBoneName.RightLittleIntermediate, VRMHumanBoneName.RightLittleDistal,
+    ];
+    for (const name of fingerBones) {
       const node = vrm.humanoid?.getNormalizedBoneNode(name);
       const r = restPose.current[name];
       if (node && r) {
         node.quaternion.copy(r.quaternion);
-        if (name === 'hips') node.position.copy(r.position);
       }
     }
   }, [basePose, vrm]);
@@ -99,26 +111,30 @@ export function useVrmAnimator({
     const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
 
     // Detect if the current pose is driven entirely by an FBX animation
-    // If it's not one of our hardcoded procedural poses, it MUST be a custom FBX animation
     const proceduralPoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'caress', 'sleep'];
     const isFbxPose = !proceduralPoses.includes(basePose);
+
+    // To prevent the avatar from freezing for 2-3 frames while the FBX file loads from disk,
+    // we force procedural animations to continue playing for 0.5 seconds after switching to an FBX pose.
+    const timeSincePoseChange = (Date.now() - useAvatarState.getState().lastPoseOverrideTime) / 1000;
+    const shouldSkipProcedural = isFbxPose && timeSincePoseChange > 0.5;
 
     // ── Model facing ──────────────────────────────────────────────────────
     // Do NOT force model facing if an FBX animation is playing, 
     // otherwise animations that spin the character around will be blocked!
-    if (vrm.scene && !isFbxPose) {
+    if (vrm.scene && !shouldSkipProcedural) {
       vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, moveDirection, 0.1);
     }
 
     // ── Step 1: Body / locomotion (hips, spine, legs) ─────────────────────
     if (isPeeking) {
       applyPeek(vrm, rest, t, isPeekLeft);
-    } else if (!isFbxPose) {
+    } else if (!shouldSkipProcedural) {
       applyLocomotion(vrm, rest, t, isWalking, isSitting, useAvatarState.getState().isDragging, useAvatarState.getState().dragOffset, basePose);
     }
 
     // ── Step 2: Flirty pose (body shape override) ─────────────────────────
-    if (isFlirtyPose && !isWalking && !isFbxPose) {
+    if (isFlirtyPose && !isWalking && !shouldSkipProcedural) {
       applyFlirty(vrm, rest, t, basePose);
     }
 
@@ -130,7 +146,7 @@ export function useVrmAnimator({
     const shouldSpeak = isSpeaking && !isFbxPose;
 
     // ── Step 3: Upper-body gestures (arms, head, neck) ────────────────────
-    if (!isFbxPose) {
+    if (!shouldSkipProcedural) {
       applyGestures(
         vrm, rest, t,
         isGreeting, shouldSpeak, isThinking, actuallyHearing,
