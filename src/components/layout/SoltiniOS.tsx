@@ -25,6 +25,18 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
   }, [logs]);
 
   useEffect(() => {
+    if (isPetMode) {
+      setShowSettings(false);
+    }
+  }, [isPetMode]);
+
+  useEffect(() => {
+    const handleOpenSettings = () => setShowSettings(true);
+    window.addEventListener('soltini-open-settings', handleOpenSettings);
+    return () => window.removeEventListener('soltini-open-settings', handleOpenSettings);
+  }, []);
+
+  useEffect(() => {
     const unsubscribe = logger.subscribe(setLogs);
     return () => { unsubscribe(); };
   }, []);

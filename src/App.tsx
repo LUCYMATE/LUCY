@@ -8,7 +8,7 @@ import { listen } from '@tauri-apps/api/event';
 import { LogicalSize, LogicalPosition, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/dpi';
 
 export default function App() {
-  const [isPetMode, setIsPetMode] = useState(false);
+  const [isPetMode, setIsPetMode] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const normalSizeRef = useRef<{width: number, height: number} | null>(null);
@@ -44,6 +44,11 @@ export default function App() {
       }
 
       await safe(win.setMinSize(new LogicalSize(800, 600)));
+      
+      if (!normalPosRef.current) {
+        await safe(win.center());
+      }
+      
       setIsPetMode(false);
     } catch (e) {
       console.warn("Fallback: window api totally failed", e);
@@ -132,12 +137,29 @@ export default function App() {
 
   useEffect(() => {
     const initWindow = async () => {
+      const safe = async (p: Promise<any>) => {
+        try { await p; } catch (e) { console.warn('Tauri API error:', e); }
+      };
+
       try {
-        await getCurrentWindow().show();
-        // Auto-launch into pet mode if the user has it enabled
-        if (localStorage.getItem('soltini_launch_pet_mode') === 'true') {
-          togglePetMode();
+        const win = getCurrentWindow();
+        
+        // Configure pet mode (transparent, fullscreen overlay) immediately
+        await safe(win.setSkipTaskbar(true));
+        await safe(win.setMaxSize(null));
+        await safe(win.setFullscreen(false));
+        await safe(win.setShadow(false));
+        await safe(win.setResizable(false));
+        await safe(win.setAlwaysOnTop(true));
+        await safe(win.setIgnoreCursorEvents(true));
+
+        const monitor = await currentMonitor();
+        if (monitor) {
+          await safe(win.maximize());
         }
+
+        await safe(win.show());
+        window.dispatchEvent(new CustomEvent('soltini-force-init'));
       } catch (e) {
         // Not running in Tauri or permission missing
       }
@@ -160,6 +182,14 @@ export default function App() {
       unlistenExit?.();
     };
   }, []);
+
+  useEffect(() => {
+    const onEnterPetMode = () => {
+      if (!isPetMode) togglePetMode();
+    };
+    window.addEventListener('soltini-enter-pet-mode', onEnterPetMode);
+    return () => window.removeEventListener('soltini-enter-pet-mode', onEnterPetMode);
+  }, [isPetMode]);
 
   useEffect(() => {
     if (!isPetMode) return;

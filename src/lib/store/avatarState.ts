@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { BasePose, Emotion } from '../../components/avatar/animations/core';
 
+export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+
 interface AvatarState {
   isSpeaking: boolean;
   isThinking: boolean;
@@ -21,6 +23,7 @@ interface AvatarState {
   isToolAgentRunning: boolean;
   isAvatarLocked: boolean;
   isFbxPlaying: boolean;
+  connectionState: ConnectionState;
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -41,6 +44,7 @@ interface AvatarState {
   setToolAgentRunning: (val: boolean) => void;
   setIsAvatarLocked: (val: boolean) => void;
   setIsFbxPlaying: (val: boolean) => void;
+  setConnectionState: (val: ConnectionState) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -63,6 +67,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   avatarScale: parseFloat(localStorage.getItem('soltini_avatar_size') ?? '100') / 100,
   isAvatarLocked: localStorage.getItem('soltini_avatar_locked') === 'true',
   isFbxPlaying: false,
+  connectionState: 'idle',
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -83,4 +88,5 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setToolAgentRunning: (val) => set({ isToolAgentRunning: val }),
   setIsAvatarLocked: (val) => set({ isAvatarLocked: val }),
   setIsFbxPlaying: (val) => set({ isFbxPlaying: val }),
+  setConnectionState: (val) => set({ connectionState: val }),
 }));

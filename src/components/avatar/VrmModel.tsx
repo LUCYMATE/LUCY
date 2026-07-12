@@ -70,7 +70,7 @@ export function VrmModel({
   basePose = 'sit',
   isWalking = false,
   emotion = 'neutral',
-  moveDirection = 0,
+  moveDirection = Math.PI,
   isSitting = false,
 }: VrmModelProps) {
   const [vrm, setVrm] = useState<VRM | null>(globalCachedVrm);

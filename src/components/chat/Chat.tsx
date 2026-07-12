@@ -28,9 +28,7 @@ const cleanMessageText = (text: string) => {
 
 export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
   const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
-  const [messages, setMessages] = useState<Message[]>([
-    { id: crypto.randomUUID(), role: 'model', text: `System ready. I am ${BOT_NAME}. How can I assist you?` },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [initialized, setInitialized] = useState(false);
   const isMicPendingRef = useRef(false);
@@ -41,13 +39,12 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     setIsMicPendingState(val);
   };
   
-  const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle');
   const [statusDetail, setStatusDetail] = useState('');
   const [isMuted, setIsMuted] = useState(() => localStorage.getItem('soltini_muted') === 'true');
   const [inputAnalyser, setInputAnalyser] = useState<AnalyserNode | null>(null);
   const [outputAnalyser, setOutputAnalyser] = useState<AnalyserNode | null>(null);
 
-  const { setSpeaking, setThinking, setListening, setEmotion, setIsMicOn, isMicOn, isListening, isSpeaking, isToolAgentRunning } = useAvatarState(useShallow(s => ({
+  const { setSpeaking, setThinking, setListening, setEmotion, setIsMicOn, isMicOn, isListening, isSpeaking, isToolAgentRunning, connectionState, setConnectionState } = useAvatarState(useShallow(s => ({
     setSpeaking: s.setSpeaking,
     setThinking: s.setThinking,
     setListening: s.setListening,
@@ -56,7 +53,9 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     isMicOn: s.isMicOn,
     isListening: s.isListening,
     isSpeaking: s.isSpeaking,
-    isToolAgentRunning: s.isToolAgentRunning
+    isToolAgentRunning: s.isToolAgentRunning,
+    connectionState: s.connectionState,
+    setConnectionState: s.setConnectionState
   })));
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -180,9 +179,16 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     const outAnalyser = player.getAnalyser();
     setOutputAnalyser(outAnalyser);
 
+    let hasSentGreeting = false;
     gemini.onStateChange = (state, detail) => {
       setConnectionState(state);
       setStatusDetail(detail ?? '');
+
+      if (state === 'connected' && !hasSentGreeting) {
+        hasSentGreeting = true;
+        gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
+      }
+
       if (state === 'error' && detail) {
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(), role: 'model',
@@ -485,6 +491,16 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     };
   }, []); 
 
+  // Auto-initialize the system (and open the mic) on mount
+  useEffect(() => {
+    if (!initialized) {
+      const timer = setTimeout(() => {
+        initSystem(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [initialized]);
+
   const statusColor =
     connectionState === 'connected' ? 'text-green-400' :
       connectionState === 'error' ? 'text-red-400' :
@@ -498,32 +514,70 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
 
   return (
     <div className={`flex flex-col h-full min-h-0 bg-transparent ${isPetMode ? 'pointer-events-none' : ''}`}>
-      {!initialized ? (
-        /* ── Splash Screen ──────────────────────────────────────── */
-        <div 
-          className={`flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-1000 ${isPetMode ? 'hidden' : ''}`}
-          data-tauri-drag-region
-        >
-          <div className="w-32 h-32 rounded-full bg-pink-500/10 flex items-center justify-center mb-8 relative">
-            <div className="absolute inset-0 bg-pink-500/20 blur-xl rounded-full animate-pulse" />
-            <Activity className="w-12 h-12 text-pink-500 relative z-10" />
-          </div>
-          <h2 className="text-3xl font-bold tracking-widest uppercase mb-4 text-white">System Soltini</h2>
-          <p className="text-white/50 max-w-md mb-12">
-            Autonomous intelligence core. Gemini 3.1 Flash Live.
-          </p>
-          <button
-            onClick={() => initSystem(true)}
-            className="px-12 h-16 rounded-3xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold tracking-[0.2em] transform hover:scale-105 transition-all shadow-[0_0_40px_rgba(244,63,94,0.4)] pointer-events-auto"
-          >
-            INITIALIZE CORE
-          </button>
-        </div>
-      ) : (
-        <>
+      <>
+          {/* ── Pet Status Bar ────────────────────────────────────── */}
+          {isPetMode && (
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-[200] pointer-events-auto flex items-center gap-2">
+              
+              {/* Agent Status (Purple Dot) */}
+              {isToolAgentRunning && (
+                <div className="flex items-center" title="Agent is working...">
+                  <div className="relative flex items-center justify-center">
+                    <div className="absolute w-1.5 h-1.5 rounded-full bg-purple-500 animate-ping opacity-60"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-400"></div>
+                  </div>
+                </div>
+              )}
+
+              {/* Connection Status (Green/Yellow/Red Dot) */}
+              <div 
+                className={`flex items-center ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-110' : ''}`}
+                title={['disconnected', 'error'].includes(connectionState) ? "Disconnected - Click to reconnect" : "Connection Status"}
+                onClick={() => {
+                  if (['disconnected', 'error'].includes(connectionState)) initSystem();
+                }}
+              >
+                <div className="relative flex items-center justify-center">
+                  {connectionState === 'connected' && (
+                    <>
+                      <div className="absolute w-1.5 h-1.5 rounded-full bg-green-500 animate-ping opacity-60"></div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+                    </>
+                  )}
+                  {connectionState === 'connecting' && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"></div>
+                  )}
+                  {/* The Red Bouncing Disconnect Dot */}
+                  {['disconnected', 'error'].includes(connectionState) && (
+                    <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,1)] animate-bounce"></div>
+                  )}
+                </div>
+              </div>
+
+              {/* Mic Status (Pink/Grey Dot) */}
+              <div 
+                className="flex items-center cursor-pointer hover:scale-110 transition-transform"
+                title={isMicOn ? "Microphone ON - Click to Mute" : "Microphone OFF - Click to Listen"}
+                onClick={toggleMic}
+              >
+                <div className="relative flex items-center justify-center">
+                  {isMicOn ? (
+                    <>
+                      <div className="absolute w-1.5 h-1.5 rounded-full bg-pink-500 animate-ping opacity-60"></div>
+                      <div className="w-1.5 h-1.5 rounded-full bg-pink-400"></div>
+                    </>
+                  ) : (
+                    <div className="w-1.5 h-1.5 rounded-full bg-white/20"></div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+
           {/* ── Top Status Bar ────────────────────────────────────── */}
-          {(
-            <div className={`shrink-0 p-4 flex items-center gap-4 ${isPetMode ? 'justify-center bg-transparent pointer-events-none' : 'justify-between border-b border-white/5 bg-black/10'}`}>
+          {!isPetMode && (
+            <div className="shrink-0 p-4 flex items-center gap-4 justify-between border-b border-white/5 bg-black/10">
             {isToolAgentRunning ? (
               <div className="flex items-center gap-2 text-pink-400 font-mono text-xs animate-pulse">
                 <span className="flex h-2 w-2 relative">
@@ -536,7 +590,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
               <div /> // empty placeholder for layout balance
             )}
             <div 
-              className={`flex items-center gap-2 font-mono transition-all ${isPetMode ? 'text-[10px] opacity-70 hover:opacity-100 pointer-events-auto' : 'text-xs'} ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-105' : ''}`}
+              className={`flex items-center gap-2 font-mono transition-all text-xs ${statusColor} ${['disconnected', 'error'].includes(connectionState) ? 'cursor-pointer hover:scale-105' : ''}`}
               onClick={() => {
                 if (['disconnected', 'error'].includes(connectionState)) initSystem();
               }}
@@ -551,39 +605,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
           )}
 
           {/* ── Content Area ─────────────────────────────────────────── */}
-          {/* Mini mode removed — always show full chat */}
-          {isPetMode ? (
-            <div 
-              onPointerDown={handlePetPointerDown}
-              onPointerMove={handlePetPointerMove}
-              onPointerUp={handlePetPointerUp}
-              style={{
-                transform: `translate(${petDragOffset.x}px, ${petDragOffset.y}px)`,
-                touchAction: 'none'
-              }}
-              className="absolute bottom-6 right-6 z-[100] pointer-events-auto flex items-center gap-1.5 bg-black/40 backdrop-blur-md p-1.5 rounded-full border border-white/10 shadow-2xl cursor-grab active:cursor-grabbing select-none"
-            >
-              <button
-                type="button"
-                onClick={toggleMic}
-                disabled={isMicPending}
-                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer ${isMicOn
-                    ? 'bg-pink-600/30 border-pink-500 text-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.5)] animate-pulse'
-                    : 'bg-black/40 border-white/10 text-white/40 hover:border-white/30 hover:text-white/70'
-                  } ${isMicPending ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isMicOn ? <Mic className="w-3.5 h-3.5" /> : (isMicPending ? <Activity className="w-3.5 h-3.5 animate-spin" /> : <MicOff className="w-3.5 h-3.5" />)}
-              </button>
-              <button
-                type="button"
-                onClick={() => emit('soltini-exit-pet-mode')}
-                title="Exit Pet Mode"
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center border border-white/10 bg-black/40 text-white/40 hover:border-white/30 hover:text-white/70 hover:bg-red-600/30 hover:text-red-400 hover:border-red-500/50 transition-all cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
+          {!isPetMode && (
             <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden" ref={containerRef}>
               
               {/* Messages */}
@@ -668,7 +690,6 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
             </div>
           )}
         </>
-      )}
     </div>
   );
 }

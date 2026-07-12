@@ -7,7 +7,7 @@ import { VrmModel, clearVrmCache, clearAssetResolutionCache } from './VrmModel';
 import { clearFbxCache } from './animations/useFbxAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
-import { X, Lock, Unlock } from 'lucide-react';
+import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2 } from 'lucide-react';
 
 // Highly optimized FPS limiter using rAF instead of setInterval
 function FpsLimiter() {
@@ -177,7 +177,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   })));
 
   const groupRef = useRef<THREE.Group>(null);
-  const [internalMoveDir, setInternalMoveDir] = useState(0);
+  const [internalMoveDir, setInternalMoveDir] = useState(Math.PI);
 
   useEffect(() => {
     const onSettingsChanged = () => {
@@ -364,13 +364,15 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
 }
 
 function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
-  const { isAvatarLocked, setIsAvatarLocked, avatarScale, setAvatarScale } = useAvatarState(useShallow(s => ({
+  const { isAvatarLocked, setIsAvatarLocked, avatarScale, setAvatarScale, isMicOn, isPetMode } = useAvatarState(useShallow(s => ({
     isAvatarLocked: s.isAvatarLocked,
     setIsAvatarLocked: s.setIsAvatarLocked,
     avatarScale: s.avatarScale,
-    setAvatarScale: s.setAvatarScale
+    setAvatarScale: s.setAvatarScale,
+    isMicOn: s.isMicOn,
+    isPetMode: s.isPetMode
   })));
-  const [isLowFps, setIsLowFps] = useState(() => localStorage.getItem('soltini_low_fps') === 'true');
+  const [showSizeSlider, setShowSizeSlider] = useState(false);
 
   const setSize = (pct: number) => {
     localStorage.setItem('soltini_avatar_size', pct.toString());
@@ -385,68 +387,131 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     onClose();
   };
 
-  const toggleLowFps = () => {
-    const val = !isLowFps;
-    setIsLowFps(val);
-    localStorage.setItem('soltini_low_fps', String(val));
-    window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+  const handleMicToggle = async () => {
+    const { emit } = await import('@tauri-apps/api/event');
+    emit('soltini-toggle-mic');
   };
 
-  const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
-  const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
-  const menuW = 200;
-  const menuH = 340;
-  const finalX = x + menuW > ww ? ww - menuW - 10 : x;
-  const finalY = y + menuH > wh ? wh - menuH - 10 : y;
+  const openChat = async () => {
+    const { emit } = await import('@tauri-apps/api/event');
+    emit('soltini-exit-pet-mode');
+    onClose();
+  };
+
+  const openSettings = async () => {
+    const { emit } = await import('@tauri-apps/api/event');
+    emit('soltini-exit-pet-mode');
+    window.dispatchEvent(new CustomEvent('soltini-open-settings'));
+    onClose();
+  };
+
+  const closeApp = async () => {
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().close();
+    } catch (e) {
+      console.warn("Close only works in Tauri apps");
+    }
+  };
+
+  // Radial math
+  const radius = 65;
+  const items = [
+    { id: 'mic', icon: isMicOn ? <Mic className="w-5 h-5 text-pink-400" /> : <MicOff className="w-5 h-5 text-white/50" />, action: handleMicToggle, label: 'Mic' },
+    ...(isPetMode 
+      ? [
+          { id: 'chat', icon: <MessageCircle className="w-5 h-5 text-blue-400" />, action: openChat, label: 'Chat' },
+          { id: 'settings', icon: <Settings className="w-5 h-5 text-gray-300" />, action: openSettings, label: 'Settings' }
+        ]
+      : [
+          { 
+            id: 'petmode', 
+            icon: <Wand2 className="w-5 h-5 text-pink-400" />, 
+            action: () => {
+              window.dispatchEvent(new CustomEvent('soltini-enter-pet-mode'));
+              onClose();
+            }, 
+            label: 'Return to Pet Mode' 
+          }
+        ]
+    ),
+    { id: 'size', icon: <Maximize2 className="w-5 h-5 text-green-400" />, action: () => setShowSizeSlider(!showSizeSlider), label: 'Size' },
+    { id: 'lock', icon: isAvatarLocked ? <Lock className="w-5 h-5 text-yellow-400" /> : <Unlock className="w-5 h-5 text-white/50" />, action: handleLockAvatar, label: 'Lock' },
+    { id: 'close', icon: <Power className="w-5 h-5 text-red-500" />, action: closeApp, label: 'Close App' },
+  ];
 
   return (
     <div
-      className="pet-context-menu fixed glass pointer-events-auto flex flex-col p-2 z-[9999] rounded-2xl border border-pink-500/20 shadow-xl shadow-pink-500/10 text-white font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-      style={{ left: finalX, top: finalY, width: menuW, backdropFilter: 'blur(16px)' }}
+      className="pet-context-menu fixed pointer-events-auto z-[9999] animate-in fade-in zoom-in-95 duration-200"
+      style={{ left: x, top: y, width: 0, height: 0 }}
     >
-      <div className="text-xs font-bold uppercase tracking-wider text-pink-400 mb-2 px-2 pt-1 flex justify-between items-center">
-        Avatar Options
-        <X className="w-3 h-3 cursor-pointer opacity-50 hover:opacity-100" onClick={onClose} />
-      </div>
+      {/* Pink Round Ribbon Path (Track) */}
+      <svg 
+        className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none drop-shadow-[0_0_10px_rgba(236,72,153,0.4)]"
+        width={radius * 2 + 60} 
+        height={radius * 2 + 60}
+      >
+        <circle 
+          cx={radius + 30} 
+          cy={radius + 30} 
+          r={radius} 
+          fill="none" 
+          stroke="rgba(236,72,153,0.25)" 
+          strokeWidth="44"
+          className="pointer-events-auto"
+        />
+        <circle 
+          cx={radius + 30} 
+          cy={radius + 30} 
+          r={radius} 
+          fill="none" 
+          stroke="rgba(236,72,153,0.5)" 
+          strokeWidth="1"
+          strokeDasharray="4 4"
+        />
+      </svg>
 
-      <button onClick={handleLockAvatar} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left">
-        {isAvatarLocked ? <Lock className="w-4 h-4 text-pink-400" /> : <Unlock className="w-4 h-4" />}
-        {isAvatarLocked ? 'Unlock Position' : 'Lock Position'}
+      <button 
+        onClick={onClose}
+        title="Close Menu"
+        className="absolute -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full glass border border-pink-300 flex items-center justify-center hover:bg-pink-500/40 transition-colors shadow-lg z-10 pointer-events-auto"
+      >
+        <X className="w-6 h-6 text-white" />
       </button>
 
-      <div className="px-2 py-1 flex items-center justify-between text-sm">
-        <span className="text-white/50 text-xs">Low FPS Mode (30)</span>
-        <button
-          onClick={toggleLowFps}
-          className={`relative w-8 h-4 rounded-full transition-colors ${isLowFps ? 'bg-pink-500' : 'bg-white/20'}`}
-        >
-          <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${isLowFps ? 'translate-x-4' : 'translate-x-0'}`} />
-        </button>
-      </div>
+      {items.map((item, i) => {
+        const angle = (i * (360 / items.length) - 90) * (Math.PI / 180);
+        const bx = Math.cos(angle) * radius;
+        const by = Math.sin(angle) * radius;
+        return (
+          <button
+            key={item.id}
+            onClick={item.action}
+            title={item.label}
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-11 h-11 rounded-full glass border border-white/10 flex items-center justify-center hover:bg-white/20 transition-all hover:scale-110 shadow-md pointer-events-auto"
+            style={{ left: bx, top: by }}
+          >
+            {item.icon}
+          </button>
+        );
+      })}
 
-      <div className="my-1 border-t border-white/10" />
-
-      <div className="px-2 py-1 flex flex-col gap-1">
-        <span className="text-[10px] text-white/50 uppercase">Size</span>
-        <input 
-          type="range" min="50" max="200" step="10" 
-          value={Math.round(avatarScale * 100)} 
-          onChange={(e) => setSize(parseInt(e.target.value))}
-          className="w-full h-1 bg-white/20 rounded-full appearance-none accent-pink-500 cursor-pointer"
-        />
-        <div className="flex gap-1 mt-1">
-          <button onClick={() => setSize(70)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">S</button>
-          <button onClick={() => setSize(100)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">M</button>
-          <button onClick={() => setSize(150)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">L</button>
+      {showSizeSlider && (
+        <div className="absolute top-24 -translate-x-1/2 w-48 glass rounded-xl p-3 border border-white/10 flex flex-col gap-2 shadow-xl animate-in slide-in-from-top-2 fade-in pointer-events-auto">
+          <span className="text-[10px] text-white/50 uppercase text-center font-bold">Avatar Size</span>
+          <input 
+            type="range" min="50" max="200" step="10" 
+            value={Math.round(avatarScale * 100)} 
+            onChange={(e) => setSize(parseInt(e.target.value))}
+            className="w-full h-1.5 bg-white/20 rounded-full appearance-none accent-pink-500 cursor-pointer pointer-events-auto"
+          />
+          <div className="flex gap-1 mt-1">
+            <button onClick={() => setSize(70)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">S</button>
+            <button onClick={() => setSize(100)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">M</button>
+            <button onClick={() => setSize(150)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">L</button>
+          </div>
         </div>
-      </div>
-
-      <div className="my-1 border-t border-white/10" />
-
-      <div className="px-2 py-1.5 flex items-center justify-between text-sm">
-        <span className="text-white/50">Current Pose</span>
-        <span className="capitalize text-pink-400 font-medium">{useAvatarState.getState().basePose}</span>
-      </div>
+      )}
     </div>
   );
 }
