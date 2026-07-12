@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { readFile } from '@tauri-apps/plugin-fs';
 
 export type AssetType = 'vrm' | 'fbx' | 'bvh';
 
@@ -66,19 +67,31 @@ export async function listAssets(): Promise<AssetRecord[]> {
 
 export async function getAssetDataUrl(id: string): Promise<string | null> {
   try {
-    const resultStr: string = await invoke('read_3d_asset', { id });
-    const { data: base64, type } = JSON.parse(resultStr);
-    const mime = type === 'vrm' ? 'model/gltf-binary' : 'application/octet-stream';
+    // 1. Get the native absolute path to the file
+    const absolutePath: string = await invoke('get_3d_asset_path', { id });
     
-    // Use the browser's native C++ networking stack to decode 30MB of base64 instantly!
-    // This entirely bypasses the Javascript thread freeze caused by the old manual loop.
-    const response = await fetch(`data:${mime};base64,${base64}`);
-    const blob = await response.blob();
+    // 2. Use Tauri's native FS plugin to read the file into memory instantly.
+    // This uses zero-copy binary serialization and completely avoids slow JSON base64 parsing!
+    const bytes = await readFile(absolutePath);
     
+    // 3. Create the Blob URL
+    const blob = new Blob([bytes], { type: 'model/gltf-binary' });
     return URL.createObjectURL(blob);
   } catch (e) {
-    console.error('[getAssetDataUrl] failed:', e);
-    return null;
+    console.error('[getAssetDataUrl] native FS read failed, falling back to JSON IPC:', e);
+    
+    // FALLBACK: If the FS plugin isn't registered yet, fall back to the old method
+    try {
+      const resultStr: string = await invoke('read_3d_asset', { id });
+      const { data: base64, type } = JSON.parse(resultStr);
+      const mime = type === 'vrm' ? 'model/gltf-binary' : 'application/octet-stream';
+      const response = await fetch(`data:${mime};base64,${base64}`);
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (fallbackError) {
+      console.error('[getAssetDataUrl] fallback JSON IPC failed:', fallbackError);
+      return null;
+    }
   }
 }
 

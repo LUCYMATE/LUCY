@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video } from 'lucide-react';
+import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video, Brain } from 'lucide-react';
 import { AssetLibrary } from './AssetLibrary';
 import { logger } from '../../lib/store/logger';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { vectorMemory, MemoryFact } from '../../lib/store/vectorMemory';
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<'general' | 'devices' | 'api' | 'shortcuts' | 'assets'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'devices' | 'api' | 'shortcuts' | 'assets' | 'personalized'>('general');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [memories, setMemories] = useState<MemoryFact[]>([]);
   
   const [micId, setMicId] = useState(localStorage.getItem('soltini_mic_id') || '');
   const [camId, setCamId] = useState(localStorage.getItem('soltini_camera_id') || '');
@@ -16,6 +18,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [avatarSize, setAvatarSize] = useState(parseInt(localStorage.getItem('soltini_avatar_size') || '100'));
   
   const [launchPetMode, setLaunchPetMode] = useState(localStorage.getItem('soltini_launch_pet_mode') === 'true');
+  const [autoMic, setAutoMic] = useState(localStorage.getItem('soltini_auto_mic') === 'true');
   const [avatarLocked, setAvatarLocked] = useState(localStorage.getItem('soltini_avatar_locked') === 'true');
   
   const [systemInstruction, setSystemInstruction] = useState(() => {
@@ -33,6 +36,11 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     }).catch(e => {
       logger.add('error', 'Settings', 'Failed to enumerate devices');
     });
+    
+    const loadMemories = () => setMemories(vectorMemory.getMemories());
+    loadMemories();
+    window.addEventListener('soltini-memory-updated', loadMemories);
+    return () => window.removeEventListener('soltini-memory-updated', loadMemories);
   }, []);
 
   const handleMicChange = (val: string) => {
@@ -81,6 +89,13 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const handleLaunchPetModeChange = (val: boolean) => {
     setLaunchPetMode(val);
     localStorage.setItem('soltini_launch_pet_mode', String(val));
+    logger.add('info', 'Settings', `Launch in Pet Mode set to ${val}`);
+  };
+
+  const handleAutoMicChange = (val: boolean) => {
+    setAutoMic(val);
+    localStorage.setItem('soltini_auto_mic', String(val));
+    logger.add('info', 'Settings', `Auto-Start Mic set to ${val}`);
   };
 
   const handleAvatarLockedChange = (val: boolean) => {
@@ -163,6 +178,15 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           >
             <Box className="w-5 h-5" /> Asset Library
           </button>
+
+          <button 
+            onClick={() => setActiveTab('personalized')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-medium ${
+              activeTab === 'personalized' ? 'bg-pink-500 text-white' : 'hover:bg-white/10 text-white/70'
+            }`}
+          >
+            <Brain className="w-5 h-5" /> Personalized
+          </button>
           
           <button 
             onClick={() => setActiveTab('shortcuts')}
@@ -187,17 +211,17 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
             <div className="flex flex-col gap-6">
               
-              {/* Launch in Pet Mode Toggle */}
+              {/* Auto-Start Microphone Toggle */}
               <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex items-center justify-between hover:bg-black/30 transition-colors">
                 <div>
-                  <label className="block text-sm font-medium text-white">Launch in Pet Mode</label>
-                  <p className="text-xs text-white/40 mt-1">If enabled, Soltini opens directly in Pet Mode (fullscreen desktop companion) on every launch.</p>
+                  <label className="block text-sm font-medium text-white">Auto-Start Microphone</label>
+                  <p className="text-xs text-white/40 mt-1">If enabled, Soltini will automatically start listening the moment you open the app.</p>
                 </div>
                 <button
-                  onClick={() => handleLaunchPetModeChange(!launchPetMode)}
-                  className={`relative w-12 h-6 rounded-full transition-colors ${launchPetMode ? 'bg-pink-500' : 'bg-white/20'}`}
+                  onClick={() => handleAutoMicChange(!autoMic)}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${autoMic ? 'bg-pink-500' : 'bg-white/20'}`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${launchPetMode ? 'translate-x-6' : 'translate-x-0'}`} />
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${autoMic ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
               </div>
 
@@ -430,6 +454,38 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
         {activeTab === 'assets' && (
            <AssetLibrary />
+        )}
+
+        {activeTab === 'personalized' && (
+          <div className="flex flex-col gap-8 max-w-2xl w-full">
+            <div>
+              <h3 className="text-2xl font-bold mb-2">Personalized Memory</h3>
+              <p className="text-white/60 text-sm mb-6">Soltini's "invisible brain". The AI will silently extract and save important facts about you (e.g. your hobbies, preferences) from your conversations to personalize future interactions.</p>
+            </div>
+            
+            <div className="bg-black/20 border border-white/5 rounded-2xl p-6">
+              {memories.length === 0 ? (
+                <p className="text-white/40 text-sm italic">No memories saved yet. Talk to Soltini naturally, and she will silently remember important details about you!</p>
+              ) : (
+                <div className="space-y-3">
+                  {memories.map(m => (
+                    <div key={m.id} className="flex items-start justify-between bg-black/40 p-4 rounded-xl border border-white/5 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-white/90 text-sm leading-relaxed">{m.text}</p>
+                        <p className="text-white/30 text-xs">{new Date(m.createdAt).toLocaleString()}</p>
+                      </div>
+                      <button 
+                        onClick={() => vectorMemory.deleteMemory(m.id)} 
+                        className="text-pink-500 hover:text-pink-400 text-sm px-3 py-1.5 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 shrink-0 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

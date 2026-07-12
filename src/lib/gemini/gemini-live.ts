@@ -1,5 +1,7 @@
 import { logger } from '../store/logger';
 import { memoryStore } from '../memory/memory-store';
+
+import { vectorMemory } from '../store/vectorMemory';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { invoke } from '@tauri-apps/api/core';
 import { fetch } from '@tauri-apps/plugin-http';
@@ -58,6 +60,16 @@ async function executeTool(name: string, args: any, deferredMedia?: string[]): P
   } else if (name === 'run_terminal_command') {
     const output = await invoke('run_terminal_command', { command: args.command });
     result = { success: true, output };
+  } else if (name === 'save_memory') {
+    const key = localStorage.getItem('soltini_main_api_key');
+    if (!key) throw new Error('API key required for memory embeddings');
+    const success = await vectorMemory.saveFact(args.fact, key);
+    result = { success, message: success ? 'Memory saved.' : 'Failed to save.' };
+  } else if (name === 'search_memory') {
+    const key = localStorage.getItem('soltini_main_api_key');
+    if (!key) throw new Error('API key required for memory embeddings');
+    const memories = await vectorMemory.searchWithText(args.query, key, 5);
+    result = { success: true, memories };
   } else if (name === 'press_key') {
     await invoke('press_key', { key: args.key });
     result = { success: true };
@@ -340,7 +352,8 @@ CRITICAL BEHAVIORS:
 2. SYSTEM DELEGATION: If the user asks you to perform ANY system automation tasks (like opening websites/YouTube, clicking, scrolling, typing, capturing screen/camera, searching the web, or launching apps) OR if they ask if you can see them or their screen, tell them you can and immediately invoke the 'trigger_automation' tool to do it. DO NOT explain what tools you use.
 3. CONTEXT AWARENESS: Maintain a warm conversational flow.
 4. EMOTIONS: Start appropriate responses with an emotion tag in brackets: [happy], [sad], [angry], [surprised], [thinking], [flirty], or [neutral] to change your expression.
-5. POSES: If the user asks you to do a pose or animation (e.g., ${getValidPoses().join(', ')}), you MUST IMMEDIATELY call the 'set_pose' tool! Do NOT just reply with text alone, you must execute the tool!
+5. POSES: If the user asks you to do a pose or animation, IMMEDIATELY call the 'set_pose' tool!
+6. MEMORY RECALL: If you need to remember a fact about the user, their past, or their preferences, immediately call the 'search_memory' tool to dynamically retrieve it from your vector database to save tokens.
 
 Greeting context: ${timeGreeting}. ${timeContext} ${petNamePrompt}`;
 
@@ -575,6 +588,34 @@ CURRENT SYSTEM STATE:
                       }
                     },
                     required: ['request']
+                  }
+                },
+                {
+                  name: 'save_memory',
+                  description: 'Saves an important fact about the user or their preferences into long-term memory. Use this silently when the user reveals something you should remember for the future.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      fact: {
+                        type: 'STRING',
+                        description: 'A concise fact to remember (e.g., "The user loves coffee", "User is a programmer").'
+                      }
+                    },
+                    required: ['fact']
+                  }
+                },
+                {
+                  name: 'search_memory',
+                  description: 'Searches long-term memory for relevant facts when you need to recall something you might have forgotten.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      query: {
+                        type: 'STRING',
+                        description: 'The search query to find in memory.'
+                      }
+                    },
+                    required: ['query']
                   }
                 }
               ]

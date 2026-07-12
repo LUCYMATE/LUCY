@@ -124,14 +124,57 @@ export function VrmModel({
         
         const loadedVrm = gltf.userData.vrm as VRM;
 
-        // VRAM Optimizations
+        // --- VRAM Optimizations ---
         try {
           VRMUtils.removeUnnecessaryVertices(loadedVrm.scene);
           VRMUtils.combineSkeletons(loadedVrm.scene);
-          VRMUtils.combineMorphs(loadedVrm.scene);
+          VRMUtils.combineMorphs(loadedVrm);
         } catch(e) { console.warn("VRM optimization pass failed", e); }
 
-        loadedVrm.scene.traverse((obj) => { obj.frustumCulled = false; });
+        // Aggressive Texture Downscaler (Limits RAM/VRAM usage)
+        const downscaleTexture = (texture: any, maxSize: number = 1024) => {
+          if (!texture || !texture.image) return texture;
+          const img = texture.image;
+          const width = img.width || img.videoWidth;
+          const height = img.height || img.videoHeight;
+          if (!width || !height || (width <= maxSize && height <= maxSize)) return texture;
+          
+          const scale = Math.min(maxSize / width, maxSize / height);
+          const newWidth = Math.floor(width * scale);
+          const newHeight = Math.floor(height * scale);
+          
+          const canvas = document.createElement('canvas');
+          canvas.width = newWidth;
+          canvas.height = newHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, newWidth, newHeight);
+            const newTexture = new THREE.CanvasTexture(canvas);
+            newTexture.colorSpace = texture.colorSpace;
+            newTexture.flipY = texture.flipY;
+            newTexture.wrapS = texture.wrapS;
+            newTexture.wrapT = texture.wrapT;
+            newTexture.minFilter = texture.minFilter;
+            newTexture.magFilter = texture.magFilter;
+            newTexture.generateMipmaps = texture.generateMipmaps;
+            texture.dispose(); // Free original high-res texture from RAM
+            return newTexture;
+          }
+          return texture;
+        };
+
+        loadedVrm.scene.traverse((obj: any) => { 
+          obj.frustumCulled = false; 
+          if (obj.isMesh && obj.material) {
+            const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+            materials.forEach((mat: any) => {
+              if (mat.map) mat.map = downscaleTexture(mat.map);
+              if (mat.normalMap) mat.normalMap = downscaleTexture(mat.normalMap);
+              if (mat.emissiveMap) mat.emissiveMap = downscaleTexture(mat.emissiveMap);
+            });
+          }
+        });
+        
         loadedVrm.scene.rotation.y = Math.PI;
 
         standardizeVrmBoneNames(loadedVrm);

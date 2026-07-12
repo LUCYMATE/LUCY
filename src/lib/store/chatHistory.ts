@@ -78,6 +78,11 @@ class ChatHistoryManager {
       });
     }
 
+    // Keep only the 15 most recent chats
+    this.chats = this.chats
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 15);
+
     this.saveToStorage();
   }
 

@@ -27,8 +27,14 @@ const cleanMessageText = (text: string) => {
 };
 
 export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
-  const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string>(() => {
+    const chats = chatHistory.getChats();
+    return chats.length > 0 ? chats[0].id : crypto.randomUUID();
+  });
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const chats = chatHistory.getChats();
+    return chats.length > 0 ? chats[0].messages : [];
+  });
   const [input, setInput] = useState('');
   const [initialized, setInitialized] = useState(false);
   const isMicPendingRef = useRef(false);
@@ -186,7 +192,16 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
 
       if (state === 'connected' && !hasSentGreeting) {
         hasSentGreeting = true;
-        gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
+        
+        // Add a small delay to ensure the WebSocket is fully ready to receive and process messages
+        setTimeout(() => {
+          gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
+          
+          // Auto-start microphone if user configured it
+          if (localStorage.getItem('soltini_auto_mic') === 'true') {
+            setTimeout(() => toggleMic(), 500);
+          }
+        }, 1000);
       }
 
       if (state === 'error' && detail) {

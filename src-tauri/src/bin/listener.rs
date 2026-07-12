@@ -20,7 +20,10 @@ fn get_soltini_path() -> std::path::PathBuf {
 
 fn is_soltini_running() -> bool {
     unsafe {
-        let name: Vec<u16> = MUTEX_NAME.encode_utf16().chain(std::iter::once(0)).collect();
+        let name: Vec<u16> = MUTEX_NAME
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
         let handle = CreateMutexW(std::ptr::null_mut(), 0, name.as_ptr());
         if handle.is_null() {
             return false;

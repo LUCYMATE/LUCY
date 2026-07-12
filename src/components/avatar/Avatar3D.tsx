@@ -191,29 +191,38 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
     return () => window.removeEventListener('soltini-settings-changed', onSettingsChanged);
   }, []);
 
-  const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const initialModelUrl = typeof window !== 'undefined' && localStorage.getItem('soltini_has_custom_avatar') === 'false' ? '/soltini.vrm' : null;
+  const [modelUrl, setModelUrl] = useState<string | null>(initialModelUrl);
   const [vrmReloadKey, setVrmReloadKey] = useState(0);
   const blobUrlRef = useRef<string | null>(null);
+  const modelUrlRef = useRef<string | null>(initialModelUrl);
 
   const refreshModelUrl = (forceBustCache = false) => {
     import('../../lib/system/assetDB').then(({ getAssetDataUrl, getAsset }) => {
       getAsset('custom-avatar').then(asset => {
         if (!asset || asset.type !== 'vrm') {
-          if (modelUrl !== '/soltini.vrm' || forceBustCache) {
-            if (blobUrlRef.current) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
-            clearVrmCache?.();
+          localStorage.setItem('soltini_has_custom_avatar', 'false');
+          if (modelUrlRef.current !== '/soltini.vrm' || forceBustCache) {
+            if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
+            if (modelUrlRef.current !== '/soltini.vrm' || forceBustCache) clearVrmCache?.();
+            modelUrlRef.current = '/soltini.vrm';
             setModelUrl('/soltini.vrm');
             setVrmReloadKey(k => k + 1);
           }
           return;
         }
+        
+        localStorage.setItem('soltini_has_custom_avatar', 'true');
         getAssetDataUrl('custom-avatar').then(url => {
           if (url) {
-            if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-            blobUrlRef.current = url;
-            clearVrmCache?.();
-            setModelUrl(url);
-            setVrmReloadKey(k => k + 1);
+            if (modelUrlRef.current !== url || forceBustCache) {
+              if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) URL.revokeObjectURL(blobUrlRef.current);
+              blobUrlRef.current = url;
+              clearVrmCache?.();
+              modelUrlRef.current = url;
+              setModelUrl(url);
+              setVrmReloadKey(k => k + 1);
+            }
           }
         });
       });

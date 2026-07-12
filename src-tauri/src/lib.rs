@@ -1,13 +1,13 @@
-use enigo::{Enigo, KeyboardControllable, MouseButton, MouseControllable, Key};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use enigo::{Enigo, Key, KeyboardControllable, MouseButton, MouseControllable};
+use screenshots::Screen;
 use std::sync::Mutex;
 use sysinfo::System;
-use tauri::{Emitter, Manager};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton as TrayMouseButton};
 use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton as TrayMouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
-use screenshots::Screen;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 struct AppState {
     sys: Mutex<System>,
@@ -22,7 +22,7 @@ fn get_system_stats(state: tauri::State<AppState>) -> serde_json::Value {
 
     let cpu_usage = sys.global_cpu_info().cpu_usage();
     let total_memory = sys.total_memory();
-    
+
     // Calculate exact RAM used by this app and its webview child processes
     let current_pid = sysinfo::get_current_pid().unwrap();
     let mut app_memory: u64 = 0;
@@ -60,7 +60,10 @@ fn get_system_stats(state: tauri::State<AppState>) -> serde_json::Value {
 
 #[tauri::command]
 fn open_external_url(app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
-    app_handle.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+    app_handle
+        .opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -98,8 +101,12 @@ fn run_python_script(script: String) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
 
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to execute python: {}. Ensure Python is installed.", e))?;
+    let output = cmd.output().map_err(|e| {
+        format!(
+            "Failed to execute python: {}. Ensure Python is installed.",
+            e
+        )
+    })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -124,7 +131,8 @@ fn run_terminal_command(command: String) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
 
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| format!("Failed to execute command: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -229,19 +237,21 @@ fn press_key_combo(keys: Vec<String>) -> Result<(), String> {
 fn capture_screen() -> Result<serde_json::Value, String> {
     let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
     let screen = screens.first().ok_or("No screen found")?;
-    
-    let mut img = screen.capture().map_err(|e| format!("Capture failed: {}", e))?;
-    
+
+    let mut img = screen
+        .capture()
+        .map_err(|e| format!("Capture failed: {}", e))?;
+
     let width = img.width();
     let height = img.height();
     let grid_spacing = 100;
-    
+
     // Draw 100px grid overlay
     for x in (0..width).step_by(grid_spacing as usize) {
         for y in 0..height {
             let pixel = img.get_pixel_mut(x, y);
             // Subtle Red for vertical
-            pixel[0] = 255; 
+            pixel[0] = 255;
             pixel[1] = pixel[1].saturating_sub(50);
             pixel[2] = pixel[2].saturating_sub(50);
         }
@@ -258,9 +268,13 @@ fn capture_screen() -> Result<serde_json::Value, String> {
 
     let mut bytes = Vec::new();
     let dynamic_img = screenshots::image::DynamicImage::ImageRgba8(img);
-    dynamic_img.write_to(&mut std::io::Cursor::new(&mut bytes), screenshots::image::ImageFormat::Jpeg)
+    dynamic_img
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            screenshots::image::ImageFormat::Jpeg,
+        )
         .map_err(|e| format!("JPEG conversion failed: {}", e))?;
-    
+
     let base64_image = STANDARD.encode(&bytes);
 
     Ok(serde_json::json!({
@@ -271,8 +285,17 @@ fn capture_screen() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn save_3d_asset(app_handle: tauri::AppHandle, id: String, asset_type: String, name: String, data_base64: String) -> Result<(), String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+fn save_3d_asset(
+    app_handle: tauri::AppHandle,
+    id: String,
+    asset_type: String,
+    name: String,
+    data_base64: String,
+) -> Result<(), String> {
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let assets_dir = local_data.join("assets");
     std::fs::create_dir_all(&assets_dir).map_err(|e| e.to_string())?;
 
@@ -300,15 +323,22 @@ fn save_3d_asset(app_handle: tauri::AppHandle, id: String, asset_type: String, n
         "timestamp": now
     });
 
-    std::fs::write(registry_path, serde_json::to_string_pretty(&registry).unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(
+        registry_path,
+        serde_json::to_string_pretty(&registry).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 fn delete_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<(), String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let assets_dir = local_data.join("assets");
-    
+
     let registry_path = assets_dir.join("registry.json");
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).unwrap_or_else(|_| "{}".to_string());
@@ -322,7 +352,10 @@ fn delete_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<(), Strin
             if let Some(obj) = registry.as_object_mut() {
                 obj.remove(&id);
             }
-            let _ = std::fs::write(registry_path, serde_json::to_string_pretty(&registry).unwrap());
+            let _ = std::fs::write(
+                registry_path,
+                serde_json::to_string_pretty(&registry).unwrap(),
+            );
         }
     }
     Ok(())
@@ -330,12 +363,16 @@ fn delete_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<(), Strin
 
 #[tauri::command]
 fn list_3d_assets(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let registry_path = local_data.join("assets").join("registry.json");
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
-        let registry: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-        
+        let registry: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
         if let Some(obj) = registry.as_object() {
             let values: Vec<serde_json::Value> = obj.values().cloned().collect();
             return Ok(serde_json::Value::Array(values));
@@ -346,7 +383,10 @@ fn list_3d_assets(app_handle: tauri::AppHandle) -> Result<serde_json::Value, Str
 
 #[tauri::command]
 fn read_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<String, String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let assets_dir = local_data.join("assets");
 
     let registry_path = assets_dir.join("registry.json");
@@ -361,7 +401,8 @@ fn read_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<String, Str
             return Ok(serde_json::json!({
                 "data": b64,
                 "type": asset_type
-            }).to_string());
+            })
+            .to_string());
         }
     }
     Err("Asset not found".to_string())
@@ -369,9 +410,12 @@ fn read_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<String, Str
 
 #[tauri::command]
 fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String) -> Result<String, String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let assets_dir = local_data.join("assets");
-    
+
     let registry_path = assets_dir.join("registry.json");
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
@@ -380,6 +424,29 @@ fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String) -> Result<String,
                 if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
                     let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
                     return Ok(file_path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    Err("Asset not found".to_string())
+}
+
+#[tauri::command]
+fn read_3d_asset_bytes(app_handle: tauri::AppHandle, id: String) -> Result<Vec<u8>, String> {
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
+    let assets_dir = local_data.join("assets");
+
+    let registry_path = assets_dir.join("registry.json");
+    if registry_path.exists() {
+        let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
+        if let Ok(registry) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(asset) = registry.get(&id) {
+                if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
+                    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+                    return std::fs::read(&file_path).map_err(|e| e.to_string());
                 }
             }
         }
@@ -422,6 +489,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -443,6 +511,7 @@ pub fn run() {
             delete_3d_asset,
             list_3d_assets,
             read_3d_asset,
+            read_3d_asset_bytes,
             get_3d_asset_path,
         ])
         .setup(|app| {
@@ -499,17 +568,17 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 let app_handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    unsafe {
-                        use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+                std::thread::spawn(move || unsafe {
+                    use windows_sys::Win32::System::Threading::{
+                        CreateEventW, WaitForSingleObject,
+                    };
 
-                        let name: Vec<u16> = "SoltiniShowEvent\0".encode_utf16().collect();
-                        let event = CreateEventW(std::ptr::null_mut(), 0, 0, name.as_ptr());
-                        if !event.is_null() {
-                            loop {
-                                WaitForSingleObject(event, u32::MAX);
-                                let _ = app_handle.emit("soltini-exit-pet-mode", ());
-                            }
+                    let name: Vec<u16> = "SoltiniShowEvent\0".encode_utf16().collect();
+                    let event = CreateEventW(std::ptr::null_mut(), 0, 0, name.as_ptr());
+                    if !event.is_null() {
+                        loop {
+                            WaitForSingleObject(event, u32::MAX);
+                            let _ = app_handle.emit("soltini-exit-pet-mode", ());
                         }
                     }
                 });
@@ -540,7 +609,8 @@ pub fn run() {
 
             // Tray Menu
             let show_i = MenuItem::with_id(app, "show", "Show Soltini", true, None::<&str>)?;
-            let pet_mode_i = MenuItem::with_id(app, "pet_mode", "Exit Pet Mode", true, None::<&str>)?;
+            let pet_mode_i =
+                MenuItem::with_id(app, "pet_mode", "Exit Pet Mode", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &pet_mode_i, &quit_i])?;
 
@@ -567,7 +637,10 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| match event {
-                    TrayIconEvent::Click { button: TrayMouseButton::Left, .. } => {
+                    TrayIconEvent::Click {
+                        button: TrayMouseButton::Left,
+                        ..
+                    } => {
                         let app = tray.app_handle();
                         if let Some(win) = app.get_webview_window("main") {
                             win.show().unwrap();

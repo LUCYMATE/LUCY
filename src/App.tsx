@@ -231,7 +231,7 @@ export default function App() {
         console.warn("Error in pet mode mouse tracking:", e);
       }
       if (active) {
-        setTimeout(checkMouse, 500);
+        setTimeout(checkMouse, 200);
       }
     };
 
