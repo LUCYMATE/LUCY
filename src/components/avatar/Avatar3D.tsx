@@ -191,7 +191,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
     return () => window.removeEventListener('soltini-settings-changed', onSettingsChanged);
   }, []);
 
-  const [modelUrl, setModelUrl] = useState<string>('/soltini.vrm');
+  const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [vrmReloadKey, setVrmReloadKey] = useState(0);
   const blobUrlRef = useRef<string | null>(null);
 
@@ -338,18 +338,20 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
         <Stool visible={isCurrentlySitting} />
         <FlyingKisses active={basePose === 'flying-kiss'} />
 
-        <VrmModel
-          url={modelUrl}
-          reloadKey={vrmReloadKey}
-          isSpeaking={isSpeaking}
-          isThinking={isThinking}
-          isListening={isListening}
-          basePose={basePose}
-          isWalking={isWalking}
-          emotion={emotion}
-          moveDirection={internalMoveDir}
-          isSitting={isCurrentlySitting}
-        />
+        {modelUrl && (
+          <VrmModel
+            url={modelUrl}
+            reloadKey={vrmReloadKey}
+            isSpeaking={isSpeaking}
+            isThinking={isThinking}
+            isListening={isListening}
+            basePose={basePose}
+            isWalking={isWalking}
+            emotion={emotion}
+            moveDirection={internalMoveDir}
+            isSitting={isCurrentlySitting}
+          />
+        )}
       </group>
 
       <Html center zIndexRange={[100, 0]}>

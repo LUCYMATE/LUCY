@@ -6,9 +6,11 @@ class AudioWorklet extends AudioWorkletProcessor {
     this.bufferIndex = 0;
     
     // Voice Activity Detection (VAD) properties
-    this.threshold = 0.015; // Amplitude threshold (~1.5% of max volume)
+    // Lowered threshold from 0.015 to 0.003 to catch very quiet speech like "hello"
+    this.threshold = 0.003; 
     this.framesSinceLastLoud = 100000; // Start assumed silent
-    this.tailFrames = 16000 * 1.5; // Send audio for 1.5s after last loud sound
+    // Increased tail to 3.0 seconds to ensure Gemini's server VAD receives enough silence to trigger
+    this.tailFrames = 16000 * 1.0; 
   }
 
   process(inputs, outputs, parameters) {
@@ -30,6 +32,7 @@ class AudioWorklet extends AudioWorkletProcessor {
         this.framesSinceLastLoud += channelData.length;
       }
 
+      // If we've heard loud noise recently, send the audio buffer
       if (this.framesSinceLastLoud < this.tailFrames) {
         for (let i = 0; i < channelData.length; i++) {
           let s = Math.max(-1, Math.min(1, channelData[i]));
@@ -41,7 +44,7 @@ class AudioWorklet extends AudioWorkletProcessor {
           }
         }
       } else {
-        // Reset buffer so next speech chunk starts fresh
+        // Silence limit reached, drop frames to save tokens and reset buffer
         this.bufferIndex = 0;
       }
     }

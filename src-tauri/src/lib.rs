@@ -26,9 +26,26 @@ fn get_system_stats(state: tauri::State<AppState>) -> serde_json::Value {
     // Calculate exact RAM used by this app and its webview child processes
     let current_pid = sysinfo::get_current_pid().unwrap();
     let mut app_memory: u64 = 0;
-    
-    for (pid, process) in sys.processes() {
-        if *pid == current_pid || process.parent() == Some(current_pid) {
+    // We need to collect all descendants to capture the full WebView2 tree (Renderer, GPU, Network, etc.)
+    let mut all_descendants = std::collections::HashSet::new();
+    all_descendants.insert(current_pid);
+
+    let processes = sys.processes();
+    let mut added = true;
+    while added {
+        added = false;
+        for (pid, process) in processes {
+            if let Some(parent_pid) = process.parent() {
+                if all_descendants.contains(&parent_pid) && !all_descendants.contains(pid) {
+                    all_descendants.insert(*pid);
+                    added = true;
+                }
+            }
+        }
+    }
+
+    for pid in all_descendants {
+        if let Some(process) = processes.get(&pid) {
             app_memory += process.memory();
         }
     }

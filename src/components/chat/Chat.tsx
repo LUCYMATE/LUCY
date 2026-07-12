@@ -152,7 +152,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     }, additionalDelaySecs * 1000 + 500); 
   }, [setSpeaking]);
 
-  const initSystem = () => {
+  const initSystem = (autoMic = false) => {
     logger.add('info', 'System Boot', `Initializing ${BOT_NAME}OS and Gemini connection...`);
     setInitialized(true);
 
@@ -243,6 +243,12 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
     };
 
     gemini.connect(apiKey, altApiKey);
+
+    if (autoMic) {
+      setTimeout(() => {
+        toggleMicRef.current();
+      }, 100);
+    }
   };
 
   useEffect(() => {
@@ -295,6 +301,23 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
           recorderRef.current.onData = (pcm16) => {
             geminiRef.current?.sendAudio(pcm16);
           };
+          
+          // Play a tiny, subtle 'ready' beep so the user knows they can speak
+          try {
+            const ctx = new AudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+            setTimeout(() => ctx.close(), 200);
+          } catch(e) {}
         }
         setListening(true);
         setIsMicOn(true);
@@ -490,7 +513,7 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
             Autonomous intelligence core. Gemini 3.1 Flash Live.
           </p>
           <button
-            onClick={initSystem}
+            onClick={() => initSystem(true)}
             className="px-12 h-16 rounded-3xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold tracking-[0.2em] transform hover:scale-105 transition-all shadow-[0_0_40px_rgba(244,63,94,0.4)] pointer-events-auto"
           >
             INITIALIZE CORE
