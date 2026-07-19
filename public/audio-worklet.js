@@ -44,7 +44,13 @@ class AudioWorklet extends AudioWorkletProcessor {
           }
         }
       } else {
-        // Silence limit reached, drop frames to save tokens and reset buffer
+        // Silence limit reached. Drop frames to avoid background noise and save tokens.
+        // HOWEVER, to prevent the WebSocket/TCP connection from silently timing out after 5 minutes
+        // of inactivity, we send a keep-alive frame of pure silence (all zeros) every 60 seconds (1 minute).
+        // 16000 hz * 60 seconds = 960000 frames.
+        if (this.framesSinceLastLoud % 960000 < channelData.length) {
+          this.port.postMessage(new Int16Array(this.bufferSize));
+        }
         this.bufferIndex = 0;
       }
     }

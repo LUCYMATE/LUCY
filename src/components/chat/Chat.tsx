@@ -27,14 +27,8 @@ const cleanMessageText = (text: string) => {
 };
 
 export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
-  const [activeChatId, setActiveChatId] = useState<string>(() => {
-    const chats = chatHistory.getChats();
-    return chats.length > 0 ? chats[0].id : crypto.randomUUID();
-  });
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const chats = chatHistory.getChats();
-    return chats.length > 0 ? chats[0].messages : [];
-  });
+  const [activeChatId, setActiveChatId] = useState<string>(() => crypto.randomUUID());
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [initialized, setInitialized] = useState(false);
   const isMicPendingRef = useRef(false);
@@ -197,8 +191,11 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
         setTimeout(() => {
           gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
           
-          // Auto-start microphone if user configured it
-          if (localStorage.getItem('soltini_auto_mic') === 'true') {
+          // Auto-start microphone if user configured it (defaults to TRUE if unset)
+          const autoMicStr = localStorage.getItem('soltini_auto_mic');
+          const shouldAutoMic = autoMicStr === null ? true : autoMicStr === 'true';
+          
+          if (shouldAutoMic) {
             setTimeout(() => toggleMic(), 500);
           }
         }, 1000);
@@ -592,7 +589,13 @@ export function Chat({ isPetMode = false }: { isPetMode?: boolean }) {
 
           {/* ── Top Status Bar ────────────────────────────────────── */}
           {!isPetMode && (
-            <div className="shrink-0 p-4 flex items-center gap-4 justify-between border-b border-white/5 bg-black/10">
+            <div 
+              className="shrink-0 p-4 flex items-center gap-4 justify-between border-b border-white/5 bg-black/10 cursor-move"
+              data-tauri-drag-region
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+            >
             {isToolAgentRunning ? (
               <div className="flex items-center gap-2 text-pink-400 font-mono text-xs animate-pulse">
                 <span className="flex h-2 w-2 relative">

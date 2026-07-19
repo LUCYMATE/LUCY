@@ -16,17 +16,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>('');
 
-  const [selectedModel, setSelectedModel] = useState<string>(() => {
-    const model = localStorage.getItem('soltini_model') || 'gemini-3.1-flash-live-preview';
-    if (model !== 'gemini-3.1-flash-live-preview') {
-      localStorage.setItem('soltini_model', 'gemini-3.1-flash-live-preview');
-      return 'gemini-3.1-flash-live-preview';
-    }
-    return model;
-  });
-  const [toolAgentModel, setToolAgentModel] = useState<string>(() =>
-    localStorage.getItem('soltini_tool_agent_model') || 'gemini-3.5-flash'
-  );
+
   const [selectedVoice, setSelectedVoice] = useState<string>(() => localStorage.getItem('soltini_voice') || 'Aoede');
   const [avatarSize, setAvatarSize] = useState<string>(() => {
     const val = localStorage.getItem('soltini_avatar_size');
@@ -101,25 +91,11 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
     logger.add('success', 'Settings', 'Camera changed to ' + val);
   };
 
-  const handleModelChange = (val: string) => {
-    setSelectedModel(val);
-    localStorage.setItem('soltini_model', val);
-    setChanged(true);
-    logger.add('success', 'Settings', 'Model changed to ' + val);
-  };
-
   const handleVoiceChange = (val: string) => {
     setSelectedVoice(val);
     localStorage.setItem('soltini_voice', val);
     setChanged(true);
     logger.add('success', 'Settings', 'Voice changed to ' + val);
-  };
-
-  const handleToolAgentModelChange = (val: string) => {
-    setToolAgentModel(val);
-    localStorage.setItem('soltini_tool_agent_model', val);
-    setChanged(true);
-    logger.add('success', 'Settings', 'Tool agent model changed to ' + val);
   };
 
   const handleInstructionChange = (val: string) => {
@@ -141,6 +117,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
     setMainApiKey(val);
     localStorage.setItem('soltini_main_api_key', val);
     setChanged(true);
+    window.dispatchEvent(new CustomEvent('soltini-api-key-saved'));
   };
 
   const handleAltApiKeyChange = (val: string) => {

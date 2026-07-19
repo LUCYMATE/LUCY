@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm';
 import * as THREE from 'three';
-import { BasePose, Emotion } from './animations/core';
+import { BasePose, Emotion, BONE_LIST } from './animations/core';
 import { useVrmAnimator } from './animations/useVrmAnimator';
 import { useFbxAnimation } from './animations/useFbxAnimation';
 import { standardizeVrmBoneNames } from './animations/vrmAnimation';
@@ -175,9 +175,41 @@ export function VrmModel({
           }
         });
         
-        loadedVrm.scene.rotation.y = Math.PI;
-
+        // Removed hardcoded Math.PI rotation, now handled dynamically by moveDirection
         standardizeVrmBoneNames(loadedVrm);
+
+        // Mathematical Bridge for flipped Custom Models
+        // We transparently intercept the slerp and lerp methods on the normalized bone nodes
+        // and evaluate `flipCustomModel` on the fly to instantly invert X and Z axes.
+        BONE_LIST.forEach(boneName => {
+          const node = loadedVrm.humanoid.getNormalizedBoneNode(boneName);
+          if (node) {
+            // 1. Intercept Rotation (slerp)
+            const origSlerp = node.quaternion.slerp.bind(node.quaternion);
+            node.quaternion.slerp = function (qb: THREE.Quaternion, t: number) {
+              if (useAvatarState.getState().flipCustomModel) {
+                const fixedQb = new THREE.Quaternion(-qb.x, qb.y, -qb.z, qb.w);
+                return origSlerp(fixedQb, t);
+              }
+              return origSlerp(qb, t);
+            };
+
+            // 2. Intercept Translation (lerp)
+            const restPos = node.position.clone();
+            const origLerp = node.position.lerp.bind(node.position);
+            node.position.lerp = function (v: THREE.Vector3, t: number) {
+              if (useAvatarState.getState().flipCustomModel) {
+                const fixedV = new THREE.Vector3(
+                  restPos.x - (v.x - restPos.x),
+                  v.y,
+                  restPos.z - (v.z - restPos.z)
+                );
+                return origLerp(fixedV, t);
+              }
+              return origLerp(v, t);
+            };
+          }
+        });
 
         // Delete the previous model if one existed in the cache to free RAM immediately
         if (globalCachedVrm && globalCachedVrm !== loadedVrm) {

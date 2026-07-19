@@ -60,8 +60,11 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
 
       const edgeX   = (ww / 2) / 250;
       const edgeY   = (wh / 2) / 250;
-      const innerMaxX = Math.max(0, edgeX - 0.8);
-      const innerMaxY = Math.max(0, edgeY - 0.8);
+      const avatarScale = s.avatarScale || 1;
+      const minX = -edgeX;
+      const maxX = edgeX;
+      const minY = -edgeY - 0.15 * avatarScale;
+      const maxY = edgeY - 0.15 * avatarScale;
 
       let targetX = currentX;
       let targetY = currentY;
@@ -69,12 +72,10 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
 
       if (r < 0.04) {
         targetPose = 'peek-left';
-        // SceneManager auto-walks to left edge
         targetX = currentX;
         targetY = currentY;
       } else if (r < 0.08) {
         targetPose = 'peek-right';
-        // SceneManager auto-walks to right edge
         targetX = currentX;
         targetY = currentY;
       } else if (r < 0.30) {
@@ -84,20 +85,20 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
         else if (casualR < 0.66) targetPose = 'lean';
         else targetPose = 'stand';
         if (!s.isAvatarLocked) {
-          targetX = (Math.random() - 0.5) * (innerMaxX * 2);
-          targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+          targetX = minX + Math.random() * (maxX - minX);
+          targetY = minY + Math.random() * (maxY - minY);
         }
       } else if (r < 0.70) {
         targetPose = 'stand';
         if (!s.isAvatarLocked) {
-          targetX = (Math.random() - 0.5) * (innerMaxX * 2);
-          targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+          targetX = minX + Math.random() * (maxX - minX);
+          targetY = minY + Math.random() * (maxY - minY);
         }
       } else if (r < 0.85) {
         targetPose = 'sit';
         if (!s.isAvatarLocked) {
-          targetX = (Math.random() - 0.5) * (innerMaxX * 2);
-          targetY = (Math.random() - 0.5) * (innerMaxY * 2);
+          targetX = minX + Math.random() * (maxX - minX);
+          targetY = minY + Math.random() * (maxY - minY);
         }
       } else if (r < 0.95) {
         targetPose = 'stand';
@@ -105,6 +106,12 @@ export function AvatarController({ isPetMode = false }: AvatarControllerProps) {
       } else {
         targetPose = 'sit';
         targetX = currentX;
+      }
+
+      if (s.isAvatarLocked && targetPose !== 'peek-left' && targetPose !== 'peek-right') {
+        // Force the avatar to return to its user-defined locked position when not peeking
+        targetX = s.lockedPosition?.x ?? 0;
+        targetY = s.lockedPosition?.y ?? 0;
       }
 
       setBasePose(targetPose);

@@ -7,7 +7,7 @@ import { VrmModel, clearVrmCache, clearAssetResolutionCache } from './VrmModel';
 import { clearFbxCache } from './animations/useFbxAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
-import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2 } from 'lucide-react';
+import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2, CalendarClock, Trash2, Clock } from 'lucide-react';
 
 // Highly optimized FPS limiter using rAF instead of setInterval
 function FpsLimiter() {
@@ -202,6 +202,10 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
       getAsset('custom-avatar').then(asset => {
         if (!asset || asset.type !== 'vrm') {
           localStorage.setItem('soltini_has_custom_avatar', 'false');
+          if (useAvatarState.getState().flipCustomModel) {
+            useAvatarState.getState().setFlipCustomModel(false);
+            localStorage.setItem('soltini_flip_vrm', 'false');
+          }
           if (modelUrlRef.current !== '/soltini.vrm' || forceBustCache) {
             if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
             if (modelUrlRef.current !== '/soltini.vrm' || forceBustCache) clearVrmCache?.();
@@ -280,12 +284,13 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
         z: groupRef.current.position.z
       });
 
-      let targetRotY = Math.PI;
+      const flip = useAvatarState.getState().flipCustomModel;
+      let targetRotY = flip ? 0 : Math.PI;
 
       if (distance > 0.05 && isWalking && !isDragging) {
-        targetRotY = -Math.atan2(diffX, diffY);
+        targetRotY = -Math.atan2(diffX, diffY) + (flip ? Math.PI : 0);
       } else if (basePose.startsWith('peek')) {
-        targetRotY = Math.PI;
+        targetRotY = flip ? 0 : Math.PI;
       }
 
       if (distance < 0.05 && isWalking && !isDragging) {
@@ -392,6 +397,12 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
   const handleLockAvatar = () => {
     const val = !isAvatarLocked;
     setIsAvatarLocked(val);
+    const s = useAvatarState.getState();
+    if (val) {
+      s.setLockedPosition({ ...s.worldPosition });
+    } else {
+      s.setLockedPosition(null);
+    }
     localStorage.setItem('soltini_avatar_locked', String(val));
     onClose();
   };
@@ -414,6 +425,31 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     onClose();
   };
 
+  const [showTasksPopup, setShowTasksPopup] = useState(false);
+  const [tasks, setTasks] = useState<{id: string, targetTimeMs: number, instruction: string}[]>([]);
+
+  useEffect(() => {
+    if (!showTasksPopup) return;
+    const fetchTasks = async () => {
+      const { getScheduledTasks } = await import('../../lib/gemini/gemini-live');
+      setTasks(getScheduledTasks());
+    };
+    fetchTasks();
+    const handleUpdate = () => fetchTasks();
+    window.addEventListener('soltini-tasks-changed', handleUpdate);
+    return () => window.removeEventListener('soltini-tasks-changed', handleUpdate);
+  }, [showTasksPopup]);
+
+  const openTasks = () => {
+    setShowTasksPopup(!showTasksPopup);
+    setShowSizeSlider(false); // Hide size slider if open
+  };
+
+  const handleCancelTask = async (id: string) => {
+    const { cancelScheduledTaskById } = await import('../../lib/gemini/gemini-live');
+    cancelScheduledTaskById(id);
+  };
+
   const closeApp = async () => {
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -424,12 +460,13 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
   };
 
   // Radial math
-  const radius = 65;
+  const radius = 85;
   const items = [
     { id: 'mic', icon: isMicOn ? <Mic className="w-5 h-5 text-pink-400" /> : <MicOff className="w-5 h-5 text-white/50" />, action: handleMicToggle, label: 'Mic' },
     ...(isPetMode 
       ? [
           { id: 'chat', icon: <MessageCircle className="w-5 h-5 text-blue-400" />, action: openChat, label: 'Chat' },
+          { id: 'tasks', icon: <CalendarClock className="w-5 h-5 text-purple-400" />, action: openTasks, label: 'Tasks' },
           { id: 'settings', icon: <Settings className="w-5 h-5 text-gray-300" />, action: openSettings, label: 'Settings' }
         ]
       : [
@@ -444,7 +481,7 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
           }
         ]
     ),
-    { id: 'size', icon: <Maximize2 className="w-5 h-5 text-green-400" />, action: () => setShowSizeSlider(!showSizeSlider), label: 'Size' },
+    { id: 'size', icon: <Maximize2 className="w-5 h-5 text-green-400" />, action: () => { setShowSizeSlider(!showSizeSlider); setShowTasksPopup(false); }, label: 'Size' },
     { id: 'lock', icon: isAvatarLocked ? <Lock className="w-5 h-5 text-yellow-400" /> : <Unlock className="w-5 h-5 text-white/50" />, action: handleLockAvatar, label: 'Lock' },
     { id: 'close', icon: <Power className="w-5 h-5 text-red-500" />, action: closeApp, label: 'Close App' },
   ];
@@ -497,7 +534,7 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
             key={item.id}
             onClick={item.action}
             title={item.label}
-            className="absolute -translate-x-1/2 -translate-y-1/2 w-11 h-11 rounded-full glass border border-white/10 flex items-center justify-center hover:bg-white/20 transition-all hover:scale-110 shadow-md pointer-events-auto"
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-11 h-11 rounded-full glass border border-white/10 flex items-center justify-center hover:bg-blue-500/40 hover:border-blue-400/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all duration-300 hover:scale-110 shadow-md pointer-events-auto"
             style={{ left: bx, top: by }}
           >
             {item.icon}
@@ -518,6 +555,28 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
             <button onClick={() => setSize(70)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">S</button>
             <button onClick={() => setSize(100)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">M</button>
             <button onClick={() => setSize(150)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">L</button>
+          </div>
+        </div>
+      )}
+
+      {showTasksPopup && (
+        <div className="absolute top-24 -translate-x-1/2 w-64 glass rounded-xl p-3 border border-white/10 shadow-xl animate-in slide-in-from-top-2 fade-in pointer-events-auto flex flex-col gap-2">
+          <div className="flex items-center gap-2 pb-2 border-b border-white/10">
+            <CalendarClock className="w-4 h-4 text-pink-400" />
+            <span className="text-xs text-white/90 font-bold uppercase">Scheduled Tasks</span>
+          </div>
+          <div className="flex flex-col gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+            {tasks.length === 0 ? (
+              <p className="text-xs text-white/40 text-center py-2">No tasks right now.</p>
+            ) : (
+              tasks.map(t => (
+                <div key={t.id} className="bg-white/5 rounded-lg p-2 flex flex-col gap-1 relative group">
+                  <p className="text-[10px] text-white/80 line-clamp-2 pr-5">{t.instruction}</p>
+                  <p className="text-[9px] text-pink-300 font-mono flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(t.targetTimeMs).toLocaleTimeString()}</p>
+                  <button onClick={() => handleCancelTask(t.id)} className="absolute right-1 top-1 p-1 hover:bg-red-500/20 rounded text-red-400 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -548,10 +607,17 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
       const movementY = -e.movementY / ZOOM;
 
       const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
+      const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
       const edgeX = (ww / 2) / ZOOM;
+      const edgeY = (wh / 2) / ZOOM;
+      
+      const minX = -edgeX;
+      const maxX = edgeX;
+      const maxY = edgeY - 0.15 * avatarScale;
+      const minY = -edgeY - 0.15 * avatarScale;
 
-      cursorTargetRef.current.x = Math.max(-edgeX - 0.5, Math.min(edgeX + 0.5, cursorTargetRef.current.x + movementX));
-      cursorTargetRef.current.y = cursorTargetRef.current.y + movementY;
+      cursorTargetRef.current.x = Math.max(minX, Math.min(maxX, cursorTargetRef.current.x + movementX));
+      cursorTargetRef.current.y = Math.max(minY, Math.min(maxY, cursorTargetRef.current.y + movementY));
 
       s.setTargetPosition({ ...cursorTargetRef.current });
       
@@ -567,6 +633,9 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
     s.setIsDragging(false);
     s.setDragOffset({ x: 0, y: 0 });
     s.setTargetPosition({ ...s.worldPosition });
+    if (s.isAvatarLocked) {
+      s.setLockedPosition({ ...s.worldPosition });
+    }
     e.currentTarget.releasePointerCapture(e.pointerId);
     
     if (s.basePose.startsWith('peek')) {
@@ -645,6 +714,37 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
   );
 }
 
+function AvatarLoader() {
+  return (
+    <Html center>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 10,
+        userSelect: 'none',
+        pointerEvents: 'none',
+      }}>
+        {/* Pulsing glow orb */}
+        <div style={{
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(167,139,250,0.9) 0%, rgba(236,72,153,0.4) 60%, transparent 100%)',
+          boxShadow: '0 0 20px rgba(167,139,250,0.6), 0 0 40px rgba(236,72,153,0.2)',
+          animation: 'avatar-pulse 1.4s ease-in-out infinite',
+        }} />
+        <style>{`
+          @keyframes avatar-pulse {
+            0%, 100% { transform: scale(0.85); opacity: 0.6; }
+            50% { transform: scale(1.15); opacity: 1; }
+          }
+        `}</style>
+      </div>
+    </Html>
+  );
+}
+
 export function Avatar3D({ isPetMode }: { isPetMode?: boolean }) {
   return (
     <div className="w-full h-full pointer-events-none relative">
@@ -657,7 +757,7 @@ export function Avatar3D({ isPetMode }: { isPetMode?: boolean }) {
         <FpsLimiter />
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
 
-        <Suspense fallback={null}>
+        <Suspense fallback={<AvatarLoader />}>
           <ambientLight intensity={0.8} color="#ffffff" />
           <directionalLight position={[0, 2, 2]} intensity={1} color="#ffffff" />
           <SceneManager isPetMode={isPetMode} />

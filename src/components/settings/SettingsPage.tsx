@@ -12,13 +12,14 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   
   const [micId, setMicId] = useState(localStorage.getItem('soltini_mic_id') || '');
   const [camId, setCamId] = useState(localStorage.getItem('soltini_camera_id') || '');
-  const [model, setModel] = useState(localStorage.getItem('soltini_model') || 'gemini-3.1-flash-live-preview');
-  const [toolModel, setToolModel] = useState(localStorage.getItem('soltini_tool_agent_model') || 'gemini-3.5-flash');
   const [voice, setVoice] = useState(localStorage.getItem('soltini_voice') || 'Aoede');
   const [avatarSize, setAvatarSize] = useState(parseInt(localStorage.getItem('soltini_avatar_size') || '100'));
   
   const [launchPetMode, setLaunchPetMode] = useState(localStorage.getItem('soltini_launch_pet_mode') === 'true');
-  const [autoMic, setAutoMic] = useState(localStorage.getItem('soltini_auto_mic') === 'true');
+  const [autoMic, setAutoMic] = useState(() => {
+    const val = localStorage.getItem('soltini_auto_mic');
+    return val === null ? true : val === 'true';
+  });
   const [avatarLocked, setAvatarLocked] = useState(localStorage.getItem('soltini_avatar_locked') === 'true');
   
   const [systemInstruction, setSystemInstruction] = useState(() => {
@@ -57,24 +58,10 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
   };
 
-  const handleModelChange = (val: string) => {
-    setModel(val);
-    localStorage.setItem('soltini_model', val);
-    logger.add('success', 'Settings', 'Model changed');
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
-  };
-
   const handleVoiceChange = (val: string) => {
     setVoice(val);
     localStorage.setItem('soltini_voice', val);
     logger.add('success', 'Settings', 'Voice changed');
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
-  };
-
-  const handleToolModelChange = (val: string) => {
-    setToolModel(val);
-    localStorage.setItem('soltini_tool_agent_model', val);
-    logger.add('success', 'Settings', 'Tool model changed');
     window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
   };
 
@@ -113,6 +100,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const handleMainApiKeyChange = (val: string) => {
     setMainApiKey(val);
     localStorage.setItem('soltini_main_api_key', val);
+    window.dispatchEvent(new CustomEvent('soltini-api-key-saved'));
     window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
   };
 

@@ -92,3 +92,18 @@ commands.allow = ["read_3d_asset"]
 identifier = "allow-get-3d-asset-path"
 description = "Allows getting absolute paths of 3D assets"
 commands.allow = ["get_3d_asset_path"]
+
+[[permission]]
+identifier = "allow-get-device-hwid"
+description = "Allows retrieving the device hardware ID for license verification"
+commands.allow = ["get_device_hwid"]
+
+[[permission]]
+identifier = "allow-verify-license"
+description = "Allows verifying the license signature from the server"
+commands.allow = ["verify_license"]
+
+[[permission]]
+identifier = "allow-check-authorization"
+description = "Allows checking and restoring authorization state"
+commands.allow = ["check_authorization"]

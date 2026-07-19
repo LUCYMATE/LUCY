@@ -49,6 +49,9 @@
     "allow-get-3d-asset-path",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
+    "allow-get-device-hwid",
+    "allow-verify-license",
+    "allow-check-authorization",
     {
       "identifier": "http:default",
       "allow": [

@@ -69,32 +69,40 @@ export class VectorMemoryManager {
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
-  private async generateEmbedding(text: string, apiKey: string): Promise<number[] | null> {
+  private async generateEmbedding(text: string, apiKey: string): Promise<number[] | string> {
     try {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.embedContent({
-        model: 'text-embedding-004',
+        model: 'gemini-embedding-2',
         contents: text
       });
       if (response.embeddings && response.embeddings.length > 0) {
-        return response.embeddings[0].values || null;
+        return response.embeddings[0].values || 'Embedding values array is empty';
       }
-      return null;
-    } catch (err) {
+      return 'No embeddings returned from Gemini';
+    } catch (err: any) {
       console.error('Failed to generate embedding:', err);
-      return null;
+      return err.message || String(err);
     }
   }
 
-  public async saveFact(text: string, apiKey: string): Promise<boolean> {
-    const embedding = await this.generateEmbedding(text, apiKey);
-    if (!embedding) return false;
+  public async saveFact(text: string, apiKey: string): Promise<{ success: boolean, error?: string }> {
+    if (!text) {
+      return { success: false, error: 'Fact text was empty' };
+    }
+
+    const embeddingResult = await this.generateEmbedding(text, apiKey);
+    if (typeof embeddingResult === 'string') {
+      return { success: false, error: embeddingResult };
+    }
+
+    const embedding = embeddingResult as number[];
 
     // Check if a highly similar fact already exists to prevent duplicates
     const searchResults = this.search(embedding, 1);
     if (searchResults.length > 0 && searchResults[0].score > 0.95) {
       logger.add('info', 'Memory System', `Fact already known: "${text}"`);
-      return true; // Consider it successful since we already know it
+      return { success: true }; // Consider it successful since we already know it
     }
 
     const memory: MemoryFact = {
@@ -106,7 +114,7 @@ export class VectorMemoryManager {
     this.memories.push(memory);
     this.saveToStorage();
     logger.add('success', 'Memory System', `Saved new fact: "${text}"`);
-    return true;
+    return { success: true };
   }
 
   public search(queryEmbedding: number[], topK: number = 3): { fact: MemoryFact, score: number }[] {
@@ -122,14 +130,16 @@ export class VectorMemoryManager {
     return scored.filter(s => s.score > 0.5).slice(0, topK);
   }
 
-  public async searchWithText(query: string, apiKey: string, topK: number = 5): Promise<string[]> {
-    if (this.memories.length === 0) return [];
+  public async searchWithText(query: string, apiKey: string, topK: number = 5): Promise<{ memories: string[], error?: string }> {
+    if (this.memories.length === 0) return { memories: [] };
     
-    const embedding = await this.generateEmbedding(query, apiKey);
-    if (!embedding) return [];
+    const embeddingResult = await this.generateEmbedding(query, apiKey);
+    if (typeof embeddingResult === 'string') {
+      return { memories: [], error: embeddingResult };
+    }
 
-    const results = this.search(embedding, topK);
-    return results.map(r => r.fact.text);
+    const results = this.search(embeddingResult as number[], topK);
+    return { memories: results.map(r => r.fact.text) };
   }
 }
 

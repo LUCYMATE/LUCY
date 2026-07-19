@@ -9,7 +9,7 @@ export interface BoneRest {
 }
 
 // Built-in poses; string & {} allows any additional custom animation slug.
-export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'stretch' | 'lean' | 'flying-kiss' | 'caress' | 'dance' | 'dancing' | 'sleep' | (string & {});
+export type BasePose = 'sit' | 'stand' | 'peek-left' | 'peek-right' | 'stretch' | 'lean' | 'flying-kiss' | 'caress' | 'dance' | 'dancing' | 'sleep' | 'lie-down' | 'edge-lean' | 'point' | (string & {});
 export type Emotion = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'thinking' | 'flirty';
 
 

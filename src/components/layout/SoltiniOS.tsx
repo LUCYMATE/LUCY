@@ -1,7 +1,8 @@
-import { Settings } from 'lucide-react';
+import { Settings, CalendarClock, Trash2, Clock, X } from 'lucide-react';
 import { Chat } from '../chat/Chat';
 import { useState, useEffect, useRef } from 'react';
 import { SettingsPage } from '../settings/SettingsPage';
+import { getScheduledTasks, cancelScheduledTaskById, ScheduledTask } from '../../lib/gemini/gemini-live';
 import { getSystemStats, isTauriApp } from '../../lib/system/tauriBridge';
 import { logger, LogEntry } from '../../lib/store/logger';
 import { AvatarController } from '../avatar/AvatarController';
@@ -9,7 +10,16 @@ import { AvatarController } from '../avatar/AvatarController';
 
 export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [latency, setLatency] = useState<string>('checking...');
+
+  useEffect(() => {
+    const loadTasks = () => setTasks(getScheduledTasks());
+    loadTasks();
+    window.addEventListener('soltini-tasks-changed', loadTasks);
+    return () => window.removeEventListener('soltini-tasks-changed', loadTasks);
+  }, []);
   const [cpu, setCpu] = useState<number>(0);
   const [memory, setMemory] = useState<string>('0 / 0 GB');
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -27,13 +37,19 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
   useEffect(() => {
     if (isPetMode) {
       setShowSettings(false);
+      setShowTasks(false);
     }
   }, [isPetMode]);
 
   useEffect(() => {
-    const handleOpenSettings = () => setShowSettings(true);
+    const handleOpenSettings = () => { setShowSettings(true); setShowTasks(false); };
+    const handleOpenTasks = () => { setShowTasks(true); setShowSettings(false); };
     window.addEventListener('soltini-open-settings', handleOpenSettings);
-    return () => window.removeEventListener('soltini-open-settings', handleOpenSettings);
+    window.addEventListener('soltini-open-tasks', handleOpenTasks);
+    return () => {
+      window.removeEventListener('soltini-open-settings', handleOpenSettings);
+      window.removeEventListener('soltini-open-tasks', handleOpenTasks);
+    };
   }, []);
 
   useEffect(() => {
@@ -97,6 +113,31 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
       <div className={`flex-1 w-full h-full glass rounded-[20px] ${showSettings ? 'block' : 'hidden'}`}>
         {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
       </div>
+      
+      {showTasks && (
+        <div className="absolute left-16 sm:left-[340px] bottom-6 z-50 w-72 glass rounded-[20px] p-4 border border-white/20 shadow-2xl flex flex-col gap-3 animate-in slide-in-from-bottom-4 fade-in pointer-events-auto">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="w-4 h-4 text-pink-400" />
+              <h3 className="text-sm font-bold text-white">Scheduled Tasks</h3>
+            </div>
+            <button onClick={() => setShowTasks(false)} className="hover:bg-white/10 p-1 rounded-full"><X className="w-4 h-4 text-white/70" /></button>
+          </div>
+          <div className="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+            {tasks.length === 0 ? (
+              <p className="text-xs text-white/50 text-center py-4">No tasks scheduled.</p>
+            ) : (
+              tasks.map(t => (
+                <div key={t.id} className="bg-white/5 border border-white/10 rounded-xl p-2 flex flex-col gap-1 relative group">
+                  <p className="text-xs text-white/90 line-clamp-2 pr-6">{t.instruction}</p>
+                  <p className="text-[10px] text-pink-300/80 font-mono flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(t.targetTimeMs).toLocaleTimeString()}</p>
+                  <button onClick={() => cancelScheduledTaskById(t.id)} className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded-md text-red-400 transition-all"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       <div className={`flex h-full w-full gap-2 sm:gap-3 ${showSettings ? 'hidden' : 'flex'}`}>
         {/* Main Workspace */}
@@ -178,9 +219,16 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
                     )}
                   </div>
                   
-                  <div className="w-12 h-12 sm:w-full sm:h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors gap-2" onClick={() => setShowSettings(true)} title="Settings">
-                    <Settings className="w-5 h-5 text-white" />
-                    <span className="hidden sm:block text-white font-medium text-sm">Settings</span>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-0 w-full sm:h-12 sm:bg-white/5 sm:border sm:border-white/10 rounded-xl overflow-hidden mt-2">
+                    <div className="w-12 h-12 sm:w-1/2 sm:h-full rounded-xl sm:rounded-none bg-white/5 sm:bg-transparent border border-white/10 sm:border-none flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors gap-2" onClick={() => { setShowTasks(true); setShowSettings(false); }} title="Tasks">
+                      <CalendarClock className="w-5 h-5 text-white" />
+                      <span className="hidden sm:block text-white font-medium text-sm">Tasks</span>
+                    </div>
+                    <div className="hidden sm:block w-px h-full bg-white/10" />
+                    <div className="w-12 h-12 sm:w-1/2 sm:h-full rounded-xl sm:rounded-none bg-white/5 sm:bg-transparent border border-white/10 sm:border-none flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors gap-2" onClick={() => { setShowSettings(true); setShowTasks(false); }} title="Settings">
+                      <Settings className="w-5 h-5 text-white" />
+                      <span className="hidden sm:block text-white font-medium text-sm">Settings</span>
+                    </div>
                   </div>
                  </div>
               </div>

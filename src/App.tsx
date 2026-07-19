@@ -1,199 +1,170 @@
 import { SoltiniOS } from './components/layout/SoltiniOS';
 import { Sidebar } from './components/layout/Sidebar';
 import { TitleBar } from './components/layout/TitleBar';
-import { Minus, Square, X, Menu } from 'lucide-react';
-import { useEffect, useState, useRef } from 'react';
-import { getCurrentWindow, currentMonitor, cursorPosition } from '@tauri-apps/api/window';
+import { LicenseGate } from './components/LicenseGate';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { getCurrentWindow, cursorPosition } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
-import { LogicalSize, LogicalPosition, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/dpi';
+import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
+
+const LICENSE_SERVER_URL = 'https://soltini.vercel.app';
+
+const safe = async (p: Promise<any>) => {
+  try { await p; } catch (e) { console.warn('Tauri API error:', e); }
+};
 
 export default function App() {
   const [isPetMode, setIsPetMode] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
-  const normalSizeRef = useRef<{width: number, height: number} | null>(null);
-  const normalPosRef  = useRef<{x: number, y: number} | null>(null);
-  const petModePosRef = useRef<{x: number, y: number} | null>(null);
 
-  const restoreWindow = async () => {
-    const safe = async (p: Promise<any>) => {
-      try { await p; } catch (e) { console.warn('Tauri API error:', e); }
-    };
+  // Optimistic: assume authorized until the background check says otherwise
+  const [licenseLocked, setLicenseLocked] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(() =>
+    !!localStorage.getItem('soltini_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY
+  );
+
+  const effectivePetMode = isPetMode && !licenseLocked && hasApiKey;
+
+  const windowReadyRef = useRef(false);
+  const normalSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const normalPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Show the window immediately on mount in transparent pet-mode state.
+  // The avatar's own Suspense loader (pulsing orb) will show in place of
+  // the model while the 3D scene and VRM file load — no full-screen cover needed.
+  useEffect(() => {
+    const win = getCurrentWindow();
+    safe(win.show());
+  }, []);
+
+  // ─── Configure window for pet-mode overlay ────────────────────────────────
+  const enterPetModeWindow = useCallback(async () => {
     try {
       const win = getCurrentWindow();
 
+      // Snapshot normal size/pos for later restore
+      if (!normalSizeRef.current) {
+        try {
+          const isMax = await win.isMaximized();
+          if (!isMax) {
+            const size   = await win.outerSize();
+            const pos    = await win.outerPosition();
+            const factor = await win.scaleFactor();
+            normalSizeRef.current = {
+              width:  size.toLogical(factor).width,
+              height: size.toLogical(factor).height,
+            };
+            normalPosRef.current = {
+              x: pos.toLogical(factor).x,
+              y: pos.toLogical(factor).y,
+            };
+          }
+        } catch (_) {}
+      }
+
+      await safe(win.setDecorations(false));
+      await safe(win.setSkipTaskbar(true));
       await safe(win.setMaxSize(null));
-      await safe(win.setAlwaysOnTop(false));
+      await safe(win.setResizable(false));
+      await safe(win.setShadow(false));
+      await safe(win.setAlwaysOnTop(true));
+      await safe(win.setIgnoreCursorEvents(true));
+      await safe(win.maximize());
       await safe(win.setFullscreen(false));
+
+      windowReadyRef.current = true;
+      setIsPetMode(true);
+      window.dispatchEvent(new CustomEvent('soltini-force-init'));
+    } catch (e) {
+      console.warn('enterPetModeWindow failed', e);
+      setIsPetMode(true);
+    }
+  }, []);
+
+  // ─── Restore to normal desktop window ────────────────────────────────────
+  const restoreWindow = useCallback(async () => {
+    try {
+      const win = getCurrentWindow();
+      await safe(win.setAlwaysOnTop(false));
       await safe(win.setSkipTaskbar(false));
       await safe(win.setIgnoreCursorEvents(false));
       await safe(win.setShadow(true));
+      await safe(win.setDecorations(false));
       await safe(win.setResizable(true));
+      await safe(win.setMaxSize(null));
+      await safe(win.setFullscreen(false));
 
-      try {
-        if (normalSizeRef.current) {
-          await win.setSize(new LogicalSize(normalSizeRef.current.width, normalSizeRef.current.height));
-        } else {
-          await win.setSize(new LogicalSize(1000, 700));
-        }
-        if (normalPosRef.current) {
-          await win.setPosition(new LogicalPosition(normalPosRef.current.x, normalPosRef.current.y));
-        }
-      } catch (e) {
-        console.warn("Could not restore size and position", e);
-      }
+      const targetW = normalSizeRef.current?.width  ?? 1000;
+      const targetH = normalSizeRef.current?.height ?? 700;
+      await safe(win.setSize(new LogicalSize(targetW, targetH)));
 
-      await safe(win.setMinSize(new LogicalSize(800, 600)));
-      
-      if (!normalPosRef.current) {
+      if (normalPosRef.current) {
+        await safe(win.setPosition(new LogicalPosition(normalPosRef.current.x, normalPosRef.current.y)));
+      } else {
         await safe(win.center());
       }
-      
+      await safe(win.setMinSize(new LogicalSize(800, 600)));
       setIsPetMode(false);
     } catch (e) {
-      console.warn("Fallback: window api totally failed", e);
+      console.warn('restoreWindow failed', e);
       setIsPetMode(false);
     }
-  };
+  }, []);
 
-  const minimize = async () => {
-    try {
-      await getCurrentWindow().minimize();
-    } catch (e) {
-      console.warn("Minimize only works in Tauri apps");
-    }
-  };
+  const minimize       = async () => { try { await getCurrentWindow().minimize();       } catch (_) {} };
+  const toggleMaximize = async () => { try { await getCurrentWindow().toggleMaximize(); } catch (_) {} };
+  const close          = async () => { try { await getCurrentWindow().close();           } catch (_) {} };
 
-  const togglePetMode = async () => {
-    const safe = async (p: Promise<any>) => {
-      try { await p; } catch (e) { console.warn('Tauri API error:', e); }
-    };
-
-    try {
-      const win = getCurrentWindow();
-      if (!isPetMode) {
-        try {
-          const isMax = await win.isMaximized();
-          if (isMax) {
-            await win.unmaximize();
-          }
-          
-          const size = await win.outerSize();
-          const pos = await win.outerPosition();
-          const factor = await win.scaleFactor();
-          
-          const logicalSize = size.toLogical(factor);
-          const logicalPos = pos.toLogical(factor);
-          
-          normalSizeRef.current = { width: logicalSize.width, height: logicalSize.height };
-          normalPosRef.current = { x: logicalPos.x, y: logicalPos.y };
-        } catch (e) {
-          console.warn("Could not read window size/pos", e);
-        }
-
-        await safe(win.setSkipTaskbar(true));
-        await safe(win.setMaxSize(null));
-        await safe(win.setFullscreen(false));
-        await safe(win.setShadow(false));
-        await safe(win.setResizable(false));
-        await safe(win.setAlwaysOnTop(true));
-        await safe(win.setIgnoreCursorEvents(true));
-
-        const monitor = await currentMonitor();
-        if (monitor) {
-          await safe(win.maximize());
-        }
-
-        await safe(win.setSkipTaskbar(true));
-        await safe(win.hide());
-        await safe(win.show());
-
-        window.dispatchEvent(new CustomEvent('soltini-force-init'));
-        setIsPetMode(true);
-      } else {
-        await restoreWindow();
-      }
-    } catch (e) {
-      console.warn("Fallback: window api totally failed", e);
-      setIsPetMode(!isPetMode);
-    }
-  };
-
-  const toggleMaximize = async () => {
-    try {
-      await getCurrentWindow().toggleMaximize();
-    } catch (e) {
-      console.warn("Maximize only works in Tauri apps");
-    }
-  };
-
-  const close = async () => {
-    try {
-      await getCurrentWindow().close();
-    } catch (e) {
-      console.warn("Close only works in Tauri apps");
-    }
-  };
-
+  // ─── Sync effectivePetMode → window state ────────────────────────────────
   useEffect(() => {
-    const initWindow = async () => {
-      const safe = async (p: Promise<any>) => {
-        try { await p; } catch (e) { console.warn('Tauri API error:', e); }
-      };
-
-      try {
-        const win = getCurrentWindow();
-        
-        // Configure pet mode (transparent, fullscreen overlay) immediately
-        await safe(win.setSkipTaskbar(true));
-        await safe(win.setMaxSize(null));
-        await safe(win.setFullscreen(false));
-        await safe(win.setShadow(false));
-        await safe(win.setResizable(false));
-        await safe(win.setAlwaysOnTop(true));
-        await safe(win.setIgnoreCursorEvents(true));
-
-        const monitor = await currentMonitor();
-        if (monitor) {
-          await safe(win.maximize());
-        }
-
-        await safe(win.show());
-        window.dispatchEvent(new CustomEvent('soltini-force-init'));
-      } catch (e) {
-        // Not running in Tauri or permission missing
+    if (effectivePetMode) {
+      enterPetModeWindow();
+    } else {
+      if (windowReadyRef.current) {
+        restoreWindow();
       }
-    };
-    initWindow();
-    
-    const onRestore = () => {
-      restoreWindow();
-    };
-    
+      windowReadyRef.current = true;
+
+      if (!licenseLocked && !hasApiKey) {
+        setTimeout(() => window.dispatchEvent(new CustomEvent('soltini-open-settings')), 800);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectivePetMode]);
+
+  // ─── Global events ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const onRestore  = () => restoreWindow();
+    const onEnterPet = () => setIsPetMode(true);
     window.addEventListener('soltini-restore', onRestore);
+    window.addEventListener('soltini-enter-pet-mode', onEnterPet);
 
     let unlistenExit: (() => void) | undefined;
-    listen('soltini-exit-pet-mode', () => {
-      restoreWindow();
-    }).then(fn => { unlistenExit = fn; });
+    listen('soltini-exit-pet-mode', () => restoreWindow())
+      .then(fn => { unlistenExit = fn; });
 
     return () => {
       window.removeEventListener('soltini-restore', onRestore);
+      window.removeEventListener('soltini-enter-pet-mode', onEnterPet);
       unlistenExit?.();
+    };
+  }, [restoreWindow]);
+
+  // ─── API key listener ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const checkKey = () =>
+      setHasApiKey(!!localStorage.getItem('soltini_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY);
+    window.addEventListener('storage', checkKey);
+    window.addEventListener('soltini-api-key-saved', checkKey);
+    return () => {
+      window.removeEventListener('storage', checkKey);
+      window.removeEventListener('soltini-api-key-saved', checkKey);
     };
   }, []);
 
+  // ─── Pet-mode cursor passthrough ──────────────────────────────────────────
   useEffect(() => {
-    const onEnterPetMode = () => {
-      if (!isPetMode) togglePetMode();
-    };
-    window.addEventListener('soltini-enter-pet-mode', onEnterPetMode);
-    return () => window.removeEventListener('soltini-enter-pet-mode', onEnterPetMode);
-  }, [isPetMode]);
-
-  useEffect(() => {
-    if (!isPetMode) return;
-
+    if (!effectivePetMode) return;
     let active = true;
     let lastIgnore = true;
     const win = getCurrentWindow();
@@ -204,69 +175,76 @@ export default function App() {
         const cursor = await cursorPosition();
         const winPos = await win.outerPosition();
         const factor = await win.scaleFactor();
-
         const x = (cursor.x - winPos.x) / factor;
         const y = (cursor.y - winPos.y) / factor;
 
         const elements = document.querySelectorAll('.pointer-events-auto');
-        let insideInteractive = false;
-        for (let i = 0; i < elements.length; i++) {
-          const el = elements[i];
-          const rect = el.getBoundingClientRect();
-          if (
-            x >= rect.left && x <= rect.right &&
-            y >= rect.top && y <= rect.bottom
-          ) {
-            insideInteractive = true;
+        let inside = false;
+        for (const el of Array.from(elements)) {
+          const r = el.getBoundingClientRect();
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+            inside = true;
             break;
           }
         }
-        if (insideInteractive !== !lastIgnore) {
-          lastIgnore = !insideInteractive;
-          if (active) {
-            await win.setIgnoreCursorEvents(lastIgnore);
-          }
+        if (inside !== !lastIgnore) {
+          lastIgnore = !inside;
+          if (active) await win.setIgnoreCursorEvents(lastIgnore);
         }
       } catch (e) {
-        console.warn("Error in pet mode mouse tracking:", e);
+        console.warn('pet mode mouse error:', e);
       }
-      if (active) {
-        setTimeout(checkMouse, 200);
-      }
+      if (active) setTimeout(checkMouse, 200);
     };
 
     checkMouse();
-
     return () => {
       active = false;
       win.setIgnoreCursorEvents(false).catch(() => {});
     };
-  }, [isPetMode]);
+  }, [effectivePetMode]);
 
   return (
-    <div 
-      className={`h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col ${isPetMode ? 'bg-transparent' : 'bg-[#020617]'}`}
-    >
-      {!isPetMode && <div className="mesh-bg"></div>}
-      
+    <div className={`h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col ${
+      effectivePetMode ? 'bg-transparent' : 'bg-[#020617]'
+    }`}>
+
+      {/* API key missing banner */}
+      {!hasApiKey && !licenseLocked && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[9999] bg-pink-500/90 text-white px-6 py-3 rounded-full shadow-[0_0_20px_rgba(236,72,153,0.5)] border border-pink-400 font-bold flex items-center gap-2 animate-bounce">
+          ⚠️ Please add your Gemini API Key in the Settings menu to continue.
+        </div>
+      )}
+
+      {/* License gate — invisible while checking; opaque only when locked */}
+      <LicenseGate
+        onAuthorized={() => setLicenseLocked(false)}
+        onRequireActivation={async () => {
+          setLicenseLocked(true);
+        }}
+        serverUrl={LICENSE_SERVER_URL}
+      />
+
+      {!effectivePetMode && <div className="mesh-bg" />}
+
       {/* Custom Titlebar */}
-      {!isPetMode && (
-        <TitleBar 
+      {!effectivePetMode && (
+        <TitleBar
           onOpenMenu={() => setSidebarOpen(prev => !prev)}
           onMinimize={minimize}
           onMaximize={toggleMaximize}
           onClose={close}
-          onPetMode={togglePetMode}
+          onPetMode={() => setIsPetMode(true)}
         />
       )}
 
-      {/* ── Sliding Sidebar Overlay ── */}
-      {!isPetMode && sidebarOpen && (
+      {/* Sliding Sidebar */}
+      {!effectivePetMode && sidebarOpen && (
         <Sidebar onClose={() => setSidebarOpen(false)} />
       )}
 
       <div className="flex-1 relative flex min-h-0">
-        <SoltiniOS isPetMode={isPetMode} />
+        <SoltiniOS isPetMode={effectivePetMode} />
       </div>
     </div>
   );
