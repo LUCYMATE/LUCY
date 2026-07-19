@@ -28,13 +28,25 @@ export class AudioRecorder {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        ...(savedDeviceId ? { deviceId: { exact: savedDeviceId } } : {})
+        ...(savedDeviceId && savedDeviceId !== 'default' ? { deviceId: { exact: savedDeviceId } } : {})
       };
 
-      this.stream = await Promise.race([
-        navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
-        timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
-      ]);
+      try {
+        this.stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
+          timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
+        ]);
+      } catch (err) {
+        if (audioConstraints.deviceId) {
+          logger.add('info', 'Mic Initialization', 'Failed with exact deviceId. Falling back to default microphone.');
+          this.stream = await Promise.race([
+            navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+            timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
+          ]);
+        } else {
+          throw err;
+        }
+      }
       
       logger.add('info', 'Mic Initialization', 'Got stream, setting up AudioContext...');
       this.audioContext = new AudioContext({ sampleRate: 16000 });

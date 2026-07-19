@@ -32,9 +32,7 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
   const [altApiKey, setAltApiKey] = useState<string>(() => localStorage.getItem('soltini_alt_api_key') || '');
   const [tavilyApiKey, setTavilyApiKey] = useState<string>(() => localStorage.getItem('soltini_tavily_api_key') || '');
   const [changed, setChanged] = useState(false);
-  const [launchPetMode, setLaunchPetMode] = useState<boolean>(
-    () => localStorage.getItem('soltini_launch_pet_mode') === 'true'
-  );
+
   const [avatarLocked, setAvatarLocked] = useState<boolean>(
     () => localStorage.getItem('soltini_avatar_locked') === 'true'
   );
@@ -191,25 +189,6 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
             <div className="text-white animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
               <h3 className="text-2xl font-semibold mb-2">General Settings</h3>
 
-              {/* Launch in Pet Mode Toggle */}
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="block text-sm font-medium text-white">Launch in Pet Mode</label>
-                    <p className="text-xs text-white/40 mt-1">If enabled, Soltini opens directly in Pet Mode (fullscreen desktop companion) on every launch.</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const next = !launchPetMode;
-                      setLaunchPetMode(next);
-                      localStorage.setItem('soltini_launch_pet_mode', String(next));
-                    }}
-                    className={`relative w-12 h-6 rounded-full transition-colors ${launchPetMode ? 'bg-pink-500' : 'bg-white/20'}`}
-                  >
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${launchPetMode ? 'translate-x-6' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-              </div>
 
               {/* Avatar Lock Toggle */}
               <div className="bg-white/5 border border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-colors">
@@ -405,14 +384,6 @@ export function SettingsModal({ onClose, onSettingsChanged }: SettingsModalProps
                     <p className="text-sm text-white/50">Mute or unmute Soltini's spoken responses</p>
                   </div>
                   <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + S</kbd>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-lg font-medium text-white">Exit Pet Mode</h4>
-                    <p className="text-sm text-white/50">Return to the standard window view</p>
-                  </div>
-                  <kbd className="bg-black/40 border border-white/20 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + X</kbd>
                 </div>
 
                 <div className="flex items-center justify-between pt-4 mt-4 border-t border-white/10">

@@ -58,6 +58,9 @@
     </style>
   </head>
   <body>
+    <script>
+      window.process = { env: { NODE_ENV: 'development' } };
+    </script>
     <div id="root">
       <div class="mesh-bg-initial"></div>
       <div id="initial-loader">

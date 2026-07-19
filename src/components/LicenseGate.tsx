@@ -246,7 +246,7 @@ export function LicenseGate({ onAuthorized, onRequireActivation, serverUrl = DEF
 
         {/* Card (only render if locked) */}
         {stage === 'locked' && (
-          <div style={{
+          <div className="pointer-events-auto" style={{
             position: 'relative',
             width: '100%', maxWidth: 460,
             margin: '0 20px',

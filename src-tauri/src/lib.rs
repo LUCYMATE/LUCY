@@ -880,15 +880,19 @@ pub fn run() {
             */
 
             // Tray Menu
-            let show_i = MenuItem::with_id(app, "show", "Show Soltini", true, None::<&str>)?;
-            let pet_mode_i =
-                MenuItem::with_id(app, "pet_mode", "Exit Pet Mode", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+            let hide_i = MenuItem::with_id(app, "hide", "Hide Window", true, None::<&str>)?;
+            let refresh_i = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
+            let options_i = MenuItem::with_id(app, "options", "Options (Settings)", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &pet_mode_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&show_i, &hide_i, &refresh_i, &options_i, &quit_i])?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
+            let mut tray_builder = TrayIconBuilder::new().menu(&menu);
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            
+            let _tray = tray_builder
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
                         app.exit(0);
@@ -899,11 +903,21 @@ pub fn run() {
                             win.set_focus().unwrap();
                         }
                     }
-                    "pet_mode" => {
-                        let _ = app.emit("soltini-exit-pet-mode", ());
+                    "hide" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            win.hide().unwrap();
+                        }
+                    }
+                    "refresh" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.eval("window.location.reload();");
+                        }
+                    }
+                    "options" => {
                         if let Some(win) = app.get_webview_window("main") {
                             win.show().unwrap();
                             win.set_focus().unwrap();
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-open-settings'));");
                         }
                     }
                     _ => {}
@@ -923,10 +937,9 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            let win = app
-                .get_webview_window("main")
-                .expect("main window not found");
-            win.show().ok();
+            if let Some(win) = app.get_webview_window("main") {
+                win.show().ok();
+            }
 
             Ok(())
         })

@@ -8,6 +8,7 @@ import { applyGestures } from './gestures';
 import { applyPeek } from './peek';
 import { applyExpressions, clearExpressionCache } from './expressions';
 import { applyFlirty, applyFlirtyIdleSway } from '../../../premium/flirty';
+import { applyVersatilePoses } from './versatilePoses';
 
 function lerpAngle(a: number, b: number, t: number) {
   const dt = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -111,7 +112,7 @@ export function useVrmAnimator({
     const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
 
     // Detect if the current pose is driven entirely by an FBX animation
-    const proceduralPoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'caress', 'sleep'];
+    const proceduralPoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'caress', 'sleep', 'lie-down', 'edge-lean', 'point', 'dynamic-talk'];
     const isFbxPose = !proceduralPoses.includes(basePose);
 
     // To prevent the avatar from freezing for 2-3 frames while the FBX file loads from disk,
@@ -161,6 +162,16 @@ export function useVrmAnimator({
     // FBX takes over for flying-kiss, so we only do procedural flirty poses for the rest
     if (basePose === 'caress' || basePose === 'stretch' || basePose === 'lean') {
       if (!isWalking) applyFlirty(vrm, rest, t, basePose);
+    } else if (basePose === 'lie-down' || basePose === 'edge-lean' || basePose === 'point' || basePose === 'dynamic-talk') {
+      if (!isWalking) {
+        let targetPos = null;
+        if (basePose === 'point') {
+          // If we had a target position (e.g. from mouse), we'd pass it here.
+          // For now, pass null and it will point forward.
+          targetPos = useAvatarState.getState().targetPosition;
+        }
+        applyVersatilePoses(vrm, rest, t, basePose, targetPos);
+      }
     }
 
     // ── Update spring bones, look-at, expression manager ─────────────────
