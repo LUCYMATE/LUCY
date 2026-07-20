@@ -17,7 +17,6 @@ interface AvatarState {
   isDragging: boolean;
   dragOffset: { x: number; y: number };
   affectionLevel: number;
-  isPetMode: boolean;
   avatarScale: number;
   isHearingSound: boolean;
   isToolAgentRunning: boolean;
@@ -26,6 +25,9 @@ interface AvatarState {
   flipCustomModel: boolean;
   isFbxPlaying: boolean;
   connectionState: ConnectionState;
+  isDynamicTalkingEnabled: boolean;
+  preSpeakingState: { position: { x: number; y: number; z: number }, scale: number, pose: BasePose } | null;
+  isSleepMode: boolean;
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -40,7 +42,6 @@ interface AvatarState {
   setIsDragging: (val: boolean) => void;
   setDragOffset: (val: { x: number; y: number }) => void;
   setAffectionLevel: (val: number) => void;
-  setIsPetMode: (val: boolean) => void;
   setAvatarScale: (val: number) => void;
   setHearingSound: (val: boolean) => void;
   setToolAgentRunning: (val: boolean) => void;
@@ -49,6 +50,9 @@ interface AvatarState {
   setFlipCustomModel: (val: boolean) => void;
   setIsFbxPlaying: (val: boolean) => void;
   setConnectionState: (val: ConnectionState) => void;
+  setDynamicTalkingEnabled: (val: boolean) => void;
+  setPreSpeakingState: (val: { position: { x: number; y: number; z: number }, scale: number, pose: BasePose } | null) => void;
+  setIsSleepMode: (val: boolean) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -67,13 +71,15 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isHearingSound: false,
   isToolAgentRunning: false,
   affectionLevel: parseInt(localStorage.getItem('soltini_affection') ?? '30', 10),
-  isPetMode: false,
   avatarScale: parseFloat(localStorage.getItem('soltini_avatar_size') ?? '100') / 100,
   isAvatarLocked: localStorage.getItem('soltini_avatar_locked') === 'true',
   lockedPosition: null,
   flipCustomModel: localStorage.getItem('soltini_flip_vrm') === 'true',
   isFbxPlaying: false,
   connectionState: 'idle',
+  isDynamicTalkingEnabled: localStorage.getItem('soltini_dynamic_talking') === 'true',
+  preSpeakingState: null,
+  isSleepMode: false,
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -89,7 +95,6 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setDragOffset: (val) => set({ dragOffset: val }),
   setHearingSound: (val) => set({ isHearingSound: val }),
   setAffectionLevel: (val) => set({ affectionLevel: val }),
-  setIsPetMode: (val) => set({ isPetMode: val }),
   setAvatarScale: (val) => set({ avatarScale: val }),
   setToolAgentRunning: (val) => set({ isToolAgentRunning: val }),
   setIsAvatarLocked: (val) => set({ isAvatarLocked: val }),
@@ -97,4 +102,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setFlipCustomModel: (val) => set({ flipCustomModel: val }),
   setIsFbxPlaying: (val) => set({ isFbxPlaying: val }),
   setConnectionState: (val) => set({ connectionState: val }),
+  setDynamicTalkingEnabled: (val) => set({ isDynamicTalkingEnabled: val }),
+  setPreSpeakingState: (val) => set({ preSpeakingState: val }),
+  setIsSleepMode: (val) => set({ isSleepMode: val }),
 }));

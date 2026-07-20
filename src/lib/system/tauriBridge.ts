@@ -11,10 +11,8 @@ export const isTauriApp = (): boolean => {
   return Boolean(tauriWindow.__TAURI_INTERNALS__ || tauriWindow.__TAURI__);
 };
 
-const isTauri = isTauriApp;
-
 export const getSystemStats = async (): Promise<{ cpu_usage: number; total_memory: number; used_memory: number; app_memory: number } | null> => {
-  if (!isTauri()) {
+  if (!isTauriApp()) {
     console.warn('getSystemStats called but not running in Tauri environment.');
     return null;
   }
@@ -27,7 +25,7 @@ export const getSystemStats = async (): Promise<{ cpu_usage: number; total_memor
 };
 
 export const openExternalUrl = async (url: string): Promise<void> => {
-  if (!isTauri()) {
+  if (!isTauriApp()) {
     console.warn(`openExternalUrl called with URL: ${url} (Mock behavior in browser)`);
     window.open(url, '_blank');
     return;
@@ -40,7 +38,7 @@ export const openExternalUrl = async (url: string): Promise<void> => {
 };
 
 export const moveAndClickMouse = async (x: number, y: number): Promise<void> => {
-  if (!isTauri()) {
+  if (!isTauriApp()) {
     console.warn(`moveAndClickMouse called with coordinates: (${x}, ${y}) - not running in Tauri`);
     return;
   }
@@ -52,7 +50,7 @@ export const moveAndClickMouse = async (x: number, y: number): Promise<void> => 
 };
 
 export const typeString = async (text: string): Promise<void> => {
-  if (!isTauri()) {
+  if (!isTauriApp()) {
     console.warn(`typeString called with text: "${text}" - not running in Tauri`);
     return;
   }
@@ -62,3 +60,13 @@ export const typeString = async (text: string): Promise<void> => {
     console.error('Error typing string:', error);
   }
 };
+
+export const trimMemory = async (): Promise<void> => {
+  if (!isTauriApp()) return;
+  try {
+    await invoke('trim_memory');
+  } catch (error) {
+    console.error('Error trimming memory:', error);
+  }
+};
+

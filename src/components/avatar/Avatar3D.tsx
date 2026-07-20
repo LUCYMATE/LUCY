@@ -6,8 +6,9 @@ import * as THREE from 'three';
 import { VrmModel, clearVrmCache, clearAssetResolutionCache } from './VrmModel';
 import { clearFbxCache } from './animations/useFbxAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { useEngineStore } from '../../lib/store/engineStore';
 import { useShallow } from 'zustand/react/shallow';
-import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2, CalendarClock, Trash2, Clock } from 'lucide-react';
+import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft } from 'lucide-react';
 
 // Highly optimized FPS limiter using rAF instead of setInterval
 function FpsLimiter() {
@@ -43,6 +44,25 @@ function FpsLimiter() {
     frameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frameId);
   }, [limit, invalidate]);
+  return null;
+}
+
+// Forces Chromium to discard the WebGL context and GPU memory immediately when Canvas unmounts
+function WebGLContextLoser() {
+  const { gl } = useThree();
+  useEffect(() => {
+    return () => {
+      setTimeout(() => {
+        try {
+          const ext = gl.extensions.get('WEBGL_lose_context') as any;
+          if (ext) ext.loseContext();
+          gl.dispose();
+        } catch (e) {
+          console.error("Failed to aggressively release WebGL Context", e);
+        }
+      }, 0);
+    };
+  }, [gl]);
   return null;
 }
 
@@ -158,7 +178,7 @@ const _lerpTarget = new THREE.Vector3();
 // We moved DragHitboxes outside the Canvas to fix the Tauri transparent click-through system.
 
 
-function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
+function SceneManager() {
   const {
     isSpeaking, isThinking, isListening, basePose, isWalking, emotion,
     worldPosition, targetPosition, isDragging, avatarScale, setTargetPosition
@@ -177,6 +197,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   })));
 
   const groupRef = useRef<THREE.Group>(null);
+  const scaleGroupRef = useRef<THREE.Group>(null);
   const [internalMoveDir, setInternalMoveDir] = useState(Math.PI);
 
   useEffect(() => {
@@ -259,10 +280,11 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   useFrame((_state, delta) => {
     if (!groupRef.current) return;
 
+    let distance = 0;
     if (targetPosition) {
       const diffX = targetPosition.x - groupRef.current.position.x;
       const diffY = targetPosition.y - groupRef.current.position.y;
-      const distance = Math.sqrt(diffX * diffX + diffY * diffY);
+      distance = Math.sqrt(diffX * diffX + diffY * diffY);
 
       if (isWalking && distance > 0.01 && !isDragging) {
         const speed = basePose.startsWith('peek') ? 0.8 : 1.5;
@@ -301,6 +323,21 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
         setInternalMoveDir(targetRotY);
       }
     }
+
+    // Smooth Scale Logic
+    if (scaleGroupRef.current) {
+      const currentScale = scaleGroupRef.current.scale.x;
+      const isArrived = distance < 0.05;
+      
+      // If she is growing, wait until she reaches the destination before scaling up.
+      // If she is shrinking, do it immediately so she doesn't block the screen while walking.
+      const targetS = (avatarScale > currentScale && !isArrived && isWalking) ? currentScale : avatarScale;
+      
+      if (Math.abs(currentScale - targetS) > 0.001) {
+        const newScale = THREE.MathUtils.lerp(currentScale, targetS, delta * 6.0);
+        scaleGroupRef.current.scale.setScalar(newScale);
+      }
+    }
   });
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
@@ -322,6 +359,9 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   useEffect(() => {
     if (groupRef.current) {
       groupRef.current.position.set(worldPosition.x, worldPosition.y, worldPosition.z);
+    }
+    if (scaleGroupRef.current) {
+      scaleGroupRef.current.scale.setScalar(avatarScale); // Initial set
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -348,7 +388,7 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
 
   return (
     <group ref={groupRef}>
-      <group scale={avatarScale} position={[0, -1.2, 0]}>
+      <group ref={scaleGroupRef} position={[0, -1.2, 0]}>
         <Stool visible={isCurrentlySitting} />
         <FlyingKisses active={basePose === 'flying-kiss'} />
 
@@ -378,15 +418,15 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
 }
 
 function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
-  const { isAvatarLocked, setIsAvatarLocked, avatarScale, setAvatarScale, isMicOn, isPetMode } = useAvatarState(useShallow(s => ({
+  const { isAvatarLocked, setIsAvatarLocked, avatarScale, setAvatarScale, isMicOn } = useAvatarState(useShallow(s => ({
     isAvatarLocked: s.isAvatarLocked,
     setIsAvatarLocked: s.setIsAvatarLocked,
     avatarScale: s.avatarScale,
     setAvatarScale: s.setAvatarScale,
-    isMicOn: s.isMicOn,
-    isPetMode: s.isPetMode
+    isMicOn: s.isMicOn
   })));
   const [showSizeSlider, setShowSizeSlider] = useState(false);
+  const [showSubMenu, setShowSubMenu] = useState(false);
 
   const setSize = (pct: number) => {
     localStorage.setItem('soltini_avatar_size', pct.toString());
@@ -412,16 +452,18 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     emit('soltini-toggle-mic');
   };
 
-  const openChat = async () => {
-    const { emit } = await import('@tauri-apps/api/event');
-    emit('soltini-exit-pet-mode');
+  const openChat = () => {
+    window.dispatchEvent(new CustomEvent('soltini-open-chat'));
     onClose();
   };
 
-  const openSettings = async () => {
-    const { emit } = await import('@tauri-apps/api/event');
-    emit('soltini-exit-pet-mode');
+  const openSettings = () => {
     window.dispatchEvent(new CustomEvent('soltini-open-settings'));
+    onClose();
+  };
+
+  const openLogs = () => {
+    window.dispatchEvent(new CustomEvent('soltini-open-logs'));
     onClose();
   };
 
@@ -441,8 +483,8 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
   }, [showTasksPopup]);
 
   const openTasks = () => {
-    setShowTasksPopup(!showTasksPopup);
-    setShowSizeSlider(false); // Hide size slider if open
+    window.dispatchEvent(new CustomEvent('soltini-open-tasks', { detail: { x, y } }));
+    onClose();
   };
 
   const handleCancelTask = async (id: string) => {
@@ -450,45 +492,41 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     cancelScheduledTaskById(id);
   };
 
-  const closeApp = async () => {
+  const sleepApp = async () => {
     try {
+      useAvatarState.getState().setIsSleepMode(true);
+      window.dispatchEvent(new CustomEvent('soltini-sleep'));
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      await getCurrentWindow().close();
+      setTimeout(() => getCurrentWindow().hide(), 50);
     } catch (e) {
-      console.warn("Close only works in Tauri apps");
+      console.warn("Hide only works in Tauri apps");
     }
   };
 
   // Radial math
   const radius = 85;
-  const items = [
+  
+  const mainItems = [
     { id: 'mic', icon: isMicOn ? <Mic className="w-5 h-5 text-pink-400" /> : <MicOff className="w-5 h-5 text-white/50" />, action: handleMicToggle, label: 'Mic' },
-    ...(isPetMode 
-      ? [
-          { id: 'chat', icon: <MessageCircle className="w-5 h-5 text-blue-400" />, action: openChat, label: 'Chat' },
-          { id: 'tasks', icon: <CalendarClock className="w-5 h-5 text-purple-400" />, action: openTasks, label: 'Tasks' },
-          { id: 'settings', icon: <Settings className="w-5 h-5 text-gray-300" />, action: openSettings, label: 'Settings' }
-        ]
-      : [
-          { 
-            id: 'petmode', 
-            icon: <Wand2 className="w-5 h-5 text-pink-400" />, 
-            action: () => {
-              window.dispatchEvent(new CustomEvent('soltini-enter-pet-mode'));
-              onClose();
-            }, 
-            label: 'Return to Pet Mode' 
-          }
-        ]
-    ),
-    { id: 'size', icon: <Maximize2 className="w-5 h-5 text-green-400" />, action: () => { setShowSizeSlider(!showSizeSlider); setShowTasksPopup(false); }, label: 'Size' },
+    { id: 'chat', icon: <MessageCircle className="w-5 h-5 text-blue-400" />, action: openChat, label: 'Chat' },
+    { id: 'apps', icon: <Layers className="w-5 h-5 text-blue-400" />, action: () => { setShowSubMenu(true); setShowSizeSlider(false); setShowTasksPopup(false); }, label: 'More' },
+    { id: 'settings', icon: <Settings className="w-5 h-5 text-gray-300" />, action: openSettings, label: 'Settings' },
+    { id: 'size', icon: <Maximize2 className="w-5 h-5 text-green-400" />, action: () => { setShowSizeSlider(!showSizeSlider); setShowTasksPopup(false); setShowSubMenu(false); }, label: 'Size' },
     { id: 'lock', icon: isAvatarLocked ? <Lock className="w-5 h-5 text-yellow-400" /> : <Unlock className="w-5 h-5 text-white/50" />, action: handleLockAvatar, label: 'Lock' },
-    { id: 'close', icon: <Power className="w-5 h-5 text-red-500" />, action: closeApp, label: 'Close App' },
+    { id: 'sleep', icon: <Power className="w-5 h-5 text-red-500" />, action: sleepApp, label: 'Sleep' },
   ];
+
+  const subItems = [
+    { id: 'back', icon: <ChevronLeft className="w-5 h-5 text-white/80" />, action: () => setShowSubMenu(false), label: 'Back' },
+    { id: 'logs', icon: <Terminal className="w-5 h-5 text-purple-400" />, action: openLogs, label: 'Logs' },
+    { id: 'tasks', icon: <CalendarClock className="w-5 h-5 text-purple-400" />, action: openTasks, label: 'Tasks' },
+  ];
+
+  const items = showSubMenu ? subItems : mainItems;
 
   return (
     <div
-      className="pet-context-menu fixed pointer-events-auto z-[9999] animate-in fade-in zoom-in-95 duration-200"
+      className="avatar-context-menu fixed pointer-events-auto z-[9999] animate-in fade-in zoom-in-95 duration-200"
       style={{ left: x, top: y, width: 0, height: 0 }}
     >
       {/* Pink Round Ribbon Path (Track) */}
@@ -534,7 +572,7 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
             key={item.id}
             onClick={item.action}
             title={item.label}
-            className="absolute -translate-x-1/2 -translate-y-1/2 w-11 h-11 rounded-full glass border border-white/10 flex items-center justify-center hover:bg-blue-500/40 hover:border-blue-400/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all duration-300 hover:scale-110 shadow-md pointer-events-auto"
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-blue-600/30 backdrop-blur-md border border-blue-400/30 flex items-center justify-center hover:bg-blue-500/60 hover:border-blue-400/80 hover:shadow-[0_0_15px_rgba(59,130,246,0.6)] transition-all duration-300 hover:scale-110 shadow-md pointer-events-auto"
             style={{ left: bx, top: by }}
           >
             {item.icon}
@@ -651,7 +689,7 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest('.pet-context-menu')) return;
+      if ((e.target as HTMLElement).closest('.avatar-context-menu')) return;
       setContextMenu(null);
     };
     window.addEventListener('pointerdown', handleClick);
@@ -745,7 +783,7 @@ function AvatarLoader() {
   );
 }
 
-export function Avatar3D({ isPetMode }: { isPetMode?: boolean }) {
+export function Avatar3D() {
   return (
     <div className="w-full h-full pointer-events-none relative">
       <Canvas
@@ -754,13 +792,14 @@ export function Avatar3D({ isPetMode }: { isPetMode?: boolean }) {
         gl={{ powerPreference: "low-power", antialias: true, alpha: true }}
         style={{ pointerEvents: 'none' }}
       >
+        <WebGLContextLoser />
         <FpsLimiter />
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
 
         <Suspense fallback={<AvatarLoader />}>
           <ambientLight intensity={0.8} color="#ffffff" />
           <directionalLight position={[0, 2, 2]} intensity={1} color="#ffffff" />
-          <SceneManager isPetMode={isPetMode} />
+          <SceneManager />
         </Suspense>
       </Canvas>
     </div>

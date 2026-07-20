@@ -15,7 +15,6 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [voice, setVoice] = useState(localStorage.getItem('soltini_voice') || 'Aoede');
   const [avatarSize, setAvatarSize] = useState(parseInt(localStorage.getItem('soltini_avatar_size') || '100'));
   
-  const [launchPetMode, setLaunchPetMode] = useState(localStorage.getItem('soltini_launch_pet_mode') === 'true');
   const [autoMic, setAutoMic] = useState(() => {
     const val = localStorage.getItem('soltini_auto_mic');
     return val === null ? true : val === 'true';
@@ -71,12 +70,6 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     useAvatarState.getState().setAvatarScale(val / 100);
     logger.add('success', 'Settings', 'Avatar size changed');
     window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
-  };
-
-  const handleLaunchPetModeChange = (val: boolean) => {
-    setLaunchPetMode(val);
-    localStorage.setItem('soltini_launch_pet_mode', String(val));
-    logger.add('info', 'Settings', `Launch in Pet Mode set to ${val}`);
   };
 
   const handleAutoMicChange = (val: boolean) => {
@@ -246,6 +239,25 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <span>100% (Default)</span>
                   <span>200%</span>
                 </div>
+              </div>
+
+              {/* Dynamic Talking Mode Toggle */}
+              <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex items-center justify-between hover:bg-black/30 transition-colors">
+                <div>
+                  <label className="block text-sm font-medium text-white">Dynamic Talking Mode (Desktop Mate Style)</label>
+                  <p className="text-xs text-white/40 mt-1">When speaking, Soltini dynamically anchors to the taskbar with a large face and highly flexible talking poses.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const val = !useAvatarState.getState().isDynamicTalkingEnabled;
+                    useAvatarState.getState().setDynamicTalkingEnabled(val);
+                    localStorage.setItem('soltini_dynamic_talking', String(val));
+                    logger.add('info', 'Settings', `Dynamic Talking Mode set to ${val}`);
+                  }}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${useAvatarState.getState().isDynamicTalkingEnabled ? 'bg-pink-500' : 'bg-white/20'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${useAvatarState.getState().isDynamicTalkingEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
               </div>
 
             </div>
@@ -419,14 +431,6 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <p className="text-sm text-white/50">Mute or unmute Soltini's spoken responses</p>
                 </div>
                 <kbd className="bg-black/40 border border-white/10 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + S</kbd>
-              </div>
-
-              <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
-                <div>
-                  <h4 className="text-lg font-medium text-white">Exit Pet Mode</h4>
-                  <p className="text-sm text-white/50">Return to the standard window view</p>
-                </div>
-                <kbd className="bg-black/40 border border-white/10 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + X</kbd>
               </div>
 
               <div className="flex items-center justify-between">

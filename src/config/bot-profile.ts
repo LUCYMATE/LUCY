@@ -13,7 +13,8 @@ CRITICAL BEHAVIORS:
 
 const DEFAULT_POSES = [
   'sit', 'stand', 'dance', 'dancing', 'peek-left', 'peek-right', 
-  'stretch', 'lean', 'flying-kiss', 'caress', 'sleep'
+  'stretch', 'lean', 'flying-kiss', 'caress', 'sleep',
+  'lie-down', 'edge-lean', 'point', 'dynamic-talk'
 ];
 
 export const getValidPoses = () => {

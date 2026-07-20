@@ -1,16 +1,31 @@
-import { Settings, CalendarClock, Trash2, Clock, X } from 'lucide-react';
+import { Settings, CalendarClock, Trash2, Clock, X, MessageSquare } from 'lucide-react';
 import { Chat } from '../chat/Chat';
 import { useState, useEffect, useRef } from 'react';
 import { SettingsPage } from '../settings/SettingsPage';
+import { DraggableWindow } from './DraggableWindow';
 import { getScheduledTasks, cancelScheduledTaskById, ScheduledTask } from '../../lib/gemini/gemini-live';
-import { getSystemStats, isTauriApp } from '../../lib/system/tauriBridge';
+import { getSystemStats, isTauriApp, trimMemory } from '../../lib/system/tauriBridge';
 import { logger, LogEntry } from '../../lib/store/logger';
 import { AvatarController } from '../avatar/AvatarController';
+import { SystemIndicators } from './SystemIndicators';
+import { SystemLogs } from './SystemLogs';
+import { useCoreEngine } from '../../hooks/useCoreEngine';
 
+import { useAvatarState } from '../../lib/store/avatarState';
+import { clearVrmCache } from '../avatar/VrmModel';
+import { clearFbxCache } from '../avatar/animations/useFbxAnimation';
 
-export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
+export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  
+  const isSleepMode = useAvatarState(s => s.isSleepMode);
+
+  // Start the core engine unconditionally so the avatar stays alive
+  useCoreEngine();
+
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [latency, setLatency] = useState<string>('checking...');
 
@@ -20,9 +35,36 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
     window.addEventListener('soltini-tasks-changed', loadTasks);
     return () => window.removeEventListener('soltini-tasks-changed', loadTasks);
   }, []);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (isSleepMode) {
+      // Force aggressive garbage collection of heavy 3D assets to drop GPU/RAM usage to zero
+      clearVrmCache();
+      clearFbxCache();
+      // Drop memory used by chromium process for true near-zero memory footprint
+      // We loop this because the background Audio WebSockets cause V8 to rapidly allocate memory again
+      setTimeout(() => trimMemory(), 500);
+      interval = setInterval(() => {
+        trimMemory();
+      }, 5000);
+    } else {
+      // Aggressively keep RAM footprint low (~300MB) during normal active use
+      // Delay the first trim by 10s to ensure the heavy VRM model finishes loading safely first!
+      setTimeout(() => trimMemory(), 10000);
+      interval = setInterval(() => {
+        trimMemory();
+      }, 15000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSleepMode]);
+  
   const [cpu, setCpu] = useState<number>(0);
   const [memory, setMemory] = useState<string>('0 / 0 GB');
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [tasksPos, setTasksPos] = useState<{x: number, y: number} | null>(null);
   const isTauri = isTauriApp();
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
@@ -35,20 +77,65 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
   }, [logs]);
 
   useEffect(() => {
-    if (isPetMode) {
+    const handleOpenSettings = () => { setShowSettings(true); setShowTasks(false); setShowChat(false); setShowLogs(false); };
+    const handleOpenTasks = (e: any) => {
+      setShowTasks(true); setShowSettings(false); setShowChat(false); setShowLogs(false);
+      if (e.detail && typeof e.detail.x === 'number') {
+        setTasksPos({ x: e.detail.x, y: e.detail.y });
+      } else {
+        setTasksPos(null);
+      }
+    };
+    const handleOpenChat = () => { setShowChat(true); setShowSettings(false); setShowTasks(false); setShowLogs(false); };
+    const handleOpenLogs = () => { setShowLogs(true); setShowSettings(false); setShowTasks(false); setShowChat(false); };
+    
+    const handleSleep = () => {
       setShowSettings(false);
       setShowTasks(false);
-    }
-  }, [isPetMode]);
+      setShowChat(false);
+      setShowLogs(false);
+    };
 
-  useEffect(() => {
-    const handleOpenSettings = () => { setShowSettings(true); setShowTasks(false); };
-    const handleOpenTasks = () => { setShowTasks(true); setShowSettings(false); };
+    const handleWakeUp = async () => {
+      useAvatarState.getState().setIsSleepMode(false);
+      setShowSettings(false);
+      setShowTasks(false);
+      setShowChat(false);
+      setShowLogs(false);
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const win = getCurrentWindow();
+        await win.show();
+        await win.setFocus();
+      } catch (e) {
+        console.warn("Tauri window API not available");
+      }
+    };
+
+    const handleToggleSleep = () => {
+      const isSleep = useAvatarState.getState().isSleepMode;
+      if (isSleep) {
+        window.dispatchEvent(new CustomEvent('soltini-wake-up'));
+      } else {
+        window.dispatchEvent(new CustomEvent('soltini-sleep'));
+      }
+    };
+
+    window.addEventListener('soltini-toggle-sleep', handleToggleSleep);
     window.addEventListener('soltini-open-settings', handleOpenSettings);
     window.addEventListener('soltini-open-tasks', handleOpenTasks);
+    window.addEventListener('soltini-open-chat', handleOpenChat);
+    window.addEventListener('soltini-open-logs', handleOpenLogs);
+    window.addEventListener('soltini-sleep', handleSleep);
+    window.addEventListener('soltini-wake-up', handleWakeUp);
     return () => {
+      window.removeEventListener('soltini-toggle-sleep', handleToggleSleep);
       window.removeEventListener('soltini-open-settings', handleOpenSettings);
       window.removeEventListener('soltini-open-tasks', handleOpenTasks);
+      window.removeEventListener('soltini-open-chat', handleOpenChat);
+      window.removeEventListener('soltini-open-logs', handleOpenLogs);
+      window.removeEventListener('soltini-sleep', handleSleep);
+      window.removeEventListener('soltini-wake-up', handleWakeUp);
     };
   }, []);
 
@@ -87,7 +174,7 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
 
     // Only run stats when sidebar is visible (not in pet mode or when settings is closed)
     const startPolling = () => {
-      if (isPetMode || showSettings) return;
+      if (showSettings || isSleepMode) return;
       checkPing();
       checkStats();
       interval = setInterval(() => {
@@ -106,16 +193,46 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
     startPolling();
 
     return () => stopPolling();
-  }, [isTauri, isPetMode, showSettings]);
+  }, [isTauri, showSettings, isSleepMode]);
 
   return (
-    <div className={`flex h-full w-full relative min-h-0 ${isPetMode ? 'p-0 max-w-none' : 'px-2 py-1 sm:px-3 gap-2 sm:gap-3'}`}>
-      <div className={`flex-1 w-full h-full glass rounded-[20px] ${showSettings ? 'block' : 'hidden'}`}>
-        {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
-      </div>
+    <div className={`flex h-full w-full relative min-h-0 p-0 max-w-none`}>
       
-      {showTasks && (
-        <div className="absolute left-16 sm:left-[340px] bottom-6 z-50 w-72 glass rounded-[20px] p-4 border border-white/20 shadow-2xl flex flex-col gap-3 animate-in slide-in-from-bottom-4 fade-in pointer-events-auto">
+      {!isSleepMode && <SystemIndicators />}
+      
+      {showSettings && !isSleepMode && (
+        <div className="absolute inset-0 pointer-events-none z-50">
+          <DraggableWindow
+            defaultPosition={{ 
+              x: typeof window !== 'undefined' && window.innerWidth > 840 ? window.innerWidth - 840 : 20,
+              y: 80
+            }}
+            defaultSize={{ width: 800, height: 600 }}
+            minWidth={500}
+            minHeight={500}
+            dragHandleClass="settings-drag-handle"
+            cancelClass="cancel-drag"
+            className="pointer-events-auto"
+          >
+            <div className="settings-drag-handle w-full h-full bg-[#181818] rounded-[16px] flex flex-col relative border border-white/20 overflow-hidden">
+              <SettingsPage onClose={() => setShowSettings(false)} />
+              <button onClick={() => setShowSettings(false)} className="cancel-drag absolute top-4 right-6 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-50 cursor-pointer">
+                <X className="w-5 h-5 text-white/90" />
+              </button>
+            </div>
+          </DraggableWindow>
+        </div>
+      )}
+      
+      {showTasks && !isSleepMode && (
+        <div 
+          className="absolute z-50 w-72 bg-[#121212]/95 backdrop-blur-md rounded-[20px] p-4 border border-white/20 shadow-2xl flex flex-col gap-3 animate-in zoom-in-95 duration-200 pointer-events-auto"
+          style={{
+            left: tasksPos ? `${Math.min(tasksPos.x + 20, window.innerWidth - 300)}px` : '340px',
+            top: tasksPos ? `${Math.min(tasksPos.y - 100, window.innerHeight - 300)}px` : 'auto',
+            bottom: tasksPos ? 'auto' : '24px'
+          }}
+        >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CalendarClock className="w-4 h-4 text-pink-400" />
@@ -139,105 +256,27 @@ export function SoltiniOS({ isPetMode = false }: { isPetMode?: boolean }) {
         </div>
       )}
 
-      <div className={`flex h-full w-full gap-2 sm:gap-3 ${showSettings ? 'hidden' : 'flex'}`}>
-        {/* Main Workspace */}
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 h-full">
-          <section className="flex-1 flex flex-col min-w-0 min-h-0">
-            <div className={`${!isPetMode ? 'glass rounded-[20px] shadow-2xl' : ''} flex-1 relative overflow-hidden flex flex-col min-h-0`}>
-              <Chat isPetMode={isPetMode} />
-            </div>
-          </section>
-        </main>
-
-          {/* Navigation */}
-          {!isPetMode && (
-            <aside className="w-16 sm:w-80 shrink-0 flex flex-col">
-              <div className="flex flex-col items-center sm:items-start glass rounded-[20px] shadow-2xl p-4 sm:p-6 h-full gap-8 relative z-10">
-               <div className="flex items-center gap-3 w-full justify-center sm:justify-start shrink-0">
-                 <img src="/logo.png" alt="Soltini Logo" className="w-8 h-8 rounded-full object-cover shadow-[0_0_15px_rgba(236,72,153,0.5)] shrink-0" />
-                 <h1 className="text-xl font-bold tracking-tight text-white hidden sm:block">SOLTINI</h1>
-               </div>
-               
-               {/* Activity Logs (only visible on desktop) */}
-               <div className="hidden sm:flex flex-1 overflow-hidden flex-col w-full bg-black/20 rounded-xl border border-white/5 min-h-0">
-                 <div className="p-3 border-b border-white/5 bg-white/5 flex items-center justify-between shrink-0">
-                   <span className="text-[10px] uppercase tracking-widest text-pink-300 font-medium">Activity Log</span>
-                   <span className="flex h-2 w-2 relative">
-                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                     <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500"></span>
-                   </span>
-                 </div>
-                 <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-3 flex flex-col gap-2 relative">
-                   {(() => {
-                     const displayLogs = logs.filter(log => log.level === 'error' || log.level === 'warning' || (log.level === 'success' && !log.action.includes('Tool')));
-                     return displayLogs.length === 0 ? (
-                       <div className="text-white/30 text-xs italic text-center mt-4">Waiting for activity...</div>
-                     ) : (
-                       displayLogs.map(log => (
-                         <div key={log.id} className="flex flex-col gap-1 text-xs border-l-2 pl-2 py-1 border-white/10 hover:bg-white/5 transition-colors animate-in slide-in-from-left-2 fade-in duration-300">
-                           <div className="flex items-center gap-1.5 opacity-70">
-                             <span className="font-mono text-[9px]">{new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}</span>
-                             <span className={`text-[10px] font-bold uppercase tracking-wider
-                               ${log.level === 'error' ? 'text-red-400' :
-                                 log.level === 'warning' ? 'text-yellow-400' :
-                                 log.level === 'success' ? 'text-green-400' : 'text-blue-400'}`
-                             }>{log.level}</span>
-                           </div>
-                           <div className="font-medium text-white/90">{log.action}</div>
-                           <div className="text-white/60 text-[10px] leading-tight break-words">{log.detail}</div>
-                         </div>
-                       ))
-                     );
-                   })()}
-                   {/* Auto-scroll anchor */}
-                   <div className="h-1 shrink-0" ref={logsEndRef} />
-                 </div>
-               </div>
-               
-               <div className="flex flex-col gap-6 w-full mt-auto shrink-0">
-                  <div className="hidden sm:flex flex-col gap-4 bg-white/5 border border-white/10 rounded-xl p-4 text-left">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-widest text-pink-300 opacity-60 mb-0.5">Network Latency</p>
-                      <p className="text-sm font-mono text-white">{latency}</p>
-                    </div>
-                    {isTauri && (
-                      <>
-                        <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <p className="text-[10px] uppercase tracking-widest text-pink-300 opacity-60">CPU Usage</p>
-                            <span className="text-xs font-mono text-white">{cpu}%</span>
-                          </div>
-                          <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-pink-500 h-full rounded-full transition-all duration-500" style={{ width: `${cpu}%` }} />
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-[10px] uppercase tracking-widest text-pink-300 opacity-60 mb-0.5">App RAM Usage</p>
-                          <p className="text-sm font-mono text-white">{memory}</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  
-                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-0 w-full sm:h-12 sm:bg-white/5 sm:border sm:border-white/10 rounded-xl overflow-hidden mt-2">
-                    <div className="w-12 h-12 sm:w-1/2 sm:h-full rounded-xl sm:rounded-none bg-white/5 sm:bg-transparent border border-white/10 sm:border-none flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors gap-2" onClick={() => { setShowTasks(true); setShowSettings(false); }} title="Tasks">
-                      <CalendarClock className="w-5 h-5 text-white" />
-                      <span className="hidden sm:block text-white font-medium text-sm">Tasks</span>
-                    </div>
-                    <div className="hidden sm:block w-px h-full bg-white/10" />
-                    <div className="w-12 h-12 sm:w-1/2 sm:h-full rounded-xl sm:rounded-none bg-white/5 sm:bg-transparent border border-white/10 sm:border-none flex items-center justify-center cursor-pointer hover:bg-white/10 transition-colors gap-2" onClick={() => { setShowSettings(true); setShowTasks(false); }} title="Settings">
-                      <Settings className="w-5 h-5 text-white" />
-                      <span className="hidden sm:block text-white font-medium text-sm">Settings</span>
-                    </div>
-                  </div>
-                 </div>
-              </div>
-            </aside>
-          )}
-          
-          {/* AvatarController mounts the 3D scene. Unmounting it saves all RAM/CPU! */}
-          <AvatarController isPetMode={isPetMode} />
+      <div className="absolute inset-0 pointer-events-none z-0">
+        {showChat && !isSleepMode && (
+          <Chat 
+            isVisible={showChat}
+            onCloseChat={() => setShowChat(false)}
+          />
+        )}
+        {showLogs && !isSleepMode && (
+          <SystemLogs
+            isVisible={showLogs}
+            onClose={() => setShowLogs(false)}
+            logs={logs}
+            cpu={cpu}
+            memory={memory}
+            latency={latency}
+            isTauri={isTauri}
+          />
+        )}
       </div>
+      
+      {!isSleepMode && <AvatarController />}
     </div>
   );
 }

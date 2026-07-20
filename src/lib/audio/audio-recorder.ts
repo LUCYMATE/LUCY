@@ -19,8 +19,6 @@ export class AudioRecorder {
         throw new Error('navigator.mediaDevices API is not available. Are you in a secure context?');
       }
       
-      logger.add('info', 'Mic Initialization', 'Requesting microphone access...');
-      
       const timeoutPromise = (ms: number, msg: string) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms));
 
       const savedDeviceId = localStorage.getItem('soltini_mic_id');
@@ -28,24 +26,32 @@ export class AudioRecorder {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        ...(savedDeviceId ? { deviceId: { exact: savedDeviceId } } : {})
+        ...(savedDeviceId && savedDeviceId !== 'default' ? { deviceId: { exact: savedDeviceId } } : {})
       };
 
-      this.stream = await Promise.race([
-        navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
-        timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
-      ]);
+      try {
+        this.stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
+          timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
+        ]);
+      } catch (err) {
+        if (audioConstraints.deviceId) {
+          logger.add('info', 'Mic Initialization', 'Failed with exact deviceId. Falling back to default microphone.');
+          this.stream = await Promise.race([
+            navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+            timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
+          ]);
+        } else {
+          throw err;
+        }
+      }
       
-      logger.add('info', 'Mic Initialization', 'Got stream, setting up AudioContext...');
       this.audioContext = new AudioContext({ sampleRate: 16000 });
       
-      logger.add('info', 'Mic Initialization', 'Adding audio worklet module...');
       await Promise.race([
         this.audioContext.audioWorklet.addModule('/audio-worklet.js'),
         timeoutPromise(5000, 'audioWorklet.addModule timed out after 5 seconds')
       ]);
-      
-      logger.add('info', 'Mic Initialization', 'Connecting audio nodes...');
       
       this.source = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();

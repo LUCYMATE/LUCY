@@ -178,6 +178,58 @@ fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Resul
     }
 }
 
+#[cfg(target_os = "windows")]
+fn trim_memory_internal() {
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_processes();
+
+    let current_pid = sysinfo::get_current_pid().unwrap();
+    let mut all_descendants = std::collections::HashSet::new();
+    all_descendants.insert(current_pid);
+
+    let processes = sys.processes();
+    let mut added = true;
+    while added {
+        added = false;
+        for (pid, process) in processes {
+            if let Some(parent_pid) = process.parent() {
+                if all_descendants.contains(&parent_pid) && !all_descendants.contains(pid) {
+                    all_descendants.insert(*pid);
+                    added = true;
+                }
+            }
+        }
+    }
+
+    for pid in all_descendants {
+        unsafe {
+            let handle = windows_sys::Win32::System::Threading::OpenProcess(
+                windows_sys::Win32::System::Threading::PROCESS_ALL_ACCESS,
+                0,
+                pid.as_u32(),
+            );
+            if handle != std::ptr::null_mut() {
+                windows_sys::Win32::System::Memory::SetProcessWorkingSetSizeEx(handle, usize::MAX, usize::MAX, 0);
+                windows_sys::Win32::Foundation::CloseHandle(handle);
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn trim_memory(state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        trim_memory_internal();
+    }
+    Ok(())
+}
+
+
 #[tauri::command]
 fn press_key(key: String, state: tauri::State<AppState>) -> Result<(), String> {
     if !*state.authorized.lock().unwrap() {
@@ -718,6 +770,53 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
     serde_json::json!({ "success": false })
 }
 
+fn do_wake_up_main(app_handle: &tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        
+        // Delay interacting with the WebView2 API to ensure it has fully resumed 
+        // from OS-level suspension (caused by trim_memory), otherwise it throws 0x8007139F
+        let win_clone = win.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = win_clone.set_ignore_cursor_events(true);
+            let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
+        });
+    }
+}
+
+#[tauri::command]
+fn enter_sleep_mode(_app_handle: tauri::AppHandle) -> Result<(), String> {
+    // We intentionally do NOT hide the window here anymore to prevent the Windows WebView2 
+    // white-screen flash when waking up. The frontend will hide all UI elements and become 
+    // fully transparent, and the cursor events are already ignored.
+    // if let Some(win) = app_handle.get_webview_window("main") {
+    //     let _ = win.hide();
+    // }
+    
+    #[cfg(target_os = "windows")]
+    {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            trim_memory_internal();
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn wake_up_main(app_handle: tauri::AppHandle) -> Result<(), String> {
+    do_wake_up_main(&app_handle);
+    Ok(())
+}
+
+#[tauri::command]
+fn is_autostart() -> bool {
+    std::env::args().any(|arg| arg == "--autostart")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -759,6 +858,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
             authorized: Mutex::new(false),
@@ -785,6 +885,10 @@ pub fn run() {
             verify_license,
             check_authorization,
             get_stored_license,
+            trim_memory,
+            enter_sleep_mode,
+            wake_up_main,
+            is_autostart,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -800,12 +904,15 @@ pub fn run() {
                     .with_handler(|app, shortcut, event| {
                         if event.state == ShortcutState::Pressed {
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyX) {
+                                do_wake_up_main(app);
                                 let _ = app.emit("soltini-exit-pet-mode", ());
                             }
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyS) {
+                                do_wake_up_main(app);
                                 let _ = app.emit("soltini-toggle-mute", ());
                             }
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyM) || shortcut.matches(Modifiers::empty(), Code::F9) {
+                                do_wake_up_main(app);
                                 let _ = app.emit("soltini-toggle-mic", ());
                             }
                         }
@@ -850,6 +957,7 @@ pub fn run() {
                     if !event.is_null() {
                         loop {
                             WaitForSingleObject(event, u32::MAX);
+                            do_wake_up_main(&app_handle);
                             let _ = app_handle.emit("soltini-exit-pet-mode", ());
                         }
                     }
@@ -880,30 +988,44 @@ pub fn run() {
             */
 
             // Tray Menu
-            let show_i = MenuItem::with_id(app, "show", "Show Soltini", true, None::<&str>)?;
-            let pet_mode_i =
-                MenuItem::with_id(app, "pet_mode", "Exit Pet Mode", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+            let hide_i = MenuItem::with_id(app, "hide", "Hide Window", true, None::<&str>)?;
+            let refresh_i = MenuItem::with_id(app, "refresh", "Refresh", true, None::<&str>)?;
+            let options_i = MenuItem::with_id(app, "options", "Options (Settings)", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &pet_mode_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&show_i, &hide_i, &refresh_i, &options_i, &quit_i])?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
+            let mut tray_builder = TrayIconBuilder::new().menu(&menu);
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            
+            let _tray = tray_builder
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
                         app.exit(0);
                     }
                     "show" => {
+                        do_wake_up_main(app.app_handle());
+                    }
+                    "hide" => {
                         if let Some(win) = app.get_webview_window("main") {
-                            win.show().unwrap();
-                            win.set_focus().unwrap();
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-sleep'));");
+                            // We intentionally do not call win.hide() here. The frontend will 
+                            // become transparent and ignore mouse events. Hiding the window 
+                            // causes WebView2 to suspend, which kills the SpeechRecognition wake word.
                         }
                     }
-                    "pet_mode" => {
-                        let _ = app.emit("soltini-exit-pet-mode", ());
+                    "refresh" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.eval("window.location.reload();");
+                        }
+                    }
+                    "options" => {
                         if let Some(win) = app.get_webview_window("main") {
                             win.show().unwrap();
                             win.set_focus().unwrap();
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-open-settings'));");
                         }
                     }
                     _ => {}
@@ -915,18 +1037,18 @@ pub fn run() {
                     } => {
                         let app = tray.app_handle();
                         if let Some(win) = app.get_webview_window("main") {
-                            win.show().unwrap();
-                            win.set_focus().unwrap();
+                            // Since the window is never hidden (to keep SpeechRecognition alive), 
+                            // we just dispatch a toggle event to the frontend and let it handle the state.
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-toggle-sleep'));");
                         }
                     }
                     _ => {}
                 })
                 .build(app)?;
 
-            let win = app
-                .get_webview_window("main")
-                .expect("main window not found");
-            win.show().ok();
+            if let Some(win) = app.get_webview_window("main") {
+                win.show().ok();
+            }
 
             Ok(())
         })

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { fetch } from '@tauri-apps/plugin-http';
 import { logger } from '../store/logger';
 import { memoryStore } from '../memory/memory-store';
 import { vectorMemory } from '../store/vectorMemory';
@@ -42,7 +43,15 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     const key = localStorage.getItem('soltini_main_api_key');
     if (!key) throw new Error('API key required for memory embeddings');
     const memories = await vectorMemory.searchWithText(args.query, key, 5);
-    result = { success: true, memories };
+    const query = String(args.query || '').toLowerCase();
+    const queryWords = query.split(/\s+/).filter(w => w.length > 2);
+    const allFacts = memoryStore.getAllUserFacts();
+    const localMatches: string[] = [];
+    for (const [k, v] of Object.entries(allFacts)) {
+      const text = `${k}: ${v}`;
+      if (queryWords.some(w => text.toLowerCase().includes(w))) localMatches.push(text);
+    }
+    result = { success: true, memories: [...memories.memories, ...localMatches.slice(0, 3)] };
   } else if (name === 'press_key') {
     await invoke('press_key', { key: args.key });
     result = { success: true };
@@ -128,24 +137,6 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     } else {
       result = { error: 'Both key and value are required' };
     }
-  } else if (name === 'search_memory') {
-    const query = String(args.query || '').toLowerCase();
-    const queryWords = query.split(/\s+/).filter(w => w.length > 2);
-    const allFacts = memoryStore.getAllUserFacts();
-    const scored: { text: string, score: number }[] = [];
-
-    for (const [key, value] of Object.entries(allFacts)) {
-      const text = `${key}: ${value}`;
-      const textLower = text.toLowerCase();
-      let score = 0;
-      for (const w of queryWords) {
-        if (textLower.includes(w)) score++;
-      }
-      if (score > 0) scored.push({ text, score });
-    }
-    scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, 5).map(i => i.text);
-    result = { success: true, results: top.length > 0 ? top : ['No relevant memories found.'] };
   } else if (name === 'schedule_task') {
     const targetStr = String(args.target_time || '');
     const instruction = String(args.instruction || '');
@@ -261,6 +252,13 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       }
     } catch (e) {
       result = { error: 'Failed to set pose: ' + String(e) };
+    }
+  } else if (name === 'go_to_sleep') {
+    try {
+      window.dispatchEvent(new CustomEvent('soltini-sleep'));
+      result = { success: true, message: 'System is going to sleep.' };
+    } catch (e) {
+      result = { error: 'Failed to go to sleep: ' + String(e) };
     }
   }
   return result;
