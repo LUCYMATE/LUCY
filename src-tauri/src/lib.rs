@@ -1,62 +1,123 @@
-use enigo::{Enigo, KeyboardControllable, MouseButton, MouseControllable, Key};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use enigo::{Enigo, Key, KeyboardControllable, MouseButton, MouseControllable};
+use screenshots::Screen;
 use std::sync::Mutex;
 use sysinfo::System;
-use tauri::{Emitter, Manager};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton as TrayMouseButton};
 use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton as TrayMouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
-use screenshots::Screen;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+// License system
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+// HMAC key — MUST match HMAC_SECRET in Vercel environment variable
+// Format: "<hwid>:<ACCESS_CODE>" signed with this key
+const HMAC_KEY: &[u8] = b"52e590ec0fab06527b45d3a6ebeabe6e74e3d99878a7fbbd6f47e3763234accf";
+// Offline token re-verify interval (24 hours in seconds)
+const OFFLINE_GRACE_SECONDS: i64 = 24 * 60 * 60;
 
 struct AppState {
     sys: Mutex<System>,
+    authorized: Mutex<bool>,
 }
 
 #[tauri::command]
-fn get_system_stats(state: tauri::State<AppState>) -> serde_json::Value {
+fn get_system_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     let mut sys = state.sys.lock().unwrap();
     sys.refresh_cpu_usage();
     sys.refresh_memory();
+    sys.refresh_processes();
 
     let cpu_usage = sys.global_cpu_info().cpu_usage();
     let total_memory = sys.total_memory();
-    let used_memory = sys.used_memory();
 
-    serde_json::json!({
+    // Calculate exact RAM used by this app and its webview child processes
+    let current_pid = sysinfo::get_current_pid().unwrap();
+    let mut app_memory: u64 = 0;
+    // We need to collect all descendants to capture the full WebView2 tree (Renderer, GPU, Network, etc.)
+    let mut all_descendants = std::collections::HashSet::new();
+    all_descendants.insert(current_pid);
+
+    let processes = sys.processes();
+    let mut added = true;
+    while added {
+        added = false;
+        for (pid, process) in processes {
+            if let Some(parent_pid) = process.parent() {
+                if all_descendants.contains(&parent_pid) && !all_descendants.contains(pid) {
+                    all_descendants.insert(*pid);
+                    added = true;
+                }
+            }
+        }
+    }
+
+    for pid in all_descendants {
+        if let Some(process) = processes.get(&pid) {
+            app_memory += process.memory();
+        }
+    }
+
+    Ok(serde_json::json!({
         "cpu_usage": cpu_usage,
         "total_memory": total_memory,
-        "used_memory": used_memory
-    })
+        "used_memory": sys.used_memory(),
+        "app_memory": app_memory
+    }))
 }
 
 #[tauri::command]
-fn open_external_url(app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
-    app_handle.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+fn open_external_url(app_handle: tauri::AppHandle, url: String, state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    app_handle
+        .opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn move_and_click_mouse(x: i32, y: i32) {
+fn move_and_click_mouse(x: i32, y: i32, state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     let mut enigo = Enigo::new();
     enigo.mouse_move_to(x, y);
     enigo.mouse_click(MouseButton::Left);
+    Ok(())
 }
 
 #[tauri::command]
-fn scroll_mouse(amount: i32) -> Result<(), String> {
+fn scroll_mouse(amount: i32, state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     let mut enigo = Enigo::new();
     enigo.mouse_scroll_y(amount);
     Ok(())
 }
 
 #[tauri::command]
-fn type_string(text: String) {
+fn type_string(text: String, state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     let mut enigo = Enigo::new();
     enigo.key_sequence(&text);
+    Ok(())
 }
 
 #[tauri::command]
-fn run_python_script(script: String) -> Result<String, String> {
+fn run_python_script(script: String, state: tauri::State<AppState>) -> Result<String, String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     let temp_dir = std::env::temp_dir();
     let file_path = temp_dir.join("soltini_temp_script.py");
     std::fs::write(&file_path, script).map_err(|e| e.to_string())?;
@@ -70,8 +131,12 @@ fn run_python_script(script: String) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
 
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to execute python: {}. Ensure Python is installed.", e))?;
+    let output = cmd.output().map_err(|e| {
+        format!(
+            "Failed to execute python: {}. Ensure Python is installed.",
+            e
+        )
+    })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -86,7 +151,10 @@ fn run_python_script(script: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn run_terminal_command(command: String) -> Result<String, String> {
+fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Result<String, String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
 
@@ -96,7 +164,8 @@ fn run_terminal_command(command: String) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
 
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| format!("Failed to execute command: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -110,7 +179,10 @@ fn run_terminal_command(command: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn press_key(key: String) -> Result<(), String> {
+fn press_key(key: String, state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     let mut enigo = Enigo::new();
     let enigo_key = match key.to_lowercase().as_str() {
         "enter" | "return" => Key::Return,
@@ -153,6 +225,23 @@ fn key_to_enigo(key: &str) -> Result<Key, String> {
         "down" => Ok(Key::DownArrow),
         "left" => Ok(Key::LeftArrow),
         "right" => Ok(Key::RightArrow),
+        "f1" => Ok(Key::F1),
+        "f2" => Ok(Key::F2),
+        "f3" => Ok(Key::F3),
+        "f4" => Ok(Key::F4),
+        "f5" => Ok(Key::F5),
+        "f6" => Ok(Key::F6),
+        "f7" => Ok(Key::F7),
+        "f8" => Ok(Key::F8),
+        "f9" => Ok(Key::F9),
+        "f10" => Ok(Key::F10),
+        "f11" => Ok(Key::F11),
+        "f12" => Ok(Key::F12),
+        "delete" | "del" => Ok(Key::Delete),
+        "pageup" | "pgup" => Ok(Key::PageUp),
+        "pagedown" | "pgdn" => Ok(Key::PageDown),
+        "home" => Ok(Key::Home),
+        "end" => Ok(Key::End),
         other => {
             if other.chars().count() == 1 {
                 Ok(Key::Layout(other.chars().next().unwrap()))
@@ -164,7 +253,10 @@ fn key_to_enigo(key: &str) -> Result<Key, String> {
 }
 
 #[tauri::command]
-fn press_key_combo(keys: Vec<String>) -> Result<(), String> {
+fn press_key_combo(keys: Vec<String>, state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     let mut enigo = Enigo::new();
 
     for key in &keys {
@@ -181,53 +273,91 @@ fn press_key_combo(keys: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn capture_screen() -> Result<serde_json::Value, String> {
+fn capture_screen(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
     let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
     let screen = screens.first().ok_or("No screen found")?;
+
+    let img = screen
+        .capture()
+        .map_err(|e| format!("Capture failed: {}", e))?;
+
+    let orig_width = img.width();
+    let orig_height = img.height();
     
-    let mut img = screen.capture().map_err(|e| format!("Capture failed: {}", e))?;
+    let max_width = 1920.0;
+    let scale_factor = if orig_width as f32 > max_width {
+        orig_width as f32 / max_width
+    } else {
+        1.0
+    };
+
+    let mut dynamic_img = screenshots::image::DynamicImage::ImageRgba8(img);
+    if scale_factor > 1.0 {
+        let new_width = (orig_width as f32 / scale_factor).round() as u32;
+        let new_height = (orig_height as f32 / scale_factor).round() as u32;
+        dynamic_img = dynamic_img.resize_exact(new_width, new_height, screenshots::image::imageops::FilterType::Triangle);
+    }
     
-    let width = img.width();
-    let height = img.height();
+    let mut final_img = dynamic_img.to_rgba8();
+    let width = final_img.width();
+    let height = final_img.height();
     let grid_spacing = 100;
-    
-    // Draw 100px grid overlay
+
     for x in (0..width).step_by(grid_spacing as usize) {
         for y in 0..height {
-            let pixel = img.get_pixel_mut(x, y);
-            // Subtle Red for vertical
-            pixel[0] = 255; 
-            pixel[1] = pixel[1].saturating_sub(50);
-            pixel[2] = pixel[2].saturating_sub(50);
+            let pixel = final_img.get_pixel_mut(x, y);
+            pixel[0] = pixel[0].saturating_add((255_u16.saturating_sub(pixel[0] as u16) / 2) as u8);
+            pixel[1] = pixel[1].saturating_sub(40);
+            pixel[2] = pixel[2].saturating_sub(40);
         }
     }
     for y in (0..height).step_by(grid_spacing as usize) {
         for x in 0..width {
-            let pixel = img.get_pixel_mut(x, y);
-            // Subtle Blue for horizontal
-            pixel[0] = pixel[0].saturating_sub(50);
-            pixel[1] = pixel[1].saturating_sub(50);
-            pixel[2] = 255;
+            let pixel = final_img.get_pixel_mut(x, y);
+            pixel[0] = pixel[0].saturating_sub(40);
+            pixel[1] = pixel[1].saturating_sub(40);
+            pixel[2] = pixel[2].saturating_add((255_u16.saturating_sub(pixel[2] as u16) / 2) as u8);
         }
     }
 
     let mut bytes = Vec::new();
-    let dynamic_img = screenshots::image::DynamicImage::ImageRgba8(img);
-    dynamic_img.write_to(&mut std::io::Cursor::new(&mut bytes), screenshots::image::ImageFormat::Jpeg)
+    let dynamic_final = screenshots::image::DynamicImage::ImageRgba8(final_img);
+    dynamic_final
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            screenshots::image::ImageFormat::Jpeg,
+        )
         .map_err(|e| format!("JPEG conversion failed: {}", e))?;
-    
+
     let base64_image = STANDARD.encode(&bytes);
 
     Ok(serde_json::json!({
         "base64": base64_image,
-        "width": screen.display_info.width,
-        "height": screen.display_info.height
+        "width": width,
+        "height": height,
+        "scale_factor": scale_factor
     }))
 }
 
 #[tauri::command]
-fn save_3d_asset(app_handle: tauri::AppHandle, id: String, asset_type: String, name: String, data_base64: String) -> Result<(), String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+fn save_3d_asset(
+    app_handle: tauri::AppHandle,
+    id: String,
+    asset_type: String,
+    name: String,
+    data_base64: String,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let assets_dir = local_data.join("assets");
     std::fs::create_dir_all(&assets_dir).map_err(|e| e.to_string())?;
 
@@ -255,15 +385,25 @@ fn save_3d_asset(app_handle: tauri::AppHandle, id: String, asset_type: String, n
         "timestamp": now
     });
 
-    std::fs::write(registry_path, serde_json::to_string_pretty(&registry).unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(
+        registry_path,
+        serde_json::to_string_pretty(&registry).unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-fn delete_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<(), String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+fn delete_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let assets_dir = local_data.join("assets");
-    
+
     let registry_path = assets_dir.join("registry.json");
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).unwrap_or_else(|_| "{}".to_string());
@@ -277,20 +417,30 @@ fn delete_3d_asset(app_handle: tauri::AppHandle, id: String) -> Result<(), Strin
             if let Some(obj) = registry.as_object_mut() {
                 obj.remove(&id);
             }
-            let _ = std::fs::write(registry_path, serde_json::to_string_pretty(&registry).unwrap());
+            let _ = std::fs::write(
+                registry_path,
+                serde_json::to_string_pretty(&registry).unwrap(),
+            );
         }
     }
     Ok(())
 }
 
 #[tauri::command]
-fn list_3d_assets(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+fn list_3d_assets(app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let registry_path = local_data.join("assets").join("registry.json");
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
-        let registry: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-        
+        let registry: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
         if let Some(obj) = registry.as_object() {
             let values: Vec<serde_json::Value> = obj.values().cloned().collect();
             return Ok(serde_json::Value::Array(values));
@@ -300,10 +450,46 @@ fn list_3d_assets(app_handle: tauri::AppHandle) -> Result<serde_json::Value, Str
 }
 
 #[tauri::command]
-fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String) -> Result<String, String> {
-    let local_data = app_handle.path().app_local_data_dir().map_err(|e| e.to_string())?;
+fn read_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State<AppState>) -> Result<String, String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
     let assets_dir = local_data.join("assets");
-    
+
+    let registry_path = assets_dir.join("registry.json");
+    let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
+    let registry: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    if let Some(asset) = registry.get(&id) {
+        if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
+            let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+            let bytes = std::fs::read(&file_path).map_err(|e| e.to_string())?;
+            let b64 = STANDARD.encode(&bytes);
+            return Ok(serde_json::json!({
+                "data": b64,
+                "type": asset_type
+            })
+            .to_string());
+        }
+    }
+    Err("Asset not found".to_string())
+}
+
+#[tauri::command]
+fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String, state: tauri::State<AppState>) -> Result<String, String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
+    let assets_dir = local_data.join("assets");
+
     let registry_path = assets_dir.join("registry.json");
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
@@ -318,6 +504,221 @@ fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String) -> Result<String,
     }
     Err("Asset not found".to_string())
 }
+
+#[tauri::command]
+fn read_3d_asset_bytes(app_handle: tauri::AppHandle, id: String, state: tauri::State<AppState>) -> Result<Vec<u8>, String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    let local_data = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
+    let assets_dir = local_data.join("assets");
+
+    let registry_path = assets_dir.join("registry.json");
+    if registry_path.exists() {
+        let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
+        if let Ok(registry) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(asset) = registry.get(&id) {
+                if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
+                    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+                    return std::fs::read(&file_path).map_err(|e| e.to_string());
+                }
+            }
+        }
+    }
+    Err("Asset not found".to_string())
+}
+
+// ─── License / Device Authorization Commands ────────────────────────────────
+
+/// Returns the unique hardware ID for this device (Windows Machine GUID).
+/// This is shown to the tester so they can share it with the developer.
+#[tauri::command]
+fn get_device_hwid() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        // Primary: Windows Machine GUID from registry (stable across reboots)
+        let output = Command::new("reg")
+            .args(&["query", "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            if line.contains("MachineGuid") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(guid) = parts.last() {
+                    return Ok(guid.to_string());
+                }
+            }
+        }
+        // Fallback: BIOS/motherboard UUID
+        let output2 = Command::new("wmic")
+            .args(&["csproduct", "get", "uuid"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let text2 = String::from_utf8_lossy(&output2.stdout);
+        let uuid = text2.lines().nth(1).unwrap_or("").trim().to_string();
+        if !uuid.is_empty() {
+            return Ok(uuid);
+        }
+        Err("Could not retrieve hardware ID".to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Hardware ID not supported on this platform".to_string())
+    }
+}
+
+/// Verifies the HMAC signature returned by the server and stores an offline token.
+/// Called by frontend after receiving signature from the Next.js server.
+/// Returns { success: bool, tester_name: Option<String> }
+#[tauri::command]
+fn verify_license(
+    app_handle: tauri::AppHandle,
+    hwid: String,
+    access_code: String,
+    signature: String,
+    state: tauri::State<AppState>,
+) -> Result<serde_json::Value, String> {
+    let normalized_code = access_code.trim().to_uppercase();
+    let normalized_hwid = hwid.trim().to_string();
+
+    let payload = format!("{}:{}", normalized_hwid, normalized_code);
+
+    // Compute expected HMAC-SHA256
+    let mut mac = Hmac::<Sha256>::new_from_slice(HMAC_KEY)
+        .map_err(|e| format!("HMAC init error: {}", e))?;
+    mac.update(payload.as_bytes());
+    let expected = hex::encode(mac.finalize().into_bytes());
+
+    // Constant-time comparison
+    if expected != signature {
+        return Ok(serde_json::json!({ "success": false, "error": "Invalid license signature" }));
+    }
+
+    // Signature is valid — set authorized flag
+    *state.authorized.lock().unwrap() = true;
+
+    // Store offline token: JSON file in app data dir
+    // Content: { hwid, access_code, signature, timestamp }
+    if let Ok(data_dir) = app_handle.path().app_local_data_dir() {
+        let _ = std::fs::create_dir_all(&data_dir);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let token_data = serde_json::json!({
+            "hwid": normalized_hwid,
+            "access_code": normalized_code,
+            "signature": signature,
+            "verified_at": now
+        });
+        let token_path = data_dir.join(".license_token");
+        let _ = std::fs::write(token_path, serde_json::to_string(&token_data).unwrap_or_default());
+    }
+
+    Ok(serde_json::json!({ "success": true }))
+}
+
+/// Checks if the app is currently authorized.
+/// On startup, also attempts to restore authorization from the local offline token.
+#[tauri::command]
+fn check_authorization(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> serde_json::Value {
+    // If already authorized in memory, return immediately
+    if *state.authorized.lock().unwrap() {
+        return serde_json::json!({ "authorized": true, "source": "memory" });
+    }
+
+    // Try to restore from offline token file
+    let data_dir = match app_handle.path().app_local_data_dir() {
+        Ok(d) => d,
+        Err(_) => return serde_json::json!({ "authorized": false }),
+    };
+    let token_path = data_dir.join(".license_token");
+
+    if !token_path.exists() {
+        return serde_json::json!({ "authorized": false });
+    }
+
+    let content = match std::fs::read_to_string(&token_path) {
+        Ok(c) => c,
+        Err(_) => return serde_json::json!({ "authorized": false }),
+    };
+
+    let token_data: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return serde_json::json!({ "authorized": false }),
+    };
+
+    // Check timestamp — force re-verify online every OFFLINE_GRACE_SECONDS (7 days)
+    let verified_at = token_data["verified_at"].as_u64().unwrap_or(0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    if now.saturating_sub(verified_at) > OFFLINE_GRACE_SECONDS as u64 {
+        // Token is stale — require fresh online verification
+        return serde_json::json!({ "authorized": false, "reason": "token_expired" });
+    }
+
+    // Re-verify the stored signature locally to prevent tampering
+    let hwid = token_data["hwid"].as_str().unwrap_or("");
+    let access_code = token_data["access_code"].as_str().unwrap_or("");
+    let stored_signature = token_data["signature"].as_str().unwrap_or("");
+
+    if hwid.is_empty() || access_code.is_empty() || stored_signature.is_empty() {
+        return serde_json::json!({ "authorized": false });
+    }
+
+    let payload = format!("{}:{}", hwid, access_code);
+    let mut mac = match Hmac::<Sha256>::new_from_slice(HMAC_KEY) {
+        Ok(m) => m,
+        Err(_) => return serde_json::json!({ "authorized": false }),
+    };
+    mac.update(payload.as_bytes());
+    let expected = hex::encode(mac.finalize().into_bytes());
+
+    if expected == stored_signature {
+        *state.authorized.lock().unwrap() = true;
+        serde_json::json!({ "authorized": true, "source": "offline_token" })
+    } else {
+        // Tampered token — delete it
+        let _ = std::fs::remove_file(&token_path);
+        serde_json::json!({ "authorized": false })
+    }
+}
+
+/// Retrieves the stored access code so the frontend can attempt an automatic background renewal
+#[tauri::command]
+fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
+    let data_dir = match app_handle.path().app_local_data_dir() {
+        Ok(d) => d,
+        Err(_) => return serde_json::json!({ "success": false }),
+    };
+    let token_path = data_dir.join(".license_token");
+    if !token_path.exists() {
+        return serde_json::json!({ "success": false });
+    }
+    if let Ok(content) = std::fs::read_to_string(&token_path) {
+        if let Ok(token_data) = serde_json::from_str::<serde_json::Value>(&content) {
+            let hwid = token_data["hwid"].as_str().unwrap_or("");
+            let access_code = token_data["access_code"].as_str().unwrap_or("");
+            if !hwid.is_empty() && !access_code.is_empty() {
+                return serde_json::json!({ "success": true, "hwid": hwid, "access_code": access_code });
+            }
+        }
+    }
+    serde_json::json!({ "success": false })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -354,11 +755,13 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
+            authorized: Mutex::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             get_system_stats,
@@ -374,7 +777,14 @@ pub fn run() {
             save_3d_asset,
             delete_3d_asset,
             list_3d_assets,
+            read_3d_asset,
+            read_3d_asset_bytes,
             get_3d_asset_path,
+            // License commands
+            get_device_hwid,
+            verify_license,
+            check_authorization,
+            get_stored_license,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -395,7 +805,7 @@ pub fn run() {
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyS) {
                                 let _ = app.emit("soltini-toggle-mute", ());
                             }
-                            if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyM) {
+                            if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyM) || shortcut.matches(Modifiers::empty(), Code::F9) {
                                 let _ = app.emit("soltini-toggle-mic", ());
                             }
                         }
@@ -408,7 +818,7 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 std::thread::spawn(move || {
                     use tauri_plugin_global_shortcut::GlobalShortcutExt;
-                    let shortcuts = ["ctrl+alt+x", "ctrl+alt+s", "ctrl+alt+m"];
+                    let shortcuts = ["ctrl+alt+x", "ctrl+alt+s", "ctrl+alt+m", "f9"];
                     for _ in 0..20 {
                         let mut all_success = true;
                         for s in shortcuts.iter() {
@@ -430,17 +840,17 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 let app_handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    unsafe {
-                        use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+                std::thread::spawn(move || unsafe {
+                    use windows_sys::Win32::System::Threading::{
+                        CreateEventW, WaitForSingleObject,
+                    };
 
-                        let name: Vec<u16> = "SoltiniShowEvent\0".encode_utf16().collect();
-                        let event = CreateEventW(std::ptr::null_mut(), 0, 0, name.as_ptr());
-                        if !event.is_null() {
-                            loop {
-                                WaitForSingleObject(event, u32::MAX);
-                                let _ = app_handle.emit("soltini-exit-pet-mode", ());
-                            }
+                    let name: Vec<u16> = "SoltiniShowEvent\0".encode_utf16().collect();
+                    let event = CreateEventW(std::ptr::null_mut(), 0, 0, name.as_ptr());
+                    if !event.is_null() {
+                        loop {
+                            WaitForSingleObject(event, u32::MAX);
+                            let _ = app_handle.emit("soltini-exit-pet-mode", ());
                         }
                     }
                 });
@@ -471,7 +881,8 @@ pub fn run() {
 
             // Tray Menu
             let show_i = MenuItem::with_id(app, "show", "Show Soltini", true, None::<&str>)?;
-            let pet_mode_i = MenuItem::with_id(app, "pet_mode", "Exit Pet Mode", true, None::<&str>)?;
+            let pet_mode_i =
+                MenuItem::with_id(app, "pet_mode", "Exit Pet Mode", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &pet_mode_i, &quit_i])?;
 
@@ -498,7 +909,10 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| match event {
-                    TrayIconEvent::Click { button: TrayMouseButton::Left, .. } => {
+                    TrayIconEvent::Click {
+                        button: TrayMouseButton::Left,
+                        ..
+                    } => {
                         let app = tray.app_handle();
                         if let Some(win) = app.get_webview_window("main") {
                             win.show().unwrap();

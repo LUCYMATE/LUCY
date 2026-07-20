@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { BasePose, Emotion } from '../../components/avatar/animations/core';
 
+export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+
 interface AvatarState {
   isSpeaking: boolean;
   isThinking: boolean;
@@ -20,6 +22,10 @@ interface AvatarState {
   isHearingSound: boolean;
   isToolAgentRunning: boolean;
   isAvatarLocked: boolean;
+  lockedPosition: { x: number; y: number; z: number } | null;
+  flipCustomModel: boolean;
+  isFbxPlaying: boolean;
+  connectionState: ConnectionState;
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -39,6 +45,10 @@ interface AvatarState {
   setHearingSound: (val: boolean) => void;
   setToolAgentRunning: (val: boolean) => void;
   setIsAvatarLocked: (val: boolean) => void;
+  setLockedPosition: (pos: { x: number; y: number; z: number } | null) => void;
+  setFlipCustomModel: (val: boolean) => void;
+  setIsFbxPlaying: (val: boolean) => void;
+  setConnectionState: (val: ConnectionState) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -60,6 +70,10 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isPetMode: false,
   avatarScale: parseFloat(localStorage.getItem('soltini_avatar_size') ?? '100') / 100,
   isAvatarLocked: localStorage.getItem('soltini_avatar_locked') === 'true',
+  lockedPosition: null,
+  flipCustomModel: localStorage.getItem('soltini_flip_vrm') === 'true',
+  isFbxPlaying: false,
+  connectionState: 'idle',
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -79,4 +93,8 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setAvatarScale: (val) => set({ avatarScale: val }),
   setToolAgentRunning: (val) => set({ isToolAgentRunning: val }),
   setIsAvatarLocked: (val) => set({ isAvatarLocked: val }),
+  setLockedPosition: (pos) => set({ lockedPosition: pos }),
+  setFlipCustomModel: (val) => set({ flipCustomModel: val }),
+  setIsFbxPlaying: (val) => set({ isFbxPlaying: val }),
+  setConnectionState: (val) => set({ connectionState: val }),
 }));

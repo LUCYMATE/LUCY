@@ -2,10 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { Upload, Trash2, Box, Activity, AlertCircle, Info } from 'lucide-react';
 import { saveAsset, listAssets, deleteAsset, AssetRecord } from '../../lib/system/assetDB';
 import { logger } from '../../lib/store/logger';
+import { useAvatarState } from '../../lib/store/avatarState';
 
 export function AssetLibrary() {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [animSlug, setAnimSlug] = useState('');
+  
+  const flipCustomModel = useAvatarState(s => s.flipCustomModel);
+  const setFlipCustomModel = useAvatarState(s => s.setFlipCustomModel);
   
   const vrmInputRef = useRef<HTMLInputElement>(null);
   const animInputRef = useRef<HTMLInputElement>(null);
@@ -44,6 +48,9 @@ export function AssetLibrary() {
       
       if (vrmInputRef.current) vrmInputRef.current.value = '';
       loadAssets();
+
+      // Notify the live avatar scene to reload with the new model immediately
+      window.dispatchEvent(new CustomEvent('soltini-vrm-changed'));
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to upload avatar: ${error}`);
     }
@@ -75,7 +82,11 @@ export function AssetLibrary() {
       
       setAnimSlug('');
       if (animInputRef.current) animInputRef.current.value = '';
-      loadAssets();
+      await loadAssets();
+
+      // Notify the live AI session about the new animation so it can use it immediately
+      window.dispatchEvent(new CustomEvent('soltini-animation-added', { detail: { slug } }));
+      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to save animation: ${error}`);
     }
@@ -87,12 +98,18 @@ export function AssetLibrary() {
       await deleteAsset(id);
       logger.add('success', 'Asset DB', `Deleted asset: ${id}`);
       
-      // If we deleted the custom avatar, reset to default
+      // If we deleted the custom avatar, reset to default and turn off 180 flip
       if (id === 'custom-avatar') {
         logger.add('info', 'Asset DB', 'Restored default compiled model');
+        setFlipCustomModel(false);
+        localStorage.setItem('soltini_flip_vrm', 'false');
       }
       
-      loadAssets();
+      await loadAssets();
+      // Notify live scene: if we deleted the avatar, reload the model; otherwise just refresh
+      window.dispatchEvent(new CustomEvent(
+        id === 'custom-avatar' ? 'soltini-vrm-changed' : 'soltini-settings-changed'
+      ));
     } catch (e) {
       logger.add('error', 'Asset DB', `Failed to delete asset`);
     }
@@ -144,22 +161,44 @@ export function AssetLibrary() {
         </div>
 
         {customAvatar && (
-          <div className="mt-2 flex items-center justify-between bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3">
-             <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
-                  <Box className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="font-bold text-sm text-blue-100">Currently Active: {customAvatar.name}</p>
-                  <p className="text-[10px] text-blue-200/50">Overrides the default system model</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => handleDelete(customAvatar.id)}
-                className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors text-xs flex items-center gap-1"
-              >
-                <Trash2 className="w-4 h-4" /> Reset to Default
-              </button>
+          <div className="mt-2 flex flex-col gap-3 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3">
+             <div className="flex items-center justify-between">
+               <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
+                    <Box className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-blue-100">Currently Active: {customAvatar.name}</p>
+                    <p className="text-[10px] text-blue-200/50">Overrides the default system model</p>
+                  </div>
+               </div>
+               
+               <button 
+                 onClick={() => handleDelete(customAvatar.id)}
+                 className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+                 title="Delete Custom Avatar"
+               >
+                 <Trash2 className="w-4 h-4" />
+               </button>
+             </div>
+             
+             {/* Flip Toggle */}
+             <div className="flex items-center justify-between pt-3 border-t border-blue-500/20">
+               <div>
+                 <label className="block text-sm font-medium text-blue-100">Flip Custom Model (180°)</label>
+                 <p className="text-xs text-blue-200/50 mt-1">Enable this if your uploaded model faces backwards.</p>
+               </div>
+               <button
+                 onClick={() => {
+                   const next = !flipCustomModel;
+                   setFlipCustomModel(next);
+                   localStorage.setItem('soltini_flip_vrm', String(next));
+                 }}
+                 className={`relative w-10 h-5 rounded-full transition-colors ${flipCustomModel ? 'bg-blue-500' : 'bg-black/40 border border-blue-500/20'}`}
+               >
+                 <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${flipCustomModel ? 'translate-x-5' : 'translate-x-0'}`} />
+               </button>
+             </div>
           </div>
         )}
       </div>

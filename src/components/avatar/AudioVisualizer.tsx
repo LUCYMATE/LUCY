@@ -11,6 +11,8 @@ export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerPro
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | null>(null);
   const amplitudeRef = useRef(0.02); // Initial resting amplitude
+  // Allocated ONCE and reused every frame — never causes GC pressure
+  const dataArrayRef = useRef<Uint8Array | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -64,7 +66,11 @@ export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerPro
       // Get target amplitude from analyser
       let targetAmplitude = 0.02; // resting height
       if (isActive && analyser) {
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        // Reuse pre-allocated array — never allocates new memory per frame
+        if (!dataArrayRef.current || dataArrayRef.current.length !== analyser.frequencyBinCount) {
+          dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
+        }
+        const dataArray = dataArrayRef.current;
         analyser.getByteTimeDomainData(dataArray);
 
         let sum = 0;
@@ -81,6 +87,8 @@ export function AudioVisualizer({ analyser, isActive, type }: AudioVisualizerPro
         const isHearingNow = targetAmplitude > 0.05;
         const currentState = useAvatarState.getState().isHearingSound;
         if (isHearingNow !== currentState) {
+           // We only update if state changes to avoid unnecessary re-renders. 
+           // But even then, we might flutter. We can use a small delay or just rely on this.
            useAvatarState.getState().setHearingSound(isHearingNow);
         }
       }

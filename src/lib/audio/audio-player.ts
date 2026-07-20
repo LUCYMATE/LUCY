@@ -7,6 +7,7 @@ export class AudioPlayer {
   private nextPlayTime = 0;
   private muted = false;
   private activeSources: AudioBufferSourceNode[] = [];
+  private hasAttachedGesture = false;
 
   start() {
     this.audioContext = new AudioContext({ sampleRate: 24000 }); // 24kHz — Gemini output rate
@@ -22,6 +23,23 @@ export class AudioPlayer {
     this.analyser.connect(this.audioContext.destination);
     
     this.nextPlayTime = this.audioContext.currentTime;
+
+    // VERY IMPORTANT: Browsers block AudioContext playback until the user interacts with the page.
+    // If the Tauri backend wasn't fully restarted, the autoplay flag might not apply.
+    // We attach a one-time global listener to resume the context on the very first click/touch.
+    if (!this.hasAttachedGesture && typeof window !== 'undefined') {
+      this.hasAttachedGesture = true;
+      const resumeAudio = () => {
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+          this.audioContext.resume().catch(() => {});
+        }
+        // Once resumed, we don't need these listeners anymore
+        window.removeEventListener('pointerdown', resumeAudio);
+        window.removeEventListener('keydown', resumeAudio);
+      };
+      window.addEventListener('pointerdown', resumeAudio, { once: true });
+      window.addEventListener('keydown', resumeAudio, { once: true });
+    }
   }
 
   getAnalyser(): AnalyserNode | null {

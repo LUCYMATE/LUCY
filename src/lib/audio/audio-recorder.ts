@@ -60,7 +60,7 @@ export class AudioRecorder {
       
       this.source.connect(this.analyser);
       this.source.connect(this.workletNode);
-      this.workletNode.connect(this.audioContext.destination);
+      // Removed this.workletNode.connect(this.audioContext.destination) to prevent loopback
 
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
@@ -75,24 +75,27 @@ export class AudioRecorder {
 
   stop() {
     if (this.workletNode) {
-      this.workletNode.disconnect();
+      try { this.workletNode.disconnect(); } catch (e) {}
       this.workletNode = null;
     }
     if (this.source) {
-      this.source.disconnect();
+      try { this.source.disconnect(); } catch (e) {}
       this.source = null;
     }
     if (this.analyser) {
-      this.analyser.disconnect();
+      try { this.analyser.disconnect(); } catch (e) {}
       this.analyser = null;
     }
-    if (this.audioContext) {
-      this.audioContext.close();
-      this.audioContext = null;
-    }
     if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
+      this.stream.getTracks().forEach(track => {
+        track.enabled = false;
+        track.stop();
+      });
       this.stream = null;
+    }
+    if (this.audioContext) {
+      try { this.audioContext.close(); } catch (e) {}
+      this.audioContext = null;
     }
   }
 }

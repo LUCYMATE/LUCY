@@ -13,7 +13,7 @@ export const isTauriApp = (): boolean => {
 
 const isTauri = isTauriApp;
 
-export const getSystemStats = async (): Promise<{ cpu_usage: number; total_memory: number; used_memory: number } | null> => {
+export const getSystemStats = async (): Promise<{ cpu_usage: number; total_memory: number; used_memory: number; app_memory: number } | null> => {
   if (!isTauri()) {
     console.warn('getSystemStats called but not running in Tauri environment.');
     return null;

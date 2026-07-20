@@ -45,15 +45,24 @@
     "allow-save-3d-asset",
     "allow-delete-3d-asset",
     "allow-list-3d-assets",
+    "allow-read-3d-asset",
     "allow-get-3d-asset-path",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
+    "allow-get-device-hwid",
+    "allow-verify-license",
+    "allow-check-authorization",
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://**" },
-        { "url": "http://**" }
+        {
+          "url": "https://**"
+        },
+        {
+          "url": "http://**"
+        }
       ]
-    }
+    },
+    "fs:default"
   ]
 }

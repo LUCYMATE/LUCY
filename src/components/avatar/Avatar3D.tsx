@@ -1,13 +1,50 @@
-import { useState, useEffect, Suspense, useRef } from 'react';
+import { useState, useEffect, Suspense, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Html, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
-import { VrmModel } from './VrmModel';
+import { VrmModel, clearVrmCache, clearAssetResolutionCache } from './VrmModel';
+import { clearFbxCache } from './animations/useFbxAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
-import { BOT_NAME, getAvatarModelUrl } from '../../config/bot-profile';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { X, Lock, Unlock, Move, Maximize2, Monitor } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
+import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2, CalendarClock, Trash2, Clock } from 'lucide-react';
+
+// Highly optimized FPS limiter using rAF instead of setInterval
+function FpsLimiter() {
+  const { invalidate } = useThree();
+  const [limit, setLimit] = useState(() => localStorage.getItem('soltini_low_fps') === 'true' ? 30 : 60);
+  const isActive = useRef(false);
+
+  useEffect(() => {
+    const handleFpsChange = () => setLimit(localStorage.getItem('soltini_low_fps') === 'true' ? 30 : 60);
+    window.addEventListener('soltini-settings-changed', handleFpsChange);
+    return () => window.removeEventListener('soltini-settings-changed', handleFpsChange);
+  }, []);
+
+  useEffect(() => {
+    const unsub = useAvatarState.subscribe((s) => {
+      isActive.current = s.isSpeaking || s.isThinking || s.isWalking || s.isListening || s.isHearingSound || s.isDragging;
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    let lastTime = 0;
+    let frameId = 0;
+    const interval = 1000 / limit;
+
+    const loop = (time: number) => {
+      if (isActive.current && time - lastTime >= interval) {
+        lastTime = time - ((time - lastTime) % interval);
+        invalidate();
+      }
+      frameId = requestAnimationFrame(loop);
+    };
+    frameId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frameId);
+  }, [limit, invalidate]);
+  return null;
+}
 
 function Stool({ visible }: { visible: boolean }) {
   if (!visible) return null;
@@ -30,10 +67,37 @@ function Stool({ visible }: { visible: boolean }) {
   );
 }
 
+// Optimized WebGL particles without heavy <Html> DOM overhead
 function FlyingKisses({ active }: { active: boolean }) {
   const [particles, setParticles] = useState<any[]>([]);
   const hasSpawnedRef = useRef<boolean>(false);
   const lastSpawnTimeRef = useRef<number>(0);
+
+  // Pre-create geometry and material to avoid GC hitches
+  const particleGeo = useMemo(() => new THREE.PlaneGeometry(0.2, 0.2), []);
+  const particleMat = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const grad = ctx.createLinearGradient(0, 0, 0, 64);
+      grad.addColorStop(0, '#fbcfe8');
+      grad.addColorStop(1, '#ec4899');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      // Simple heart path scaled to 64x64
+      ctx.moveTo(32, 57);
+      ctx.bezierCurveTo(32, 57, 6, 39, 6, 21);
+      ctx.bezierCurveTo(6, 11, 15, 4, 23, 4);
+      ctx.bezierCurveTo(28, 4, 31, 7, 32, 10);
+      ctx.bezierCurveTo(33, 7, 36, 4, 41, 4);
+      ctx.bezierCurveTo(49, 4, 58, 11, 58, 21);
+      ctx.bezierCurveTo(58, 39, 32, 57, 32, 57);
+      ctx.fill();
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    return new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+  }, []);
 
   useFrame((_state, delta) => {
     if (active) {
@@ -46,11 +110,10 @@ function FlyingKisses({ active }: { active: boolean }) {
         setParticles([]);
       }
 
-      // Spawn exactly once when the hand extends at t=1.2s
       if (localTime >= 1.2 && !hasSpawnedRef.current) {
         setParticles([
-          { id: Math.random(), x: -0.15, y: 0,   vx: -0.05, vy: 0.2,  life: 1.0, scale: 0.8 },
-          { id: Math.random(), x:  0.15, y: -0.1, vx:  0.05, vy: 0.15, life: 1.0, scale: 1.1 },
+          { id: Math.random(), x: -0.15, y: 0, vx: -0.05, vy: 0.2, life: 1.0, scale: 0.8 },
+          { id: Math.random(), x: 0.15, y: -0.1, vx: 0.05, vy: 0.15, life: 1.0, scale: 1.1 },
         ]);
         hasSpawnedRef.current = true;
       }
@@ -75,64 +138,47 @@ function FlyingKisses({ active }: { active: boolean }) {
       {particles.map(p => {
         const age = 1.0 - p.life;
         const scale = Math.min(1.0, age * 5.0) * p.scale + (age * 0.5);
-
         return (
-          <Html key={p.id} position={[p.x, p.y, 0]} center zIndexRange={[50, 0]}>
-            <div style={{
-              opacity: p.life > 0.4 ? 1 : p.life / 0.4,
-              transform: `scale(${scale})`,
-              pointerEvents: 'none',
-              userSelect: 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <svg viewBox="0 0 32 32" style={{
-                width: '50px', height: '50px',
-                filter: 'drop-shadow(0px 4px 10px rgba(236, 72, 153, 0.6))'
-              }}>
-                <defs>
-                  <linearGradient id={`kissGrad-${p.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%"   stopColor="#fbcfe8" />
-                    <stop offset="100%" stopColor="#ec4899" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M16 28.5C16 28.5 3 19.5 3 10.5C3 5.5 7.5 2 11.5 2C14 2 15.5 3.5 16 5C16.5 3.5 18 2 20.5 2C24.5 2 29 5.5 29 10.5C29 19.5 16 28.5 16 28.5Z"
-                  fill={`url(#kissGrad-${p.id})`}
-                />
-              </svg>
-            </div>
-          </Html>
+          <mesh 
+            key={p.id} 
+            geometry={particleGeo} 
+            material={particleMat} 
+            position={[p.x, p.y, 0]} 
+            scale={[scale, scale, scale]} 
+          />
         );
       })}
     </group>
   );
 }
 
+const ZOOM = 250; 
+const _lerpTarget = new THREE.Vector3();
 
-const ZOOM = 250; // 1 3D unit = 250 pixels.
+// We moved DragHitboxes outside the Canvas to fix the Tauri transparent click-through system.
+
 
 function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   const {
-    isSpeaking,
-    isThinking,
-    isListening,
-    basePose,
-    isWalking,
-    emotion,
-    worldPosition,
-    setWorldPosition,
-    targetPosition,
-    setTargetPosition,
-    isDragging,
-    setIsDragging,
-    avatarScale,
-  } = useAvatarState();
+    isSpeaking, isThinking, isListening, basePose, isWalking, emotion,
+    worldPosition, targetPosition, isDragging, avatarScale, setTargetPosition
+  } = useAvatarState(useShallow(s => ({
+    isSpeaking: s.isSpeaking,
+    isThinking: s.isThinking,
+    isListening: s.isListening,
+    basePose: s.basePose,
+    isWalking: s.isWalking,
+    emotion: s.emotion,
+    worldPosition: s.worldPosition,
+    targetPosition: s.targetPosition,
+    isDragging: s.isDragging,
+    avatarScale: s.avatarScale,
+    setTargetPosition: s.setTargetPosition
+  })));
 
   const groupRef = useRef<THREE.Group>(null);
-  const cursorTargetRef = useRef<{ x: number, y: number, z: number } | null>(null);
-  const [internalMoveDir, setInternalMoveDir] = useState(0);
+  const [internalMoveDir, setInternalMoveDir] = useState(Math.PI);
 
-  // Listen for settings changes to avatarScale
   useEffect(() => {
     const onSettingsChanged = () => {
       const val = localStorage.getItem('soltini_avatar_size');
@@ -145,57 +191,81 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
     return () => window.removeEventListener('soltini-settings-changed', onSettingsChanged);
   }, []);
 
-  const [modelUrl, setModelUrl] = useState<string>('/soltini.vrm');
+  const initialModelUrl = typeof window !== 'undefined' && localStorage.getItem('soltini_has_custom_avatar') === 'false' ? '/soltini.vrm' : null;
+  const [modelUrl, setModelUrl] = useState<string | null>(initialModelUrl);
+  const [vrmReloadKey, setVrmReloadKey] = useState(0);
+  const blobUrlRef = useRef<string | null>(null);
+  const modelUrlRef = useRef<string | null>(initialModelUrl);
 
-  useEffect(() => {
-    let cancelled = false;
-    
-    // Fetch custom avatar URL from native Rust backend
-    import('../../lib/system/assetDB').then(({ getAssetUrl, getAsset }) => {
+  const refreshModelUrl = (forceBustCache = false) => {
+    import('../../lib/system/assetDB').then(({ getAssetDataUrl, getAsset }) => {
       getAsset('custom-avatar').then(asset => {
-        if (cancelled || !asset || asset.type !== 'vrm') return;
-        getAssetUrl('custom-avatar').then(url => {
-          if (!cancelled && url) {
-            setModelUrl(url);
+        if (!asset || asset.type !== 'vrm') {
+          localStorage.setItem('soltini_has_custom_avatar', 'false');
+          if (useAvatarState.getState().flipCustomModel) {
+            useAvatarState.getState().setFlipCustomModel(false);
+            localStorage.setItem('soltini_flip_vrm', 'false');
+          }
+          if (modelUrlRef.current !== '/soltini.vrm' || forceBustCache) {
+            if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
+            if (modelUrlRef.current !== '/soltini.vrm' || forceBustCache) clearVrmCache?.();
+            modelUrlRef.current = '/soltini.vrm';
+            setModelUrl('/soltini.vrm');
+            setVrmReloadKey(k => k + 1);
+          }
+          return;
+        }
+        
+        localStorage.setItem('soltini_has_custom_avatar', 'true');
+        getAssetDataUrl('custom-avatar').then(url => {
+          if (url) {
+            if (modelUrlRef.current !== url || forceBustCache) {
+              if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) URL.revokeObjectURL(blobUrlRef.current);
+              blobUrlRef.current = url;
+              clearVrmCache?.();
+              modelUrlRef.current = url;
+              setModelUrl(url);
+              setVrmReloadKey(k => k + 1);
+            }
           }
         });
-      }).catch(e => console.warn('Failed to fetch custom avatar info', e));
+      });
     });
+  };
 
-    return () => {
-      cancelled = true;
+  useEffect(() => {
+    refreshModelUrl(false);
+    
+    const onSettingsChanged = () => {
+      clearFbxCache();
+      clearAssetResolutionCache();
     };
+    
+    const onVrmChanged = () => {
+      clearFbxCache();
+      clearAssetResolutionCache();
+      refreshModelUrl(true);
+    };
+    
+    window.addEventListener('soltini-settings-changed', onSettingsChanged);
+    window.addEventListener('soltini-vrm-changed', onVrmChanged);
+    return () => {
+      window.removeEventListener('soltini-settings-changed', onSettingsChanged);
+      window.removeEventListener('soltini-vrm-changed', onVrmChanged);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Smoothly move the model towards targetPosition if we aren't dragging
   useFrame((_state, delta) => {
     if (!groupRef.current) return;
 
-    if (isDragging && cursorTargetRef.current) {
-      const deltaX = cursorTargetRef.current.x - groupRef.current.position.x;
-      const deltaY = cursorTargetRef.current.y - groupRef.current.position.y;
-      
-      // Elastic spring lag towards the cursor
-      groupRef.current.position.x += deltaX * 0.15;
-      groupRef.current.position.y += deltaY * 0.15;
-      
-      // Update physics/animator state
-      useAvatarState.getState().setDragOffset({ x: deltaX, y: deltaY });
-      useAvatarState.getState().setWorldPosition({
-        x: groupRef.current.position.x,
-        y: groupRef.current.position.y,
-        z: groupRef.current.position.z
-      });
-
-      if (internalMoveDir !== Math.PI) setInternalMoveDir(Math.PI);
-    } else if (targetPosition) {
+    if (targetPosition) {
       const diffX = targetPosition.x - groupRef.current.position.x;
       const diffY = targetPosition.y - groupRef.current.position.y;
       const distance = Math.sqrt(diffX * diffX + diffY * diffY);
 
-      if (isWalking && distance > 0.01) {
-        // Constant speed for walking to match animation and prevent sliding
-        const speed = basePose.startsWith('peek') ? 0.8 : 1.5; // units/sec
+      if (isWalking && distance > 0.01 && !isDragging) {
+        const speed = basePose.startsWith('peek') ? 0.8 : 1.5;
         const step = speed * delta;
         if (distance <= step) {
           groupRef.current.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
@@ -204,22 +274,26 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
           groupRef.current.position.y += (diffY / distance) * step;
         }
       } else {
-        // Gentle lerp for small corrections when not walking
-        groupRef.current.position.lerp(
-          new THREE.Vector3(targetPosition.x, targetPosition.y, targetPosition.z),
-          delta * 5.0
-        );
+        _lerpTarget.set(targetPosition.x, targetPosition.y, targetPosition.z);
+        groupRef.current.position.lerp(_lerpTarget, isDragging ? 0.2 : delta * 5.0);
       }
 
-      let targetRotY = Math.PI; // default forward
+      useAvatarState.getState().setWorldPosition({
+        x: groupRef.current.position.x,
+        y: groupRef.current.position.y,
+        z: groupRef.current.position.z
+      });
 
-      if (distance > 0.05 && isWalking) {
-        targetRotY = -Math.atan2(diffX, diffY);
+      const flip = useAvatarState.getState().flipCustomModel;
+      let targetRotY = flip ? 0 : Math.PI;
+
+      if (distance > 0.05 && isWalking && !isDragging) {
+        targetRotY = -Math.atan2(diffX, diffY) + (flip ? Math.PI : 0);
       } else if (basePose.startsWith('peek')) {
-        targetRotY = Math.PI; // Face the user to peek over the edge
+        targetRotY = flip ? 0 : Math.PI;
       }
 
-      if (distance < 0.05 && isWalking) {
+      if (distance < 0.05 && isWalking && !isDragging) {
         useAvatarState.getState().setIsWalking(false);
       }
 
@@ -228,49 +302,6 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
       }
     }
   });
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return; // Only left click for dragging
-    if (groupRef.current) {
-      const currentPos = {
-        x: groupRef.current.position.x,
-        y: groupRef.current.position.y,
-        z: groupRef.current.position.z
-      };
-      useAvatarState.getState().setWorldPosition(currentPos);
-      cursorTargetRef.current = { ...currentPos };
-    }
-    setIsDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (isDragging && cursorTargetRef.current) {
-      const movementX = e.movementX / ZOOM;
-      const movementY = -e.movementY / ZOOM;
-
-      const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
-      const edgeX = (ww / 2) / ZOOM;
-
-      cursorTargetRef.current.x = Math.max(-edgeX - 0.5, Math.min(edgeX + 0.5, cursorTargetRef.current.x + movementX));
-      cursorTargetRef.current.y = cursorTargetRef.current.y + movementY;
-    }
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    setIsDragging(false);
-    useAvatarState.getState().setDragOffset({ x: 0, y: 0 });
-    const finalPos = useAvatarState.getState().worldPosition;
-    setTargetPosition({ ...finalPos });
-    e.currentTarget.releasePointerCapture(e.pointerId);
-
-    // If dropped while peeking, reset to stand
-    if (useAvatarState.getState().basePose.startsWith('peek')) {
-      useAvatarState.getState().setBasePose('stand');
-      useAvatarState.getState().setIsWalking(false);
-    }
-  };
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
 
@@ -281,7 +312,6 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      // Don't close if clicking inside the menu
       if ((e.target as HTMLElement).closest('.pet-context-menu')) return;
       setContextMenu(null);
     };
@@ -296,7 +326,6 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── Auto-walk to screen edge for peek poses ─────────────────────────────
   useEffect(() => {
     const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
     const edgeX = (ww / 2) / ZOOM;
@@ -311,6 +340,323 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basePose]);
+
+  const isCurrentlySitting = basePose === 'sit' && !isWalking;
+  const y_head  = isCurrentlySitting ? 1.03 : 1.45;
+  const y_waist = isCurrentlySitting ? 0.43 : 0.85;
+  const y_feet  = 0.15;
+
+  return (
+    <group ref={groupRef}>
+      <group scale={avatarScale} position={[0, -1.2, 0]}>
+        <Stool visible={isCurrentlySitting} />
+        <FlyingKisses active={basePose === 'flying-kiss'} />
+
+        {modelUrl && (
+          <VrmModel
+            url={modelUrl}
+            reloadKey={vrmReloadKey}
+            isSpeaking={isSpeaking}
+            isThinking={isThinking}
+            isListening={isListening}
+            basePose={basePose}
+            isWalking={isWalking}
+            emotion={emotion}
+            moveDirection={internalMoveDir}
+            isSitting={isCurrentlySitting}
+          />
+        )}
+      </group>
+
+      <Html center zIndexRange={[100, 0]}>
+        <div className="pointer-events-none relative" style={{ width: 0, height: 0 }}>
+          <DragHitboxes avatarScale={avatarScale} />
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+  const { isAvatarLocked, setIsAvatarLocked, avatarScale, setAvatarScale, isMicOn, isPetMode } = useAvatarState(useShallow(s => ({
+    isAvatarLocked: s.isAvatarLocked,
+    setIsAvatarLocked: s.setIsAvatarLocked,
+    avatarScale: s.avatarScale,
+    setAvatarScale: s.setAvatarScale,
+    isMicOn: s.isMicOn,
+    isPetMode: s.isPetMode
+  })));
+  const [showSizeSlider, setShowSizeSlider] = useState(false);
+
+  const setSize = (pct: number) => {
+    localStorage.setItem('soltini_avatar_size', pct.toString());
+    setAvatarScale(pct / 100);
+    window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+  };
+
+  const handleLockAvatar = () => {
+    const val = !isAvatarLocked;
+    setIsAvatarLocked(val);
+    const s = useAvatarState.getState();
+    if (val) {
+      s.setLockedPosition({ ...s.worldPosition });
+    } else {
+      s.setLockedPosition(null);
+    }
+    localStorage.setItem('soltini_avatar_locked', String(val));
+    onClose();
+  };
+
+  const handleMicToggle = async () => {
+    const { emit } = await import('@tauri-apps/api/event');
+    emit('soltini-toggle-mic');
+  };
+
+  const openChat = async () => {
+    const { emit } = await import('@tauri-apps/api/event');
+    emit('soltini-exit-pet-mode');
+    onClose();
+  };
+
+  const openSettings = async () => {
+    const { emit } = await import('@tauri-apps/api/event');
+    emit('soltini-exit-pet-mode');
+    window.dispatchEvent(new CustomEvent('soltini-open-settings'));
+    onClose();
+  };
+
+  const [showTasksPopup, setShowTasksPopup] = useState(false);
+  const [tasks, setTasks] = useState<{id: string, targetTimeMs: number, instruction: string}[]>([]);
+
+  useEffect(() => {
+    if (!showTasksPopup) return;
+    const fetchTasks = async () => {
+      const { getScheduledTasks } = await import('../../lib/gemini/gemini-live');
+      setTasks(getScheduledTasks());
+    };
+    fetchTasks();
+    const handleUpdate = () => fetchTasks();
+    window.addEventListener('soltini-tasks-changed', handleUpdate);
+    return () => window.removeEventListener('soltini-tasks-changed', handleUpdate);
+  }, [showTasksPopup]);
+
+  const openTasks = () => {
+    setShowTasksPopup(!showTasksPopup);
+    setShowSizeSlider(false); // Hide size slider if open
+  };
+
+  const handleCancelTask = async (id: string) => {
+    const { cancelScheduledTaskById } = await import('../../lib/gemini/gemini-live');
+    cancelScheduledTaskById(id);
+  };
+
+  const closeApp = async () => {
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().close();
+    } catch (e) {
+      console.warn("Close only works in Tauri apps");
+    }
+  };
+
+  // Radial math
+  const radius = 85;
+  const items = [
+    { id: 'mic', icon: isMicOn ? <Mic className="w-5 h-5 text-pink-400" /> : <MicOff className="w-5 h-5 text-white/50" />, action: handleMicToggle, label: 'Mic' },
+    ...(isPetMode 
+      ? [
+          { id: 'chat', icon: <MessageCircle className="w-5 h-5 text-blue-400" />, action: openChat, label: 'Chat' },
+          { id: 'tasks', icon: <CalendarClock className="w-5 h-5 text-purple-400" />, action: openTasks, label: 'Tasks' },
+          { id: 'settings', icon: <Settings className="w-5 h-5 text-gray-300" />, action: openSettings, label: 'Settings' }
+        ]
+      : [
+          { 
+            id: 'petmode', 
+            icon: <Wand2 className="w-5 h-5 text-pink-400" />, 
+            action: () => {
+              window.dispatchEvent(new CustomEvent('soltini-enter-pet-mode'));
+              onClose();
+            }, 
+            label: 'Return to Pet Mode' 
+          }
+        ]
+    ),
+    { id: 'size', icon: <Maximize2 className="w-5 h-5 text-green-400" />, action: () => { setShowSizeSlider(!showSizeSlider); setShowTasksPopup(false); }, label: 'Size' },
+    { id: 'lock', icon: isAvatarLocked ? <Lock className="w-5 h-5 text-yellow-400" /> : <Unlock className="w-5 h-5 text-white/50" />, action: handleLockAvatar, label: 'Lock' },
+    { id: 'close', icon: <Power className="w-5 h-5 text-red-500" />, action: closeApp, label: 'Close App' },
+  ];
+
+  return (
+    <div
+      className="pet-context-menu fixed pointer-events-auto z-[9999] animate-in fade-in zoom-in-95 duration-200"
+      style={{ left: x, top: y, width: 0, height: 0 }}
+    >
+      {/* Pink Round Ribbon Path (Track) */}
+      <svg 
+        className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none drop-shadow-[0_0_10px_rgba(236,72,153,0.4)]"
+        width={radius * 2 + 60} 
+        height={radius * 2 + 60}
+      >
+        <circle 
+          cx={radius + 30} 
+          cy={radius + 30} 
+          r={radius} 
+          fill="none" 
+          stroke="rgba(236,72,153,0.25)" 
+          strokeWidth="44"
+          className="pointer-events-auto"
+        />
+        <circle 
+          cx={radius + 30} 
+          cy={radius + 30} 
+          r={radius} 
+          fill="none" 
+          stroke="rgba(236,72,153,0.5)" 
+          strokeWidth="1"
+          strokeDasharray="4 4"
+        />
+      </svg>
+
+      <button 
+        onClick={onClose}
+        title="Close Menu"
+        className="absolute -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full glass border border-pink-300 flex items-center justify-center hover:bg-pink-500/40 transition-colors shadow-lg z-10 pointer-events-auto"
+      >
+        <X className="w-6 h-6 text-white" />
+      </button>
+
+      {items.map((item, i) => {
+        const angle = (i * (360 / items.length) - 90) * (Math.PI / 180);
+        const bx = Math.cos(angle) * radius;
+        const by = Math.sin(angle) * radius;
+        return (
+          <button
+            key={item.id}
+            onClick={item.action}
+            title={item.label}
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-11 h-11 rounded-full glass border border-white/10 flex items-center justify-center hover:bg-blue-500/40 hover:border-blue-400/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all duration-300 hover:scale-110 shadow-md pointer-events-auto"
+            style={{ left: bx, top: by }}
+          >
+            {item.icon}
+          </button>
+        );
+      })}
+
+      {showSizeSlider && (
+        <div className="absolute top-24 -translate-x-1/2 w-48 glass rounded-xl p-3 border border-white/10 flex flex-col gap-2 shadow-xl animate-in slide-in-from-top-2 fade-in pointer-events-auto">
+          <span className="text-[10px] text-white/50 uppercase text-center font-bold">Avatar Size</span>
+          <input 
+            type="range" min="50" max="200" step="10" 
+            value={Math.round(avatarScale * 100)} 
+            onChange={(e) => setSize(parseInt(e.target.value))}
+            className="w-full h-1.5 bg-white/20 rounded-full appearance-none accent-pink-500 cursor-pointer pointer-events-auto"
+          />
+          <div className="flex gap-1 mt-1">
+            <button onClick={() => setSize(70)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">S</button>
+            <button onClick={() => setSize(100)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">M</button>
+            <button onClick={() => setSize(150)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors">L</button>
+          </div>
+        </div>
+      )}
+
+      {showTasksPopup && (
+        <div className="absolute top-24 -translate-x-1/2 w-64 glass rounded-xl p-3 border border-white/10 shadow-xl animate-in slide-in-from-top-2 fade-in pointer-events-auto flex flex-col gap-2">
+          <div className="flex items-center gap-2 pb-2 border-b border-white/10">
+            <CalendarClock className="w-4 h-4 text-pink-400" />
+            <span className="text-xs text-white/90 font-bold uppercase">Scheduled Tasks</span>
+          </div>
+          <div className="flex flex-col gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+            {tasks.length === 0 ? (
+              <p className="text-xs text-white/40 text-center py-2">No tasks right now.</p>
+            ) : (
+              tasks.map(t => (
+                <div key={t.id} className="bg-white/5 rounded-lg p-2 flex flex-col gap-1 relative group">
+                  <p className="text-[10px] text-white/80 line-clamp-2 pr-5">{t.instruction}</p>
+                  <p className="text-[9px] text-pink-300 font-mono flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(t.targetTimeMs).toLocaleTimeString()}</p>
+                  <button onClick={() => handleCancelTask(t.id)} className="absolute right-1 top-1 p-1 hover:bg-red-500/20 rounded text-red-400 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DragHitboxes({ avatarScale }: { avatarScale: number }) {
+  const { basePose, isWalking } = useAvatarState(useShallow(s => ({ basePose: s.basePose, isWalking: s.isWalking })));
+  const cursorTargetRef = useRef<{ x: number, y: number, z: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const s = useAvatarState.getState();
+    cursorTargetRef.current = { ...s.worldPosition };
+    s.setIsDragging(true);
+    // Snap out of any stuck animation when grabbed
+    s.setBasePose('stand');
+    s.setIsWalking(false);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const s = useAvatarState.getState();
+    if (s.isDragging && cursorTargetRef.current) {
+      const movementX = e.movementX / ZOOM;
+      const movementY = -e.movementY / ZOOM;
+
+      const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
+      const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
+      const edgeX = (ww / 2) / ZOOM;
+      const edgeY = (wh / 2) / ZOOM;
+      
+      const minX = -edgeX;
+      const maxX = edgeX;
+      const maxY = edgeY - 0.15 * avatarScale;
+      const minY = -edgeY - 0.15 * avatarScale;
+
+      cursorTargetRef.current.x = Math.max(minX, Math.min(maxX, cursorTargetRef.current.x + movementX));
+      cursorTargetRef.current.y = Math.max(minY, Math.min(maxY, cursorTargetRef.current.y + movementY));
+
+      s.setTargetPosition({ ...cursorTargetRef.current });
+      
+      const diffX = cursorTargetRef.current.x - s.worldPosition.x;
+      const diffY = cursorTargetRef.current.y - s.worldPosition.y;
+      s.setDragOffset({ x: diffX, y: diffY });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const s = useAvatarState.getState();
+    s.setIsDragging(false);
+    s.setDragOffset({ x: 0, y: 0 });
+    s.setTargetPosition({ ...s.worldPosition });
+    if (s.isAvatarLocked) {
+      s.setLockedPosition({ ...s.worldPosition });
+    }
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    
+    if (s.basePose.startsWith('peek')) {
+      s.setBasePose('stand');
+      s.setIsWalking(false);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest('.pet-context-menu')) return;
+      setContextMenu(null);
+    };
+    window.addEventListener('pointerdown', handleClick);
+    return () => window.removeEventListener('pointerdown', handleClick);
+  }, []);
 
   const isCurrentlySitting = basePose === 'sit' && !isWalking;
   const y_head  = isCurrentlySitting ? 1.03 : 1.45;
@@ -332,163 +678,86 @@ function SceneManager({ isPetMode }: { isPetMode?: boolean }) {
   };
 
   return (
-    <group ref={groupRef}>
-      {/* Dynamic Scale from Settings */}
-      <group scale={avatarScale} position={[0, -1.2, 0]}>
-        {/* Stool for sitting */}
-        <Stool visible={isCurrentlySitting} />
-
-        <FlyingKisses active={basePose === 'flying-kiss'} />
-
-        <VrmModel
-          url={modelUrl}
-          isSpeaking={isSpeaking}
-          isThinking={isThinking}
-          isListening={isListening}
-          basePose={basePose}
-          isWalking={isWalking}
-          emotion={emotion}
-          moveDirection={internalMoveDir}
-          isSitting={isCurrentlySitting}
-        />
-      </group>
-
-      <Html center zIndexRange={[100, 0]}>
-        <div className="pointer-events-none relative" style={{ width: 0, height: 0 }}>
-          <div
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onContextMenu={handleContextMenu}
-            className="cursor-grab active:cursor-grabbing pointer-events-auto"
-            style={getHandleStyle(y_head, 120, 120)}
-          />
-          <div
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onContextMenu={handleContextMenu}
-            className="cursor-grab active:cursor-grabbing pointer-events-auto"
-            style={getHandleStyle(y_waist, 160, 200)}
-          />
-          <div
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onContextMenu={handleContextMenu}
-            className="cursor-grab active:cursor-grabbing pointer-events-auto"
-            style={getHandleStyle(y_feet, 180, 100)}
-          />
-        </div>
-
-        {contextMenu && createPortal(
-          <ContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            onClose={() => setContextMenu(null)}
-          />,
-          document.body
-        )}
-      </Html>
-    </group>
+    <>
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onContextMenu={handleContextMenu}
+        className="cursor-grab active:cursor-grabbing pointer-events-auto"
+        style={getHandleStyle(y_head, 120, 120)}
+      />
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onContextMenu={handleContextMenu}
+        className="cursor-grab active:cursor-grabbing pointer-events-auto"
+        style={getHandleStyle(y_waist, 160, 200)}
+      />
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onContextMenu={handleContextMenu}
+        className="cursor-grab active:cursor-grabbing pointer-events-auto"
+        style={getHandleStyle(y_feet, 180, 100)}
+      />
+      {contextMenu && createPortal(
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} />,
+        document.body
+      )}
+    </>
   );
 }
 
-function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
-  const { isAvatarLocked, setIsAvatarLocked, avatarScale, setAvatarScale, setBasePose, setTargetPosition } = useAvatarState();
-
-  const setSize = (pct: number) => {
-    localStorage.setItem('soltini_avatar_size', pct.toString());
-    setAvatarScale(pct / 100);
-    window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
-  };
-
-  const handleLockAvatar = () => {
-    const val = !isAvatarLocked;
-    setIsAvatarLocked(val);
-    localStorage.setItem('soltini_avatar_locked', String(val));
-    setContextMenu(null);
-  };
-
-  const exitPetMode = () => {
-    try {
-      window.dispatchEvent(new CustomEvent('soltini-exit-pet-mode'));
-    } catch (e) {}
-    onClose();
-  };
-
-  const resetPosition = () => {
-    setTargetPosition({ x: 0, y: -0.5, z: 0 });
-    onClose();
-  };
-
-  // Keep menu within screen bounds
-  const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
-  const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
-  
-  const menuW = 200;
-  const menuH = 340;
-  const finalX = x + menuW > ww ? ww - menuW - 10 : x;
-  const finalY = y + menuH > wh ? wh - menuH - 10 : y;
-
+function AvatarLoader() {
   return (
-    <div
-      className="pet-context-menu fixed glass pointer-events-auto flex flex-col p-2 z-[9999] rounded-2xl border border-pink-500/20 shadow-xl shadow-pink-500/10 text-white font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-      style={{ left: finalX, top: finalY, width: menuW, backdropFilter: 'blur(16px)' }}
-    >
-      <div className="text-xs font-bold uppercase tracking-wider text-pink-400 mb-2 px-2 pt-1 flex justify-between items-center">
-        Avatar Options
-        <X className="w-3 h-3 cursor-pointer opacity-50 hover:opacity-100" onClick={onClose} />
+    <Html center>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 10,
+        userSelect: 'none',
+        pointerEvents: 'none',
+      }}>
+        {/* Pulsing glow orb */}
+        <div style={{
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(167,139,250,0.9) 0%, rgba(236,72,153,0.4) 60%, transparent 100%)',
+          boxShadow: '0 0 20px rgba(167,139,250,0.6), 0 0 40px rgba(236,72,153,0.2)',
+          animation: 'avatar-pulse 1.4s ease-in-out infinite',
+        }} />
+        <style>{`
+          @keyframes avatar-pulse {
+            0%, 100% { transform: scale(0.85); opacity: 0.6; }
+            50% { transform: scale(1.15); opacity: 1; }
+          }
+        `}</style>
       </div>
-
-      <button onClick={toggleLock} className="flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-white/10 rounded-lg transition-colors text-left">
-        {isAvatarLocked ? <Lock className="w-4 h-4 text-pink-400" /> : <Unlock className="w-4 h-4" />}
-        {isAvatarLocked ? 'Unlock Position' : 'Lock Position'}
-      </button>
-
-      <div className="my-1 border-t border-white/10" />
-
-      <div className="px-2 py-1 flex flex-col gap-1">
-        <span className="text-[10px] text-white/50 uppercase">Size</span>
-        <input 
-          type="range" min="50" max="200" step="10" 
-          value={Math.round(avatarScale * 100)} 
-          onChange={(e) => setSize(parseInt(e.target.value))}
-          className="w-full h-1 bg-white/20 rounded-full appearance-none accent-pink-500 cursor-pointer"
-        />
-        <div className="flex gap-1 mt-1">
-          <button onClick={() => setSize(70)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">S</button>
-          <button onClick={() => setSize(100)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">M</button>
-          <button onClick={() => setSize(150)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-0.5">L</button>
-        </div>
-      </div>
-
-      <div className="my-1 border-t border-white/10" />
-
-      <div className="px-2 py-1.5 flex items-center justify-between text-sm">
-        <span className="text-white/50">Current Pose</span>
-        <span className="capitalize text-pink-400 font-medium">{useAvatarState.getState().basePose}</span>
-      </div>
-    </div>
+    </Html>
   );
 }
-
-
 
 export function Avatar3D({ isPetMode }: { isPetMode?: boolean }) {
   return (
-    <div className="w-full h-full pointer-events-none">
+    <div className="w-full h-full pointer-events-none relative">
       <Canvas
         dpr={1}
-        gl={{ powerPreference: "low-power", antialias: true }}
+        frameloop="always"
+        gl={{ powerPreference: "low-power", antialias: true, alpha: true }}
         style={{ pointerEvents: 'none' }}
       >
+        <FpsLimiter />
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
 
-        <Suspense fallback={null}>
+        <Suspense fallback={<AvatarLoader />}>
           <ambientLight intensity={0.8} color="#ffffff" />
           <directionalLight position={[0, 2, 2]} intensity={1} color="#ffffff" />
           <SceneManager isPetMode={isPetMode} />
