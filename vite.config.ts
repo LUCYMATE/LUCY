@@ -15,6 +15,8 @@ export default defineConfig({
     include: ['three', '@react-three/fiber', '@react-three/drei', 'lucide-react', '@pixiv/three-vrm']
   },
   server: {
+    port: 1420,
+    strictPort: true,
     watch: {
       ignored: ['**/src-tauri/**']
     }

@@ -25,9 +25,15 @@ export function useCoreEngine() {
   const speechRecognitionRef = useRef<any>(null);
 
   const startWakeWordListener = useCallback(() => {
+    if (!useAvatarState.getState().isSleepMode) return;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
     try {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.onend = null;
+        speechRecognitionRef.current.onerror = null;
+        try { speechRecognitionRef.current.stop(); } catch(e) {}
+      }
       speechRecognitionRef.current = new SpeechRecognition();
       speechRecognitionRef.current.continuous = true;
       speechRecognitionRef.current.interimResults = true;
@@ -37,7 +43,10 @@ export function useCoreEngine() {
           const text = event.results[i][0].transcript.toLowerCase();
           if (/\b(wake\s*up|soltini|saltini|sultini|sholtini|sortini|sol\s*ti\s*ni|hey\s+soltini|hello\s+soltini)\b/i.test(text)) {
             logger.add('success', 'Wake Word', `Detected locally: "${text}"`);
-            if (speechRecognitionRef.current) speechRecognitionRef.current.onend = null;
+            if (speechRecognitionRef.current) {
+              speechRecognitionRef.current.onend = null;
+              speechRecognitionRef.current.onerror = null;
+            }
             speechRecognitionRef.current?.stop();
             import('@tauri-apps/api/core').then(({ invoke }) => {
               const tryWake = (retries = 20) => {
@@ -52,7 +61,11 @@ export function useCoreEngine() {
           }
         }
       };
-      speechRecognitionRef.current.onerror = () => setTimeout(startWakeWordListener, 2000);
+      speechRecognitionRef.current.onerror = (e: any) => {
+        if (useAvatarState.getState().isSleepMode) {
+          setTimeout(startWakeWordListener, 2000);
+        }
+      };
       speechRecognitionRef.current.onend = () => {
         if (useAvatarState.getState().isSleepMode) {
           setTimeout(startWakeWordListener, 1000);
@@ -368,6 +381,13 @@ export function useCoreEngine() {
     let wakeUpTimeout: ReturnType<typeof setTimeout> | null = null;
     const handleWakeUp = () => {
       useAvatarState.getState().setIsSleepMode(false);
+      
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.onend = null;
+        speechRecognitionRef.current.onerror = null;
+        try { speechRecognitionRef.current.stop(); } catch(e) {}
+      }
+
       if (wakeUpTimeout) clearTimeout(wakeUpTimeout);
       
       if (dummyMicStreamRef.current) {

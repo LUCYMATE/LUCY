@@ -4858,7 +4858,6 @@ dependencies = [
  "base64 0.22.1",
  "cpal",
  "enigo",
- "global-hotkey",
  "hex",
  "hmac",
  "image 0.25.10",
