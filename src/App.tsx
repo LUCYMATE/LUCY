@@ -39,9 +39,26 @@ export default function App() {
       const initWindow = async () => {
         await setupMainWindow();
         const win = getCurrentWindow();
+        
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const autostartPlugin = await import('@tauri-apps/plugin-autostart');
+          const autostartEnabled = await autostartPlugin.isEnabled();
+          if (!autostartEnabled) {
+            await autostartPlugin.enable();
+          }
+          const isAutostart = await invoke<boolean>('is_autostart');
+          if (isAutostart) {
+            useAvatarState.getState().setIsSleepMode(true);
+            window.dispatchEvent(new CustomEvent('soltini-sleep'));
+          }
+        } catch (e) {
+          console.warn('autostart check failed', e);
+        }
+
         await safe(win.show());
         
-        if (!hasApiKey) {
+        if (!hasApiKey && !useAvatarState.getState().isSleepMode) {
           setTimeout(() => window.dispatchEvent(new CustomEvent('soltini-open-settings')), 800);
         }
       };

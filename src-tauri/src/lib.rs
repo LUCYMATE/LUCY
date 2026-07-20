@@ -812,6 +812,11 @@ fn wake_up_main(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn is_autostart() -> bool {
+    std::env::args().any(|arg| arg == "--autostart")
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -853,6 +858,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
             authorized: Mutex::new(false),
@@ -882,6 +888,7 @@ pub fn run() {
             trim_memory,
             enter_sleep_mode,
             wake_up_main,
+            is_autostart,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

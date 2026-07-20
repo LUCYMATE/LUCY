@@ -122,3 +122,8 @@ commands.allow = ["enter_sleep_mode"]
 identifier = "allow-wake-up-main"
 description = "Allows waking up main window"
 commands.allow = ["wake_up_main"]
+
+[[permission]]
+identifier = "allow-is-autostart"
+description = "Allows checking if launched via autostart"
+commands.allow = ["is_autostart"]

@@ -55,6 +55,8 @@
     "allow-trim-memory",
     "allow-enter-sleep-mode",
     "allow-wake-up-main",
+    "allow-is-autostart",
+    "autostart:default",
     {
       "identifier": "http:default",
       "allow": [
