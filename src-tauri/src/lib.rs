@@ -807,8 +807,13 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
 }
 
 fn do_wake_up_main(app_handle: &tauri::AppHandle) {
+    let mut was_sleeping = false;
     if let Some(state) = app_handle.try_state::<AppState>() {
-        *state.is_sleeping.lock().unwrap() = false;
+        let mut is_sleeping = state.is_sleeping.lock().unwrap();
+        if *is_sleeping {
+            was_sleeping = true;
+            *is_sleeping = false;
+        }
     }
     
     if let Some(win) = app_handle.get_webview_window("main") {
@@ -817,15 +822,17 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
         let _ = win.set_skip_taskbar(true);
         let _ = win.set_focus();
         
-        // Delay interacting with the WebView2 API to ensure it has fully resumed 
-        // from OS-level suspension (caused by trim_memory), otherwise it throws 0x8007139F.
-        // We give it 300ms to safely resume before hitting it with eval.
-        let win_clone = win.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            let _ = win_clone.set_ignore_cursor_events(true);
-            let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
-        });
+        if was_sleeping {
+            // Delay interacting with the WebView2 API to ensure it has fully resumed 
+            // from OS-level suspension (caused by trim_memory), otherwise it throws 0x8007139F.
+            // We give it 300ms to safely resume before hitting it with eval.
+            let win_clone = win.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                let _ = win_clone.set_ignore_cursor_events(true);
+                let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
+            });
+        }
     }
 }
 
@@ -955,11 +962,9 @@ pub fn run() {
                                 let _ = app.emit("soltini-exit-pet-mode", ());
                             }
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyS) {
-                                do_wake_up_main(app);
                                 let _ = app.emit("soltini-toggle-mute", ());
                             }
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyM) || shortcut.matches(Modifiers::empty(), Code::F9) {
-                                do_wake_up_main(app);
                                 let _ = app.emit("soltini-toggle-mic", ());
                             }
                         }
