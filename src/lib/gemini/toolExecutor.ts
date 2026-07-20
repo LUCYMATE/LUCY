@@ -253,6 +253,13 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     } catch (e) {
       result = { error: 'Failed to set pose: ' + String(e) };
     }
+  } else if (name === 'go_to_sleep') {
+    try {
+      window.dispatchEvent(new CustomEvent('soltini-sleep'));
+      result = { success: true, message: 'System is going to sleep.' };
+    } catch (e) {
+      result = { error: 'Failed to go to sleep: ' + String(e) };
+    }
   }
   return result;
 }

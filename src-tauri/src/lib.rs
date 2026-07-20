@@ -781,9 +781,12 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
 
 #[tauri::command]
 fn enter_sleep_mode(app_handle: tauri::AppHandle) -> Result<(), String> {
-    if let Some(win) = app_handle.get_webview_window("main") {
-        let _ = win.hide();
-    }
+    // We intentionally do NOT hide the window here anymore to prevent the Windows WebView2 
+    // white-screen flash when waking up. The frontend will hide all UI elements and become 
+    // fully transparent, and the cursor events are already ignored.
+    // if let Some(win) = app_handle.get_webview_window("main") {
+    //     let _ = win.hide();
+    // }
     
     #[cfg(target_os = "windows")]
     {

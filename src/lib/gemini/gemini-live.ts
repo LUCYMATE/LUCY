@@ -375,6 +375,14 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                     },
                     required: ['query']
                   }
+                },
+                {
+                  name: 'go_to_sleep',
+                  description: 'Puts the system and avatar into sleep mode (closes the UI). Use this when the user asks you to close yourself, go to sleep, or hide.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {}
+                  }
                 }
               ]
             }
@@ -382,6 +390,10 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
         },
       } as any);
 
+      if (this.connectionId !== currentConnectionId) {
+        session.close?.();
+        return;
+      }
       this.session = session;
 
       // Wire up live animation-added event so AI learns about new slugs immediately
@@ -855,6 +867,7 @@ ${userPersonality}` : ''}`;
 
   // ---------------------------------------------------------------
   disconnect() {
+    this.connectionId++; // invalidate any pending connection attempts
     this.isIntentionalDisconnect = true;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);

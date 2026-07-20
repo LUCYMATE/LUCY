@@ -323,9 +323,11 @@ export function useCoreEngine() {
       });
     };
 
+    let wakeUpTimeout: ReturnType<typeof setTimeout> | null = null;
     const handleWakeUp = () => {
       useAvatarState.getState().setIsSleepMode(false);
-      setTimeout(() => initSystem(true), 500);
+      if (wakeUpTimeout) clearTimeout(wakeUpTimeout);
+      wakeUpTimeout = setTimeout(() => initSystem(true), 500);
     };
 
     window.addEventListener('soltini-sleep', handleSleep);

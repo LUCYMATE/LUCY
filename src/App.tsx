@@ -119,6 +119,11 @@ export default function App() {
 
     const handleWakeUp = () => {
       lastIgnore = false; // Force re-evaluation
+      // Force DOM repaint to fix Windows WebView2 blank screen bug after memory trim on wake
+      document.body.style.transform = 'translateZ(1px)';
+      setTimeout(() => {
+        document.body.style.transform = 'none';
+      }, 50);
     };
     window.addEventListener('soltini-wake-up', handleWakeUp);
 
