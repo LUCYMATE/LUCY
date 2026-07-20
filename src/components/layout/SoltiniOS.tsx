@@ -173,8 +173,8 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
         <div className="absolute inset-0 pointer-events-none z-50">
           <DraggableWindow
             defaultPosition={{ 
-              x: window.innerWidth > 800 ? (window.innerWidth - 800) / 2 : 50,
-              y: window.innerHeight > 600 ? (window.innerHeight - 600) / 2 : 50
+              x: typeof window !== 'undefined' && window.innerWidth > 840 ? window.innerWidth - 840 : 20,
+              y: 80
             }}
             defaultSize={{ width: 800, height: 600 }}
             minWidth={500}
@@ -183,7 +183,7 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
             cancelClass="cancel-drag"
             className="pointer-events-auto"
           >
-            <div className="settings-drag-handle w-full h-full bg-[#181818] rounded-[32px] flex flex-col relative border border-white/20 overflow-hidden">
+            <div className="settings-drag-handle w-full h-full bg-[#181818] rounded-[16px] flex flex-col relative border border-white/20 overflow-hidden">
               <SettingsPage onClose={() => setShowSettings(false)} />
               <button onClick={() => setShowSettings(false)} className="cancel-drag absolute top-4 right-6 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors z-50 cursor-pointer">
                 <X className="w-5 h-5 text-white/90" />

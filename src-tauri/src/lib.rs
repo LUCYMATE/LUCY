@@ -178,6 +178,44 @@ fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Resul
     }
 }
 
+#[cfg(target_os = "windows")]
+fn trim_memory_internal() {
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_processes();
+
+    let current_pid = sysinfo::get_current_pid().unwrap();
+    let mut all_descendants = std::collections::HashSet::new();
+    all_descendants.insert(current_pid);
+
+    let processes = sys.processes();
+    let mut added = true;
+    while added {
+        added = false;
+        for (pid, process) in processes {
+            if let Some(parent_pid) = process.parent() {
+                if all_descendants.contains(&parent_pid) && !all_descendants.contains(pid) {
+                    all_descendants.insert(*pid);
+                    added = true;
+                }
+            }
+        }
+    }
+
+    for pid in all_descendants {
+        unsafe {
+            let handle = windows_sys::Win32::System::Threading::OpenProcess(
+                windows_sys::Win32::System::Threading::PROCESS_ALL_ACCESS,
+                0,
+                pid.as_u32(),
+            );
+            if handle != std::ptr::null_mut() {
+                windows_sys::Win32::System::Memory::SetProcessWorkingSetSizeEx(handle, usize::MAX, usize::MAX, 0);
+                windows_sys::Win32::Foundation::CloseHandle(handle);
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn trim_memory(state: tauri::State<AppState>) -> Result<(), String> {
     if !*state.authorized.lock().unwrap() {
@@ -186,40 +224,7 @@ fn trim_memory(state: tauri::State<AppState>) -> Result<(), String> {
     
     #[cfg(target_os = "windows")]
     {
-        let mut sys = state.sys.lock().unwrap();
-        sys.refresh_processes();
-
-        let current_pid = sysinfo::get_current_pid().unwrap();
-        let mut all_descendants = std::collections::HashSet::new();
-        all_descendants.insert(current_pid);
-
-        let processes = sys.processes();
-        let mut added = true;
-        while added {
-            added = false;
-            for (pid, process) in processes {
-                if let Some(parent_pid) = process.parent() {
-                    if all_descendants.contains(&parent_pid) && !all_descendants.contains(pid) {
-                        all_descendants.insert(*pid);
-                        added = true;
-                    }
-                }
-            }
-        }
-
-        for pid in all_descendants {
-            unsafe {
-                let handle = windows_sys::Win32::System::Threading::OpenProcess(
-                    windows_sys::Win32::System::Threading::PROCESS_ALL_ACCESS,
-                    0,
-                    pid.as_u32(),
-                );
-                if handle != std::ptr::null_mut() {
-                    windows_sys::Win32::System::Memory::SetProcessWorkingSetSizeEx(handle, usize::MAX, usize::MAX, 0);
-                    windows_sys::Win32::Foundation::CloseHandle(handle);
-                }
-            }
-        }
+        trim_memory_internal();
     }
     Ok(())
 }
@@ -765,6 +770,38 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
     serde_json::json!({ "success": false })
 }
 
+fn do_wake_up_main(app_handle: &tauri::AppHandle) {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        let _ = win.set_ignore_cursor_events(true);
+        let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
+    }
+}
+
+#[tauri::command]
+fn enter_sleep_mode(app_handle: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.hide();
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            trim_memory_internal();
+        });
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn wake_up_main(app_handle: tauri::AppHandle) -> Result<(), String> {
+    do_wake_up_main(&app_handle);
+    Ok(())
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -833,6 +870,8 @@ pub fn run() {
             check_authorization,
             get_stored_license,
             trim_memory,
+            enter_sleep_mode,
+            wake_up_main,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -848,12 +887,15 @@ pub fn run() {
                     .with_handler(|app, shortcut, event| {
                         if event.state == ShortcutState::Pressed {
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyX) {
+                                do_wake_up_main(app);
                                 let _ = app.emit("soltini-exit-pet-mode", ());
                             }
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyS) {
+                                do_wake_up_main(app);
                                 let _ = app.emit("soltini-toggle-mute", ());
                             }
                             if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyM) || shortcut.matches(Modifiers::empty(), Code::F9) {
+                                do_wake_up_main(app);
                                 let _ = app.emit("soltini-toggle-mic", ());
                             }
                         }
@@ -898,6 +940,7 @@ pub fn run() {
                     if !event.is_null() {
                         loop {
                             WaitForSingleObject(event, u32::MAX);
+                            do_wake_up_main(&app_handle);
                             let _ = app_handle.emit("soltini-exit-pet-mode", ());
                         }
                     }
@@ -946,11 +989,7 @@ pub fn run() {
                         app.exit(0);
                     }
                     "show" => {
-                        if let Some(win) = app.get_webview_window("main") {
-                            win.show().unwrap();
-                            win.set_focus().unwrap();
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
-                        }
+                        do_wake_up_main(app.app_handle());
                     }
                     "hide" => {
                         if let Some(win) = app.get_webview_window("main") {
@@ -977,11 +1016,7 @@ pub fn run() {
                         ..
                     } => {
                         let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("main") {
-                            win.show().unwrap();
-                            win.set_focus().unwrap();
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
-                        }
+                        do_wake_up_main(app);
                     }
                     _ => {}
                 })

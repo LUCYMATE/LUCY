@@ -268,13 +268,67 @@ export function useCoreEngine() {
   }, []);
 
   useEffect(() => {
+    let recognition: any = null;
+
+    const startWakeWordListener = () => {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
+      try {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        recognition.onresult = (event: any) => {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const text = event.results[i][0].transcript.toLowerCase();
+            if (/\b(wake\s*up|na|hey\s+soltini)\b/i.test(text)) {
+              logger.add('success', 'Wake Word', `Detected locally: "${text}"`);
+              recognition?.stop();
+              window.dispatchEvent(new CustomEvent('soltini-wake-up'));
+              return;
+            }
+          }
+        };
+        recognition.onerror = () => setTimeout(startWakeWordListener, 2000);
+        recognition.start();
+        logger.add('info', 'Sleep Mode', 'Gemini disconnected. Lightweight wake-word listener active.');
+      } catch (e) {
+        logger.add('warning', 'Sleep Mode', 'Speech recognition not available - wake word disabled');
+      }
+    };
+
+    const handleSleep = () => {
+      geminiRef.current?.disconnect();
+      recorderRef.current?.stop();
+      playerRef.current?.stop();
+      setListening(false);
+      setSpeaking(false);
+      setThinking(false);
+      setIsMicOn(false);
+      startWakeWordListener();
+      logger.add('info', 'Sleep Mode', 'Entering low-RAM sleep mode...');
+      import('@tauri-apps/api/core').then(({ invoke }) => {
+        invoke('enter_sleep_mode');
+      });
+    };
+
+    const handleWakeUp = () => {
+      useAvatarState.getState().setIsSleepMode(false);
+      setTimeout(() => initSystem(), 500);
+    };
+
+    window.addEventListener('soltini-sleep', handleSleep);
+    window.addEventListener('soltini-wake-up', handleWakeUp);
+
     return () => {
+      window.removeEventListener('soltini-sleep', handleSleep);
+      window.removeEventListener('soltini-wake-up', handleWakeUp);
       stopSpeakingTimer();
       geminiRef.current?.disconnect();
       recorderRef.current?.stop();
       playerRef.current?.stop();
     };
-  }, []);
+  }, [initSystem, setListening, setSpeaking, setThinking, setIsMicOn]);
 
   return { initialized };
 }

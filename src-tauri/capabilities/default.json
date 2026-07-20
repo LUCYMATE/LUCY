@@ -52,6 +52,9 @@
     "allow-get-device-hwid",
     "allow-verify-license",
     "allow-check-authorization",
+    "allow-trim-memory",
+    "allow-enter-sleep-mode",
+    "allow-wake-up-main",
     {
       "identifier": "http:default",
       "allow": [

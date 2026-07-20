@@ -67,6 +67,9 @@ export default function App() {
     let active = true;
     let lastIgnore = true;
     const win = getCurrentWindow();
+    let cachedWinPos = { x: 0, y: 0 };
+    let cachedFactor = 1;
+    let cacheAge = 0;
 
     const checkMouse = async () => {
       if (!active) return;
@@ -82,11 +85,15 @@ export default function App() {
         if (document.querySelector('.is-dragging-window')) {
           inside = true;
         } else {
+          cacheAge++;
+          if (cacheAge > 25) {
+            cachedWinPos = await win.outerPosition();
+            cachedFactor = await win.scaleFactor();
+            cacheAge = 0;
+          }
           const cursor = await cursorPosition();
-          const winPos = await win.outerPosition();
-          const factor = await win.scaleFactor();
-          const x = (cursor.x - winPos.x) / factor;
-          const y = (cursor.y - winPos.y) / factor;
+          const x = (cursor.x - cachedWinPos.x) / cachedFactor;
+          const y = (cursor.y - cachedWinPos.y) / cachedFactor;
           
           const el = document.elementFromPoint(x, y);
           if (el && el.closest('.pointer-events-auto')) {
@@ -98,9 +105,9 @@ export default function App() {
           lastIgnore = !inside;
           if (active) {
              try {
-               await win.setIgnoreCursorEvents(lastIgnore);
+                await win.setIgnoreCursorEvents(lastIgnore);
              } catch (err: any) {
-               console.warn('IgnoreCursorEvents error:', err);
+                console.warn('IgnoreCursorEvents error:', err);
              }
           }
         }
@@ -110,9 +117,15 @@ export default function App() {
       if (active) setTimeout(checkMouse, 200);
     };
 
+    const handleWakeUp = () => {
+      lastIgnore = false; // Force re-evaluation
+    };
+    window.addEventListener('soltini-wake-up', handleWakeUp);
+
     checkMouse();
     return () => {
       active = false;
+      window.removeEventListener('soltini-wake-up', handleWakeUp);
       win.setIgnoreCursorEvents(false).catch(() => {});
     };
   }, [licenseStatus]);

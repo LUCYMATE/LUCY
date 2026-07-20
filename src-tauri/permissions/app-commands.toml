@@ -107,3 +107,18 @@ commands.allow = ["verify_license"]
 identifier = "allow-check-authorization"
 description = "Allows checking and restoring authorization state"
 commands.allow = ["check_authorization"]
+
+[[permission]]
+identifier = "allow-trim-memory"
+description = "Allows trimming memory working sets"
+commands.allow = ["trim_memory"]
+
+[[permission]]
+identifier = "allow-enter-sleep-mode"
+description = "Allows entering sleep mode"
+commands.allow = ["enter_sleep_mode"]
+
+[[permission]]
+identifier = "allow-wake-up-main"
+description = "Allows waking up main window"
+commands.allow = ["wake_up_main"]

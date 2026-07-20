@@ -54,7 +54,7 @@ function WebGLContextLoser() {
     return () => {
       setTimeout(() => {
         try {
-          const ext = gl.getExtension('WEBGL_lose_context');
+          const ext = gl.extensions.get('WEBGL_lose_context') as any;
           if (ext) ext.loseContext();
           gl.dispose();
         } catch (e) {
@@ -494,11 +494,8 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
 
   const sleepApp = async () => {
     try {
-      const state = useAvatarState.getState();
-      if (!state.isMicOn) {
-        useEngineStore.getState().toggleMic();
-      }
-      state.setIsSleepMode(true);
+      useAvatarState.getState().setIsSleepMode(true);
+      window.dispatchEvent(new CustomEvent('soltini-sleep'));
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().hide();
     } catch (e) {
@@ -511,16 +508,16 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
   
   const mainItems = [
     { id: 'mic', icon: isMicOn ? <Mic className="w-5 h-5 text-pink-400" /> : <MicOff className="w-5 h-5 text-white/50" />, action: handleMicToggle, label: 'Mic' },
-    { id: 'apps', icon: <Layers className="w-5 h-5 text-blue-400" />, action: () => { setShowSubMenu(true); setShowSizeSlider(false); setShowTasksPopup(false); }, label: 'Apps & Logs' },
+    { id: 'chat', icon: <MessageCircle className="w-5 h-5 text-blue-400" />, action: openChat, label: 'Chat' },
+    { id: 'apps', icon: <Layers className="w-5 h-5 text-blue-400" />, action: () => { setShowSubMenu(true); setShowSizeSlider(false); setShowTasksPopup(false); }, label: 'More' },
     { id: 'settings', icon: <Settings className="w-5 h-5 text-gray-300" />, action: openSettings, label: 'Settings' },
     { id: 'size', icon: <Maximize2 className="w-5 h-5 text-green-400" />, action: () => { setShowSizeSlider(!showSizeSlider); setShowTasksPopup(false); setShowSubMenu(false); }, label: 'Size' },
     { id: 'lock', icon: isAvatarLocked ? <Lock className="w-5 h-5 text-yellow-400" /> : <Unlock className="w-5 h-5 text-white/50" />, action: handleLockAvatar, label: 'Lock' },
-    { id: 'sleep', icon: <Power className="w-5 h-5 text-red-500" />, action: sleepApp, label: 'Sleep Mode' },
+    { id: 'sleep', icon: <Power className="w-5 h-5 text-red-500" />, action: sleepApp, label: 'Sleep' },
   ];
 
   const subItems = [
     { id: 'back', icon: <ChevronLeft className="w-5 h-5 text-white/80" />, action: () => setShowSubMenu(false), label: 'Back' },
-    { id: 'chat', icon: <MessageCircle className="w-5 h-5 text-blue-400" />, action: openChat, label: 'Chat' },
     { id: 'logs', icon: <Terminal className="w-5 h-5 text-purple-400" />, action: openLogs, label: 'Logs' },
     { id: 'tasks', icon: <CalendarClock className="w-5 h-5 text-purple-400" />, action: openTasks, label: 'Tasks' },
   ];

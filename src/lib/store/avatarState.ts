@@ -52,6 +52,7 @@ interface AvatarState {
   setConnectionState: (val: ConnectionState) => void;
   setDynamicTalkingEnabled: (val: boolean) => void;
   setPreSpeakingState: (val: { position: { x: number; y: number; z: number }, scale: number, pose: BasePose } | null) => void;
+  setIsSleepMode: (val: boolean) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({

@@ -1,6 +1,13 @@
 import { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import { slerpFromRest, BoneRest, SMOOTHING, Emotion } from './core';
 
+const R_ARM_BASE = { x: 0.2, y: 0.4, z: -1.25 };
+const R_ELBOW_BASE = { x: 0, y: 1.4, z: 0 };
+const R_HAND_BASE = { x: -0.1, y: 0, z: -0.1 };
+const L_ARM_BASE = { x: 0.2, y: -0.4, z: 1.25 };
+const L_ELBOW_BASE = { x: 0, y: -1.4, z: 0 };
+const L_HAND_BASE = { x: -0.1, y: 0, z: 0.1 };
+
 export function applyGestures(
   vrm: VRM,
   rest: BoneRest,
@@ -25,14 +32,6 @@ export function applyGestures(
 
   const idleSway = Math.sin(t * 0.8) * 0.02;
 
-  const rArmBase = { x: 0.2, y: 0.4, z: -1.25 };
-  const rElbowBase = { x: 0, y: 1.4, z: 0 }; 
-  const rHandBase = { x: -0.1, y: 0, z: -0.1 };
-
-  const lArmBase = { x: 0.2, y: -0.4, z: 1.25 };
-  const lElbowBase = { x: 0, y: -1.4, z: 0 }; 
-  const lHandBase = { x: -0.1, y: 0, z: 0.1 };
-
   if (isDragging) {
     // Arms crossed defensively while dangling (annoyed/resisting being dragged)
     const struggle = Math.sin(t * 12.0) * 0.05; // tiny frustrated wiggle
@@ -54,9 +53,9 @@ export function applyGestures(
     fr(VRMHumanBoneName.RightLowerArm, 0, 2.0, 0, 0.1);
     fr(VRMHumanBoneName.RightHand, 0, 0, wave, 0.2);
 
-    fr(VRMHumanBoneName.LeftUpperArm, lArmBase.x, lArmBase.y, lArmBase.z, SMOOTHING);
-    fr(VRMHumanBoneName.LeftLowerArm, lElbowBase.x, lElbowBase.y, lElbowBase.z, SMOOTHING);
-    fr(VRMHumanBoneName.LeftHand, lHandBase.x, lHandBase.y, lHandBase.z, SMOOTHING);
+    fr(VRMHumanBoneName.LeftUpperArm, L_ARM_BASE.x, L_ARM_BASE.y, L_ARM_BASE.z, SMOOTHING);
+    fr(VRMHumanBoneName.LeftLowerArm, L_ELBOW_BASE.x, L_ELBOW_BASE.y, L_ELBOW_BASE.z, SMOOTHING);
+    fr(VRMHumanBoneName.LeftHand, L_HAND_BASE.x, L_HAND_BASE.y, L_HAND_BASE.z, SMOOTHING);
     
     fr(VRMHumanBoneName.Head, 0.1, -0.1, 0.05, 0.1);
     fr(VRMHumanBoneName.Neck, 0.05, -0.1, 0, 0.1);
@@ -96,13 +95,13 @@ export function applyGestures(
       SMOOTHING);
 
     // Arms
-    fr(VRMHumanBoneName.RightUpperArm,  rArmBase.x + rise, rArmBase.y + swing, rArmBase.z + 0.4, SMOOTHING);
-    fr(VRMHumanBoneName.RightLowerArm,  rElbowBase.x, rElbowBase.y + elbowR, rElbowBase.z, SMOOTHING);
-    fr(VRMHumanBoneName.RightHand,      rHandBase.x + wristR, rHandBase.y, rHandBase.z, SMOOTHING);
+    fr(VRMHumanBoneName.RightUpperArm,  R_ARM_BASE.x + rise, R_ARM_BASE.y + swing, R_ARM_BASE.z + 0.4, SMOOTHING);
+    fr(VRMHumanBoneName.RightLowerArm,  R_ELBOW_BASE.x, R_ELBOW_BASE.y + elbowR, R_ELBOW_BASE.z, SMOOTHING);
+    fr(VRMHumanBoneName.RightHand,      R_HAND_BASE.x + wristR, R_HAND_BASE.y, R_HAND_BASE.z, SMOOTHING);
 
-    fr(VRMHumanBoneName.LeftUpperArm,   lArmBase.x, lArmBase.y + counter, lArmBase.z, SMOOTHING);
-    fr(VRMHumanBoneName.LeftLowerArm,   lElbowBase.x, lElbowBase.y - elbowL, lElbowBase.z, SMOOTHING);
-    fr(VRMHumanBoneName.LeftHand,       lHandBase.x, lHandBase.y, lHandBase.z, SMOOTHING);
+    fr(VRMHumanBoneName.LeftUpperArm,   L_ARM_BASE.x, L_ARM_BASE.y + counter, L_ARM_BASE.z, SMOOTHING);
+    fr(VRMHumanBoneName.LeftLowerArm,   L_ELBOW_BASE.x, L_ELBOW_BASE.y - elbowL, L_ELBOW_BASE.z, SMOOTHING);
+    fr(VRMHumanBoneName.LeftHand,       L_HAND_BASE.x, L_HAND_BASE.y, L_HAND_BASE.z, SMOOTHING);
 
   } else if (isThinking) {
     fr(VRMHumanBoneName.Neck, 0, 0.1, 0, SMOOTHING * 0.5);
@@ -112,9 +111,9 @@ export function applyGestures(
     fr(VRMHumanBoneName.RightLowerArm,  0,    2.2,  0,   SMOOTHING * 0.6); 
     fr(VRMHumanBoneName.RightHand,      0,    0,    0,   SMOOTHING * 0.6);
 
-    fr(VRMHumanBoneName.LeftUpperArm,   lArmBase.x, lArmBase.y, lArmBase.z, SMOOTHING * 0.6);
-    fr(VRMHumanBoneName.LeftLowerArm,   lElbowBase.x, lElbowBase.y, lElbowBase.z, SMOOTHING * 0.6);
-    fr(VRMHumanBoneName.LeftHand,       lHandBase.x, lHandBase.y, lHandBase.z, SMOOTHING * 0.6);
+    fr(VRMHumanBoneName.LeftUpperArm,   L_ARM_BASE.x, L_ARM_BASE.y, L_ARM_BASE.z, SMOOTHING * 0.6);
+    fr(VRMHumanBoneName.LeftLowerArm,   L_ELBOW_BASE.x, L_ELBOW_BASE.y, L_ELBOW_BASE.z, SMOOTHING * 0.6);
+    fr(VRMHumanBoneName.LeftHand,       L_HAND_BASE.x, L_HAND_BASE.y, L_HAND_BASE.z, SMOOTHING * 0.6);
 
   } else if (isListening) {
     // Active listening (nodding)
@@ -130,9 +129,9 @@ export function applyGestures(
     fr(VRMHumanBoneName.LeftLowerArm,    0,    -3,    0, SMOOTHING * 0.6); 
     fr(VRMHumanBoneName.LeftHand,     -0.5,     0, -0.5, SMOOTHING * 0.6);
 
-    fr(VRMHumanBoneName.RightUpperArm,  rArmBase.x, rArmBase.y, rArmBase.z, SMOOTHING * 0.6);
-    fr(VRMHumanBoneName.RightLowerArm,  rElbowBase.x, rElbowBase.y, rElbowBase.z, SMOOTHING * 0.6);
-    fr(VRMHumanBoneName.RightHand,      rHandBase.x, rHandBase.y, rHandBase.z, SMOOTHING * 0.6);
+    fr(VRMHumanBoneName.RightUpperArm,  R_ARM_BASE.x, R_ARM_BASE.y, R_ARM_BASE.z, SMOOTHING * 0.6);
+    fr(VRMHumanBoneName.RightLowerArm,  R_ELBOW_BASE.x, R_ELBOW_BASE.y, R_ELBOW_BASE.z, SMOOTHING * 0.6);
+    fr(VRMHumanBoneName.RightHand,      R_HAND_BASE.x, R_HAND_BASE.y, R_HAND_BASE.z, SMOOTHING * 0.6);
 
   } else {
     // Idle state
