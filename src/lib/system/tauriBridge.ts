@@ -62,3 +62,13 @@ export const typeString = async (text: string): Promise<void> => {
     console.error('Error typing string:', error);
   }
 };
+
+export const trimMemory = async (): Promise<void> => {
+  if (!isTauri()) return;
+  try {
+    await invoke('trim_memory');
+  } catch (error) {
+    console.error('Error trimming memory:', error);
+  }
+};
+

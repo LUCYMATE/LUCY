@@ -179,6 +179,53 @@ fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Resul
 }
 
 #[tauri::command]
+fn trim_memory(state: tauri::State<AppState>) -> Result<(), String> {
+    if !*state.authorized.lock().unwrap() {
+        return Err("Unauthorized".to_string());
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        let mut sys = state.sys.lock().unwrap();
+        sys.refresh_processes();
+
+        let current_pid = sysinfo::get_current_pid().unwrap();
+        let mut all_descendants = std::collections::HashSet::new();
+        all_descendants.insert(current_pid);
+
+        let processes = sys.processes();
+        let mut added = true;
+        while added {
+            added = false;
+            for (pid, process) in processes {
+                if let Some(parent_pid) = process.parent() {
+                    if all_descendants.contains(&parent_pid) && !all_descendants.contains(pid) {
+                        all_descendants.insert(*pid);
+                        added = true;
+                    }
+                }
+            }
+        }
+
+        for pid in all_descendants {
+            unsafe {
+                let handle = windows_sys::Win32::System::Threading::OpenProcess(
+                    windows_sys::Win32::System::Threading::PROCESS_ALL_ACCESS,
+                    0,
+                    pid.as_u32(),
+                );
+                if handle != std::ptr::null_mut() {
+                    windows_sys::Win32::System::Memory::SetProcessWorkingSetSizeEx(handle, usize::MAX, usize::MAX, 0);
+                    windows_sys::Win32::Foundation::CloseHandle(handle);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+
+#[tauri::command]
 fn press_key(key: String, state: tauri::State<AppState>) -> Result<(), String> {
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
@@ -785,6 +832,7 @@ pub fn run() {
             verify_license,
             check_authorization,
             get_stored_license,
+            trim_memory,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -901,6 +949,7 @@ pub fn run() {
                         if let Some(win) = app.get_webview_window("main") {
                             win.show().unwrap();
                             win.set_focus().unwrap();
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
                         }
                     }
                     "hide" => {
@@ -931,6 +980,7 @@ pub fn run() {
                         if let Some(win) = app.get_webview_window("main") {
                             win.show().unwrap();
                             win.set_focus().unwrap();
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
                         }
                     }
                     _ => {}

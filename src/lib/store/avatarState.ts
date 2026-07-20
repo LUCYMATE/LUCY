@@ -27,6 +27,7 @@ interface AvatarState {
   connectionState: ConnectionState;
   isDynamicTalkingEnabled: boolean;
   preSpeakingState: { position: { x: number; y: number; z: number }, scale: number, pose: BasePose } | null;
+  isSleepMode: boolean;
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -77,6 +78,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   connectionState: 'idle',
   isDynamicTalkingEnabled: localStorage.getItem('soltini_dynamic_talking') === 'true',
   preSpeakingState: null,
+  isSleepMode: false,
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -101,4 +103,5 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setConnectionState: (val) => set({ connectionState: val }),
   setDynamicTalkingEnabled: (val) => set({ isDynamicTalkingEnabled: val }),
   setPreSpeakingState: (val) => set({ preSpeakingState: val }),
+  setIsSleepMode: (val) => set({ isSleepMode: val }),
 }));

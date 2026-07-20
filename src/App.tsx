@@ -79,7 +79,7 @@ export default function App() {
 
         let inside = false;
         
-        if (document.querySelector('.react-draggable-dragging, .react-resizable-resizing')) {
+        if (document.querySelector('.is-dragging-window')) {
           inside = true;
         } else {
           const cursor = await cursorPosition();

@@ -522,14 +522,19 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
               const inputText = inputTranscription?.text;
               if (inputText) {
                 this.onTranscript?.(inputText, true);
+                
+                const isSleepMode = useAvatarState.getState().isSleepMode;
+                if (isSleepMode && /\bwake\s*up\b/i.test(inputText)) {
+                  logger.add('success', 'Wake Word', 'Detected wake word! Waking up system...');
+                  window.dispatchEvent(new CustomEvent('soltini-wake-up'));
+                }
               }
 
-              if (serverContent?.turnComplete || serverContent?.turn_complete) {
-                logger.add('info', 'Turn Complete', 'Model finished generating response.');
+              if (serverContent?.interrupted) {
+                // Wait for the next turn
               }
             } catch (err) {
-              logger.add('error', 'Message Parse Error', String(err));
-              console.error('[GeminiLive] parse error:', err);
+              console.warn('Message Parse Error', err);
             }
           },
           onerror: (event: any) => {

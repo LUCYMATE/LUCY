@@ -1,6 +1,7 @@
 import { Activity, Cpu, Server, Terminal, X } from 'lucide-react';
 import { DraggableWindow } from './DraggableWindow';
 import { LogEntry } from '../../lib/store/logger';
+import { useRef, useEffect } from 'react';
 
 export function SystemLogs({
   isVisible,
@@ -19,6 +20,14 @@ export function SystemLogs({
   latency: string;
   isTauri: boolean;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [logs, isVisible]);
+
   if (!isVisible) return null;
 
   return (
@@ -68,7 +77,7 @@ export function SystemLogs({
           </div>
 
           {/* Logs Terminal */}
-          <div className="flex-1 overflow-y-auto p-4 bg-black/60 font-mono text-[11px] leading-relaxed custom-scrollbar cancel-drag">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 bg-black/60 font-mono text-[11px] leading-relaxed custom-scrollbar cancel-drag">
             {logs.map((log) => (
               <div key={log.id} className="mb-2 pb-2 border-b border-white/5 last:border-0 hover:bg-white/5 px-2 py-1 rounded transition-colors group">
                 <div className="flex items-center gap-2 mb-1">

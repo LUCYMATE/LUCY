@@ -4,12 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import { SettingsPage } from '../settings/SettingsPage';
 import { DraggableWindow } from './DraggableWindow';
 import { getScheduledTasks, cancelScheduledTaskById, ScheduledTask } from '../../lib/gemini/gemini-live';
-import { getSystemStats, isTauriApp } from '../../lib/system/tauriBridge';
+import { getSystemStats, isTauriApp, trimMemory } from '../../lib/system/tauriBridge';
 import { logger, LogEntry } from '../../lib/store/logger';
 import { AvatarController } from '../avatar/AvatarController';
 import { SystemIndicators } from './SystemIndicators';
 import { SystemLogs } from './SystemLogs';
 import { useCoreEngine } from '../../hooks/useCoreEngine';
+
+import { useAvatarState } from '../../lib/store/avatarState';
+import { clearVrmCache } from '../avatar/VrmModel';
+import { clearFbxCache } from '../avatar/animations/useFbxAnimation';
 
 export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
@@ -17,6 +21,8 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
   const [showChat, setShowChat] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   
+  const isSleepMode = useAvatarState(s => s.isSleepMode);
+
   // Start the core engine unconditionally so the avatar stays alive
   useCoreEngine();
 
@@ -29,6 +35,24 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
     window.addEventListener('soltini-tasks-changed', loadTasks);
     return () => window.removeEventListener('soltini-tasks-changed', loadTasks);
   }, []);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (isSleepMode) {
+      // Force aggressive garbage collection of heavy 3D assets to drop GPU/RAM usage to zero
+      clearVrmCache();
+      clearFbxCache();
+      // Drop memory used by chromium process for true near-zero memory footprint
+      // We loop this because the background Audio WebSockets cause V8 to rapidly allocate memory again
+      setTimeout(() => trimMemory(), 500);
+      interval = setInterval(() => {
+        trimMemory();
+      }, 5000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isSleepMode]);
   
   const [cpu, setCpu] = useState<number>(0);
   const [memory, setMemory] = useState<string>('0 / 0 GB');
@@ -57,15 +81,30 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
     };
     const handleOpenChat = () => { setShowChat(true); setShowSettings(false); setShowTasks(false); setShowLogs(false); };
     const handleOpenLogs = () => { setShowLogs(true); setShowSettings(false); setShowTasks(false); setShowChat(false); };
+    
+    const handleWakeUp = async () => {
+      useAvatarState.getState().setIsSleepMode(false);
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const win = getCurrentWindow();
+        await win.show();
+        await win.setFocus();
+      } catch (e) {
+        console.warn("Tauri window API not available");
+      }
+    };
+
     window.addEventListener('soltini-open-settings', handleOpenSettings);
     window.addEventListener('soltini-open-tasks', handleOpenTasks);
     window.addEventListener('soltini-open-chat', handleOpenChat);
     window.addEventListener('soltini-open-logs', handleOpenLogs);
+    window.addEventListener('soltini-wake-up', handleWakeUp);
     return () => {
       window.removeEventListener('soltini-open-settings', handleOpenSettings);
       window.removeEventListener('soltini-open-tasks', handleOpenTasks);
       window.removeEventListener('soltini-open-chat', handleOpenChat);
       window.removeEventListener('soltini-open-logs', handleOpenLogs);
+      window.removeEventListener('soltini-wake-up', handleWakeUp);
     };
   }, []);
 
@@ -104,7 +143,7 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
 
     // Only run stats when sidebar is visible (not in pet mode or when settings is closed)
     const startPolling = () => {
-      if (showSettings) return;
+      if (showSettings || isSleepMode) return;
       checkPing();
       checkStats();
       interval = setInterval(() => {
@@ -123,14 +162,14 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
     startPolling();
 
     return () => stopPolling();
-  }, [isTauri, showSettings]);
+  }, [isTauri, showSettings, isSleepMode]);
 
   return (
     <div className={`flex h-full w-full relative min-h-0 p-0 max-w-none`}>
       
-      <SystemIndicators />
+      {!isSleepMode && <SystemIndicators />}
       
-      {showSettings && (
+      {showSettings && !isSleepMode && (
         <div className="absolute inset-0 pointer-events-none z-50">
           <DraggableWindow
             defaultPosition={{ 
@@ -154,7 +193,7 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
         </div>
       )}
       
-      {showTasks && (
+      {showTasks && !isSleepMode && (
         <div 
           className="absolute z-50 w-72 bg-[#121212]/95 backdrop-blur-md rounded-[20px] p-4 border border-white/20 shadow-2xl flex flex-col gap-3 animate-in zoom-in-95 duration-200 pointer-events-auto"
           style={{
@@ -187,22 +226,26 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
       )}
 
       <div className="absolute inset-0 pointer-events-none z-0">
-        <Chat 
-          isVisible={showChat}
-          onCloseChat={() => setShowChat(false)}
-        />
-        <SystemLogs
-          isVisible={showLogs}
-          onClose={() => setShowLogs(false)}
-          logs={logs}
-          cpu={cpu}
-          memory={memory}
-          latency={latency}
-          isTauri={isTauri}
-        />
+        {showChat && !isSleepMode && (
+          <Chat 
+            isVisible={showChat}
+            onCloseChat={() => setShowChat(false)}
+          />
+        )}
+        {showLogs && !isSleepMode && (
+          <SystemLogs
+            isVisible={showLogs}
+            onClose={() => setShowLogs(false)}
+            logs={logs}
+            cpu={cpu}
+            memory={memory}
+            latency={latency}
+            isTauri={isTauri}
+          />
+        )}
       </div>
       
-      <AvatarController />
+      {!isSleepMode && <AvatarController />}
     </div>
   );
 }

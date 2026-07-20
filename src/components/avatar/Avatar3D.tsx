@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { VrmModel, clearVrmCache, clearAssetResolutionCache } from './VrmModel';
 import { clearFbxCache } from './animations/useFbxAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { useEngineStore } from '../../lib/store/engineStore';
 import { useShallow } from 'zustand/react/shallow';
 import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft } from 'lucide-react';
 
@@ -43,6 +44,25 @@ function FpsLimiter() {
     frameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frameId);
   }, [limit, invalidate]);
+  return null;
+}
+
+// Forces Chromium to discard the WebGL context and GPU memory immediately when Canvas unmounts
+function WebGLContextLoser() {
+  const { gl } = useThree();
+  useEffect(() => {
+    return () => {
+      setTimeout(() => {
+        try {
+          const ext = gl.getExtension('WEBGL_lose_context');
+          if (ext) ext.loseContext();
+          gl.dispose();
+        } catch (e) {
+          console.error("Failed to aggressively release WebGL Context", e);
+        }
+      }, 0);
+    };
+  }, [gl]);
   return null;
 }
 
@@ -472,12 +492,17 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     cancelScheduledTaskById(id);
   };
 
-  const closeApp = async () => {
+  const sleepApp = async () => {
     try {
+      const state = useAvatarState.getState();
+      if (!state.isMicOn) {
+        useEngineStore.getState().toggleMic();
+      }
+      state.setIsSleepMode(true);
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      await getCurrentWindow().close();
+      await getCurrentWindow().hide();
     } catch (e) {
-      console.warn("Close only works in Tauri apps");
+      console.warn("Hide only works in Tauri apps");
     }
   };
 
@@ -490,7 +515,7 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     { id: 'settings', icon: <Settings className="w-5 h-5 text-gray-300" />, action: openSettings, label: 'Settings' },
     { id: 'size', icon: <Maximize2 className="w-5 h-5 text-green-400" />, action: () => { setShowSizeSlider(!showSizeSlider); setShowTasksPopup(false); setShowSubMenu(false); }, label: 'Size' },
     { id: 'lock', icon: isAvatarLocked ? <Lock className="w-5 h-5 text-yellow-400" /> : <Unlock className="w-5 h-5 text-white/50" />, action: handleLockAvatar, label: 'Lock' },
-    { id: 'close', icon: <Power className="w-5 h-5 text-red-500" />, action: closeApp, label: 'Close App' },
+    { id: 'sleep', icon: <Power className="w-5 h-5 text-red-500" />, action: sleepApp, label: 'Sleep Mode' },
   ];
 
   const subItems = [
@@ -770,6 +795,7 @@ export function Avatar3D() {
         gl={{ powerPreference: "low-power", antialias: true, alpha: true }}
         style={{ pointerEvents: 'none' }}
       >
+        <WebGLContextLoser />
         <FpsLimiter />
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
 

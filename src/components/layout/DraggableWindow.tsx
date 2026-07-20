@@ -60,6 +60,7 @@ export function DraggableWindow({
       startTranslateY = matrix.m42;
       
       document.body.style.userSelect = 'none';
+      document.body.classList.add('is-dragging-window');
       container.style.transition = 'none'; // Ensure no transition delays drag
     };
 
@@ -79,6 +80,7 @@ export function DraggableWindow({
       if (isDragging) {
         isDragging = false;
         document.body.style.userSelect = '';
+        document.body.classList.remove('is-dragging-window');
       }
     };
 
