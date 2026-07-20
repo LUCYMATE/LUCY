@@ -120,7 +120,7 @@ export function useCoreEngine() {
   const toggleMicRef = useRef(toggleMic);
   toggleMicRef.current = toggleMic;
 
-  const initSystem = useCallback((autoMic = false) => {
+  const initSystem = useCallback((isWakeUp = false, autoMic = false) => {
     logger.add('info', 'System Boot', `Initializing ${BOT_NAME}OS and Gemini connection...`);
     setInitialized(true);
 
@@ -132,6 +132,11 @@ export function useCoreEngine() {
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'model', text: '⚠️ Error: No Gemini API Key found. Please add one in Settings.' }]);
       return;
     }
+
+    // Clean up any existing instances before creating new ones
+    geminiRef.current?.disconnect();
+    playerRef.current?.stopCurrentPlayback();
+    recorderRef.current?.stop();
 
     const gemini = new GeminiLive();
     const player = new AudioPlayer();
@@ -150,7 +155,11 @@ export function useCoreEngine() {
       if (state === 'connected' && !hasSentGreeting) {
         hasSentGreeting = true;
         setTimeout(() => {
-          gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
+          if (!isWakeUp) {
+            gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
+          } else {
+            gemini.sendText("System instruction: The user just woke you up from sleep mode. Give a fun, casual, or slightly flirty 1-sentence greeting acknowledging you are back awake and ready to help. Do not say you are an AI.");
+          }
           
           const autoMicStr = localStorage.getItem('soltini_auto_mic');
           const shouldAutoMic = autoMicStr === null ? true : autoMicStr === 'true';
@@ -284,7 +293,9 @@ export function useCoreEngine() {
             if (/\b(wake\s*up|na|hey\s+soltini)\b/i.test(text)) {
               logger.add('success', 'Wake Word', `Detected locally: "${text}"`);
               recognition?.stop();
-              window.dispatchEvent(new CustomEvent('soltini-wake-up'));
+              import('@tauri-apps/api/core').then(({ invoke }) => {
+                invoke('wake_up_main');
+              });
               return;
             }
           }
@@ -314,7 +325,7 @@ export function useCoreEngine() {
 
     const handleWakeUp = () => {
       useAvatarState.getState().setIsSleepMode(false);
-      setTimeout(() => initSystem(), 500);
+      setTimeout(() => initSystem(true), 500);
     };
 
     window.addEventListener('soltini-sleep', handleSleep);
