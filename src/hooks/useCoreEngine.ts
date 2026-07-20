@@ -309,6 +309,7 @@ export function useCoreEngine() {
     };
 
     const handleSleep = () => {
+      useAvatarState.getState().setIsSleepMode(true);
       geminiRef.current?.disconnect();
       recorderRef.current?.stop();
       playerRef.current?.stop();

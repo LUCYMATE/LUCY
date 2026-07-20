@@ -48,6 +48,13 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
       interval = setInterval(() => {
         trimMemory();
       }, 5000);
+    } else {
+      // Aggressively keep RAM footprint low (~300MB) during normal active use
+      // Delay the first trim by 10s to ensure the heavy VRM model finishes loading safely first!
+      setTimeout(() => trimMemory(), 10000);
+      interval = setInterval(() => {
+        trimMemory();
+      }, 15000);
     }
     return () => {
       if (interval) clearInterval(interval);
