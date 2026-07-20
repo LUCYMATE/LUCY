@@ -2,6 +2,7 @@ import { SoltiniOS } from './components/layout/SoltiniOS';
 import { LicenseGate } from './components/LicenseGate';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getCurrentWindow, cursorPosition } from '@tauri-apps/api/window';
+import { useAvatarState } from './lib/store/avatarState';
 
 const LICENSE_SERVER_URL = 'https://soltini.vercel.app';
 
@@ -69,14 +70,19 @@ export default function App() {
     const win = getCurrentWindow();
     let cachedWinPos = { x: 0, y: 0 };
     let cachedFactor = 1;
-    let cacheAge = 0;
+    let cacheAge = 999; // Set high so it instantly grabs the true window position on first run
 
     const checkMouse = async () => {
       if (!active) return;
       try {
+        if (useAvatarState.getState().isSleepMode) {
+          if (active) setTimeout(checkMouse, 1000);
+          return;
+        }
+
         const isVisible = await win.isVisible();
         if (!isVisible) {
-          if (active) setTimeout(checkMouse, 500);
+          if (active) setTimeout(checkMouse, 1000);
           return;
         }
 

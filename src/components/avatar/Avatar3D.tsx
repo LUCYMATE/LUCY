@@ -497,7 +497,7 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
       useAvatarState.getState().setIsSleepMode(true);
       window.dispatchEvent(new CustomEvent('soltini-sleep'));
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      await getCurrentWindow().hide();
+      setTimeout(() => getCurrentWindow().hide(), 50);
     } catch (e) {
       console.warn("Hide only works in Tauri apps");
     }

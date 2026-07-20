@@ -89,8 +89,19 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
     const handleOpenChat = () => { setShowChat(true); setShowSettings(false); setShowTasks(false); setShowLogs(false); };
     const handleOpenLogs = () => { setShowLogs(true); setShowSettings(false); setShowTasks(false); setShowChat(false); };
     
+    const handleSleep = () => {
+      setShowSettings(false);
+      setShowTasks(false);
+      setShowChat(false);
+      setShowLogs(false);
+    };
+
     const handleWakeUp = async () => {
       useAvatarState.getState().setIsSleepMode(false);
+      setShowSettings(false);
+      setShowTasks(false);
+      setShowChat(false);
+      setShowLogs(false);
       try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const win = getCurrentWindow();
@@ -101,16 +112,29 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
       }
     };
 
+    const handleToggleSleep = () => {
+      const isSleep = useAvatarState.getState().isSleepMode;
+      if (isSleep) {
+        window.dispatchEvent(new CustomEvent('soltini-wake-up'));
+      } else {
+        window.dispatchEvent(new CustomEvent('soltini-sleep'));
+      }
+    };
+
+    window.addEventListener('soltini-toggle-sleep', handleToggleSleep);
     window.addEventListener('soltini-open-settings', handleOpenSettings);
     window.addEventListener('soltini-open-tasks', handleOpenTasks);
     window.addEventListener('soltini-open-chat', handleOpenChat);
     window.addEventListener('soltini-open-logs', handleOpenLogs);
+    window.addEventListener('soltini-sleep', handleSleep);
     window.addEventListener('soltini-wake-up', handleWakeUp);
     return () => {
+      window.removeEventListener('soltini-toggle-sleep', handleToggleSleep);
       window.removeEventListener('soltini-open-settings', handleOpenSettings);
       window.removeEventListener('soltini-open-tasks', handleOpenTasks);
       window.removeEventListener('soltini-open-chat', handleOpenChat);
       window.removeEventListener('soltini-open-logs', handleOpenLogs);
+      window.removeEventListener('soltini-sleep', handleSleep);
       window.removeEventListener('soltini-wake-up', handleWakeUp);
     };
   }, []);

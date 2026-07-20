@@ -774,13 +774,20 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
     if let Some(win) = app_handle.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();
-        let _ = win.set_ignore_cursor_events(true);
-        let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
+        
+        // Delay interacting with the WebView2 API to ensure it has fully resumed 
+        // from OS-level suspension (caused by trim_memory), otherwise it throws 0x8007139F
+        let win_clone = win.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = win_clone.set_ignore_cursor_events(true);
+            let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
+        });
     }
 }
 
 #[tauri::command]
-fn enter_sleep_mode(app_handle: tauri::AppHandle) -> Result<(), String> {
+fn enter_sleep_mode(_app_handle: tauri::AppHandle) -> Result<(), String> {
     // We intentionally do NOT hide the window here anymore to prevent the Windows WebView2 
     // white-screen flash when waking up. The frontend will hide all UI elements and become 
     // fully transparent, and the cursor events are already ignored.
@@ -996,7 +1003,10 @@ pub fn run() {
                     }
                     "hide" => {
                         if let Some(win) = app.get_webview_window("main") {
-                            win.hide().unwrap();
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-sleep'));");
+                            // We intentionally do not call win.hide() here. The frontend will 
+                            // become transparent and ignore mouse events. Hiding the window 
+                            // causes WebView2 to suspend, which kills the SpeechRecognition wake word.
                         }
                     }
                     "refresh" => {
@@ -1019,7 +1029,11 @@ pub fn run() {
                         ..
                     } => {
                         let app = tray.app_handle();
-                        do_wake_up_main(app);
+                        if let Some(win) = app.get_webview_window("main") {
+                            // Since the window is never hidden (to keep SpeechRecognition alive), 
+                            // we just dispatch a toggle event to the frontend and let it handle the state.
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-toggle-sleep'));");
+                        }
                     }
                     _ => {}
                 })

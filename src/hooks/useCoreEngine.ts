@@ -308,6 +308,8 @@ export function useCoreEngine() {
       }
     };
 
+    let dummyMicStream: MediaStream | null = null;
+    
     const handleSleep = () => {
       useAvatarState.getState().setIsSleepMode(true);
       geminiRef.current?.disconnect();
@@ -317,6 +319,13 @@ export function useCoreEngine() {
       setSpeaking(false);
       setThinking(false);
       setIsMicOn(false);
+      
+      // Request a dummy audio stream to keep the Windows microphone icon stationary 
+      // and prevent it from flashing when SpeechRecognition restarts
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => { dummyMicStream = stream; })
+        .catch(() => {});
+
       startWakeWordListener();
       logger.add('info', 'Sleep Mode', 'Entering low-RAM sleep mode...');
       import('@tauri-apps/api/core').then(({ invoke }) => {
@@ -328,6 +337,12 @@ export function useCoreEngine() {
     const handleWakeUp = () => {
       useAvatarState.getState().setIsSleepMode(false);
       if (wakeUpTimeout) clearTimeout(wakeUpTimeout);
+      
+      if (dummyMicStream) {
+        dummyMicStream.getTracks().forEach(t => t.stop());
+        dummyMicStream = null;
+      }
+      
       wakeUpTimeout = setTimeout(() => initSystem(true), 500);
     };
 
@@ -341,6 +356,9 @@ export function useCoreEngine() {
       geminiRef.current?.disconnect();
       recorderRef.current?.stop();
       playerRef.current?.stop();
+      if (dummyMicStream) {
+        dummyMicStream.getTracks().forEach(t => t.stop());
+      }
     };
   }, [initSystem, setListening, setSpeaking, setThinking, setIsMicOn]);
 
