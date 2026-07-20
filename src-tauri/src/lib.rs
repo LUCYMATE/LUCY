@@ -990,30 +990,6 @@ pub fn run() {
                 });
             }
 
-
-            // Auto-deploy and launch background listener (DISABLED per user request)
-            /*
-            {
-                let exe_dir = std::env::current_exe().ok()
-                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-                    .unwrap_or_default();
-                let listener_path = exe_dir.join("soltini-listener.exe");
-
-                if !listener_path.exists() {
-                    if let Ok(resource_dir) = app.path().resource_dir() {
-                        let resource_path = resource_dir.join("soltini-listener.exe");
-                        if resource_path.exists() {
-                            let _ = std::fs::copy(&resource_path, &listener_path);
-                        }
-                    }
-                }
-
-                if listener_path.exists() {
-                    let _ = std::process::Command::new(&listener_path).spawn();
-                }
-            }
-            */
-
             // Tray Menu
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let hide_i = MenuItem::with_id(app, "hide", "Hide Window", true, None::<&str>)?;

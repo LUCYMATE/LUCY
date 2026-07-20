@@ -19,9 +19,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "soltini"
 path = "src/main.rs"
 
-[[bin]]
-name = "soltini-listener"
-path = "src/bin/listener.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
@@ -42,8 +39,7 @@ base64 = "0.22.1"
 lazy_static = "1.5.0"
 screenshots = "0.8.10"
 image = "0.25.6"
-global-hotkey = "0.8"
-windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_Security", "Win32_System_Memory"] }
+
 tauri-plugin-http = "2"
 tauri-plugin-fs = "2"
 hmac = "0.12"

@@ -37,6 +37,7 @@ export function useCoreEngine() {
           const text = event.results[i][0].transcript.toLowerCase();
           if (/\b(wake\s*up|soltini|saltini|sultini|sholtini|sortini|sol\s*ti\s*ni|hey\s+soltini|hello\s+soltini)\b/i.test(text)) {
             logger.add('success', 'Wake Word', `Detected locally: "${text}"`);
+            if (speechRecognitionRef.current) speechRecognitionRef.current.onend = null;
             speechRecognitionRef.current?.stop();
             import('@tauri-apps/api/core').then(({ invoke }) => {
               const tryWake = (retries = 20) => {
@@ -52,6 +53,11 @@ export function useCoreEngine() {
         }
       };
       speechRecognitionRef.current.onerror = () => setTimeout(startWakeWordListener, 2000);
+      speechRecognitionRef.current.onend = () => {
+        if (useAvatarState.getState().isSleepMode) {
+          setTimeout(startWakeWordListener, 1000);
+        }
+      };
       speechRecognitionRef.current.start();
       logger.add('info', 'Sleep Mode', 'Gemini disconnected. Lightweight wake-word listener active.');
     } catch (e) {
