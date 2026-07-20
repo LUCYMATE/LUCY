@@ -11,6 +11,7 @@ const safe = async (p: Promise<any>) => {
 };
 
 export default function App() {
+  const [isInitializing, setIsInitializing] = useState(true);
   const [licenseStatus, setLicenseStatus] = useState<'checking' | 'locked' | 'authorized'>('checking');
   const [hasApiKey, setHasApiKey] = useState(() =>
     !!localStorage.getItem('soltini_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY
@@ -18,14 +19,38 @@ export default function App() {
 
   const windowReadyRef = useRef(false);
 
-  const setupMainWindow = useCallback(async () => {
+  // Early boot check to show the window if launched manually
+  useEffect(() => {
+    const bootCheck = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const isAutostart = await invoke<boolean>('is_autostart');
+        const win = getCurrentWindow();
+        await safe(win.setIgnoreCursorEvents(true));
+        
+        if (!isAutostart) {
+          await safe(win.setSkipTaskbar(false));
+          await safe(win.show());
+        } else {
+          await safe(win.setSkipTaskbar(true));
+        }
+      } catch (e) {}
+    };
+    bootCheck();
+  }, []);
+
+  const setupMainWindow = useCallback(async (isHidden = false) => {
     try {
       const win = getCurrentWindow();
-      // Hide from taskbar now that authentication is complete
-      await safe(win.setSkipTaskbar(true));
       
-      await safe(win.maximize());
-      await safe(win.setIgnoreCursorEvents(true));
+      if (!isHidden) {
+        await safe(win.maximize());
+        await safe(win.show());
+      }
+      
+      // Hide from taskbar now that authentication is complete. 
+      // This MUST be called after maximize(), because Windows restores the taskbar icon when a window is maximized!
+      await safe(win.setSkipTaskbar(true));
       
       windowReadyRef.current = true;
       window.dispatchEvent(new CustomEvent('soltini-force-init'));
@@ -37,9 +62,14 @@ export default function App() {
   useEffect(() => {
     if (licenseStatus === 'authorized') {
       const initWindow = async () => {
-        await setupMainWindow();
-        const win = getCurrentWindow();
+        let isAutostart = false;
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          isAutostart = await invoke<boolean>('is_autostart');
+        } catch(e) {}
         
+        await setupMainWindow(isAutostart);
+        const win = getCurrentWindow();
         try {
           const { invoke } = await import('@tauri-apps/api/core');
           const autostartPlugin = await import('@tauri-apps/plugin-autostart');
@@ -47,19 +77,22 @@ export default function App() {
           if (!autostartEnabled) {
             await autostartPlugin.enable();
           }
-          const isAutostart = await invoke<boolean>('is_autostart');
+          isAutostart = await invoke<boolean>('is_autostart');
           if (isAutostart) {
             useAvatarState.getState().setIsSleepMode(true);
-            window.dispatchEvent(new CustomEvent('soltini-sleep'));
+            // We don't need to dispatch soltini-sleep here because useCoreEngine hasn't mounted yet.
+            // It will check the store when it mounts.
           }
         } catch (e) {
           console.warn('autostart check failed', e);
         }
 
-        await safe(win.show());
-        
-        if (!hasApiKey && !useAvatarState.getState().isSleepMode) {
-          setTimeout(() => window.dispatchEvent(new CustomEvent('soltini-open-settings')), 800);
+        setIsInitializing(false);
+
+        if (!isAutostart) {
+          if (!hasApiKey && !useAvatarState.getState().isSleepMode) {
+            setTimeout(() => window.dispatchEvent(new CustomEvent('soltini-open-settings')), 800);
+          }
         }
       };
       initWindow();
@@ -81,7 +114,6 @@ export default function App() {
   // ─── Cursor passthrough ──────────────────────────────────────────
 
   useEffect(() => {
-    if (licenseStatus !== 'authorized') return;
     let active = true;
     let lastIgnore = true;
     const win = getCurrentWindow();
@@ -142,6 +174,7 @@ export default function App() {
 
     const handleWakeUp = () => {
       lastIgnore = false; // Force re-evaluation
+      
       // Force DOM repaint to fix Windows WebView2 blank screen bug after memory trim on wake
       document.body.style.backgroundColor = 'rgba(0,0,0,0.01)';
       setTimeout(() => {
@@ -176,7 +209,7 @@ export default function App() {
       />
 
       <div className="flex-1 relative flex min-h-0">
-        {licenseStatus !== 'locked' && licenseStatus !== 'checking' && (
+        {!isInitializing && licenseStatus !== 'locked' && licenseStatus !== 'checking' && (
           <SoltiniOS isAuthorized={true} />
         )}
       </div>

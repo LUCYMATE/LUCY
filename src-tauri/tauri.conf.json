@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Soltini",
   "version": "1.0.0",
-  "identifier": "com.soltini.app",
+  "identifier": "com.soltini.avatar",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -21,6 +21,7 @@
         "fullscreen": false,
         "maximized": false,
         "visible": false,
+        "skipTaskbar": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

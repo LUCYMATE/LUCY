@@ -15,6 +15,19 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [voice, setVoice] = useState(localStorage.getItem('soltini_voice') || 'Aoede');
   const [avatarSize, setAvatarSize] = useState(parseInt(localStorage.getItem('soltini_avatar_size') || '100'));
   
+  const isMac = window.navigator.userAgent.includes('Mac');
+  const isLinux = window.navigator.userAgent.includes('Linux');
+
+  const handleSetupWayland = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('setup_wayland_automation');
+      logger.add('success', 'System', 'Wayland daemon started');
+    } catch (e: any) {
+      logger.add('error', 'System', `Wayland setup failed: ${e}`);
+    }
+  };
+  
   const [autoMic, setAutoMic] = useState(() => {
     const val = localStorage.getItem('soltini_auto_mic');
     return val === null ? true : val === 'true';
@@ -317,6 +330,48 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   ))}
                 </select>
               </div>
+
+              {/* Permissions & Automation Guide */}
+              {(isMac || isLinux) && (
+                <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-4 mt-4">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-blue-500/20 text-blue-400">
+                      <SettingsIcon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-medium text-white">System Permissions & Automation</h4>
+                      <p className="text-sm text-white/50">Required for seamless background AI actions</p>
+                    </div>
+                  </div>
+
+                  {isMac && (
+                    <div className="bg-black/40 rounded-xl p-4 mt-2">
+                      <h5 className="font-medium text-pink-400 mb-2">macOS Setup Required:</h5>
+                      <p className="text-sm text-white/70 mb-2">To allow the AI to automate tasks, take screenshots, and use the camera, you must grant permissions:</p>
+                      <ol className="text-sm text-white/60 list-decimal pl-5 space-y-1">
+                        <li>Open <strong className="text-white">System Settings</strong> {'>'} <strong className="text-white">Privacy & Security</strong></li>
+                        <li>Under <strong className="text-white">Accessibility</strong>, enable Soltini (for mouse/keyboard control).</li>
+                        <li>Under <strong className="text-white">Screen Recording</strong>, enable Soltini.</li>
+                        <li>Under <strong className="text-white">Camera & Microphone</strong>, enable Soltini when prompted.</li>
+                      </ol>
+                    </div>
+                  )}
+
+                  {isLinux && (
+                    <div className="bg-black/40 rounded-xl p-4 mt-2">
+                      <h5 className="font-medium text-pink-400 mb-2">Linux Wayland Support:</h5>
+                      <p className="text-sm text-white/70 mb-4">If you are using Wayland, standard automation may fail. Soltini can use <code className="bg-black/50 px-1 rounded text-white">ydotool</code> as a fallback.</p>
+                      <button 
+                        onClick={handleSetupWayland}
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm transition-colors font-medium"
+                      >
+                        Setup Wayland Automation (Requires Sudo)
+                      </button>
+                      <p className="text-xs text-white/40 mt-3">This will prompt for your password to run `pkexec ydotoold` to start the background automation daemon.</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="bg-black/20 border border-white/5 rounded-2xl p-6">
                  <div className="flex items-center gap-4 mb-4">

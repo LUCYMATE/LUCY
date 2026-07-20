@@ -21,6 +21,7 @@ const OFFLINE_GRACE_SECONDS: i64 = 24 * 60 * 60;
 struct AppState {
     sys: Mutex<System>,
     authorized: Mutex<bool>,
+    is_sleeping: Mutex<bool>,
 }
 
 #[tauri::command]
@@ -87,6 +88,14 @@ fn move_and_click_mouse(x: i32, y: i32, state: tauri::State<AppState>) -> Result
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+
+    #[cfg(target_os = "linux")]
+    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+        let _ = std::process::Command::new("ydotool").args(&["mousemove", "-a", &x.to_string(), &y.to_string()]).output();
+        let _ = std::process::Command::new("ydotool").args(&["click", "0xC0"]).output();
+        return Ok(());
+    }
+
     let mut enigo = Enigo::new();
     enigo.mouse_move_to(x, y);
     enigo.mouse_click(MouseButton::Left);
@@ -98,6 +107,12 @@ fn scroll_mouse(amount: i32, state: tauri::State<AppState>) -> Result<(), String
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+
+    #[cfg(target_os = "linux")]
+    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+        return Ok(()); // basic wayland fallback ignored
+    }
+
     let mut enigo = Enigo::new();
     enigo.mouse_scroll_y(amount);
     Ok(())
@@ -108,6 +123,13 @@ fn type_string(text: String, state: tauri::State<AppState>) -> Result<(), String
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+
+    #[cfg(target_os = "linux")]
+    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+        let _ = std::process::Command::new("ydotool").args(&["type", &text]).output();
+        return Ok(());
+    }
+
     let mut enigo = Enigo::new();
     enigo.key_sequence(&text);
     Ok(())
@@ -156,13 +178,20 @@ fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Resul
         return Err("Unauthorized".to_string());
     }
     #[cfg(target_os = "windows")]
-    use std::os::windows::process::CommandExt;
+    let mut cmd = {
+        use std::os::windows::process::CommandExt;
+        let mut c = std::process::Command::new("cmd");
+        c.args(&["/C", &command]);
+        c.creation_flags(0x08000000);
+        c
+    };
 
-    let mut cmd = std::process::Command::new("cmd");
-    cmd.args(&["/C", &command]);
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(0x08000000);
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("sh");
+        c.args(&["-c", &command]);
+        c
+    };
 
     let output = cmd
         .output()
@@ -235,6 +264,13 @@ fn press_key(key: String, state: tauri::State<AppState>) -> Result<(), String> {
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+
+    #[cfg(target_os = "linux")]
+    if std::env::var("WAYLAND_DISPLAY").is_ok() {
+        let _ = std::process::Command::new("ydotool").args(&["key", &key]).output();
+        return Ok(());
+    }
+
     let mut enigo = Enigo::new();
     let enigo_key = match key.to_lowercase().as_str() {
         "enter" | "return" => Key::Return,
@@ -771,15 +807,22 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
 }
 
 fn do_wake_up_main(app_handle: &tauri::AppHandle) {
+    if let Some(state) = app_handle.try_state::<AppState>() {
+        *state.is_sleeping.lock().unwrap() = false;
+    }
+    
     if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.maximize();
         let _ = win.show();
+        let _ = win.set_skip_taskbar(true);
         let _ = win.set_focus();
         
         // Delay interacting with the WebView2 API to ensure it has fully resumed 
-        // from OS-level suspension (caused by trim_memory), otherwise it throws 0x8007139F
+        // from OS-level suspension (caused by trim_memory), otherwise it throws 0x8007139F.
+        // We give it 300ms to safely resume before hitting it with eval.
         let win_clone = win.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(150));
+            std::thread::sleep(std::time::Duration::from_millis(300));
             let _ = win_clone.set_ignore_cursor_events(true);
             let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
         });
@@ -787,7 +830,8 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn enter_sleep_mode(_app_handle: tauri::AppHandle) -> Result<(), String> {
+fn enter_sleep_mode(_app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
+    *state.is_sleeping.lock().unwrap() = true;
     // We intentionally do NOT hide the window here anymore to prevent the Windows WebView2 
     // white-screen flash when waking up. The frontend will hide all UI elements and become 
     // fully transparent, and the cursor events are already ignored.
@@ -817,41 +861,32 @@ fn is_autostart() -> bool {
     std::env::args().any(|arg| arg == "--autostart")
 }
 
+#[tauri::command]
+fn setup_wayland_automation() -> Result<String, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("pkexec")
+            .arg("ydotoold")
+            .spawn()
+            .map_err(|e| format!("Failed to start ydotoold: {}", e))?;
+        Ok("Wayland automation daemon started successfully".to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err("Wayland setup is only applicable on Linux".to_string())
+    }
+}
+
+#[tauri::command]
+fn exit_app() {
+    std::process::exit(0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Singleton detection + wake signaling between instances
-    #[cfg(target_os = "windows")]
-    unsafe {
-        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
-        use windows_sys::Win32::System::Threading::{CreateEventW, CreateMutexW, SetEvent};
-
-        let mutex_name: Vec<u16> = "SoltiniAppSingletonMutex\0".encode_utf16().collect();
-        let _mutex = CreateMutexW(std::ptr::null_mut(), 0, mutex_name.as_ptr());
-        let already_running = GetLastError() == ERROR_ALREADY_EXISTS;
-
-        // Create/open an event for signaling the running instance to show itself
-        let event_name: Vec<u16> = "SoltiniShowEvent\0".encode_utf16().collect();
-        let event = CreateEventW(std::ptr::null_mut(), 0, 0, event_name.as_ptr());
-
-        if already_running {
-            // Another instance is running — signal it to show/focus, then exit
-            if !event.is_null() {
-                if GetLastError() == ERROR_ALREADY_EXISTS {
-                    SetEvent(event);
-                }
-                CloseHandle(event);
-            }
-            return;
-        }
-
-        // First instance: store event for background thread in setup()
-        // (cannot pass app_handle here, so we'll reopen it in setup)
-        if !event.is_null() {
-            CloseHandle(event);
-        }
-    }
+    // Single instance is handled by tauri-plugin-single-instance
 
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
@@ -859,9 +894,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            do_wake_up_main(app);
+            let _ = app.emit("soltini-exit-pet-mode", ());
+        }))
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
             authorized: Mutex::new(false),
+            is_sleeping: Mutex::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             get_system_stats,
@@ -889,6 +929,8 @@ pub fn run() {
             enter_sleep_mode,
             wake_up_main,
             is_autostart,
+            setup_wayland_automation,
+            exit_app,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -899,19 +941,24 @@ pub fn run() {
                 )?;
             }
 
+            #[cfg(target_os = "macos")]
+            let cmd_modifier = Modifiers::SUPER;
+            #[cfg(not(target_os = "macos"))]
+            let cmd_modifier = Modifiers::CONTROL;
+
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(|app, shortcut, event| {
+                    .with_handler(move |app, shortcut, event| {
                         if event.state == ShortcutState::Pressed {
-                            if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyX) {
+                            if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyX) {
                                 do_wake_up_main(app);
                                 let _ = app.emit("soltini-exit-pet-mode", ());
                             }
-                            if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyS) {
+                            if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyS) {
                                 do_wake_up_main(app);
                                 let _ = app.emit("soltini-toggle-mute", ());
                             }
-                            if shortcut.matches(Modifiers::CONTROL | Modifiers::ALT, Code::KeyM) || shortcut.matches(Modifiers::empty(), Code::F9) {
+                            if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyM) || shortcut.matches(Modifiers::empty(), Code::F9) {
                                 do_wake_up_main(app);
                                 let _ = app.emit("soltini-toggle-mic", ());
                             }
@@ -925,7 +972,7 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 std::thread::spawn(move || {
                     use tauri_plugin_global_shortcut::GlobalShortcutExt;
-                    let shortcuts = ["ctrl+alt+x", "ctrl+alt+s", "ctrl+alt+m", "f9"];
+                    let shortcuts = ["CommandOrControl+Alt+X", "CommandOrControl+Alt+S", "CommandOrControl+Alt+M", "F9"];
                     for _ in 0..20 {
                         let mut all_success = true;
                         for s in shortcuts.iter() {
@@ -943,26 +990,6 @@ pub fn run() {
                 });
             }
 
-            // Background thread: wait for wake signal from second instance
-            #[cfg(target_os = "windows")]
-            {
-                let app_handle = app.handle().clone();
-                std::thread::spawn(move || unsafe {
-                    use windows_sys::Win32::System::Threading::{
-                        CreateEventW, WaitForSingleObject,
-                    };
-
-                    let name: Vec<u16> = "SoltiniShowEvent\0".encode_utf16().collect();
-                    let event = CreateEventW(std::ptr::null_mut(), 0, 0, name.as_ptr());
-                    if !event.is_null() {
-                        loop {
-                            WaitForSingleObject(event, u32::MAX);
-                            do_wake_up_main(&app_handle);
-                            let _ = app_handle.emit("soltini-exit-pet-mode", ());
-                        }
-                    }
-                });
-            }
 
             // Auto-deploy and launch background listener (DISABLED per user request)
             /*
@@ -1036,10 +1063,16 @@ pub fn run() {
                         ..
                     } => {
                         let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("main") {
-                            // Since the window is never hidden (to keep SpeechRecognition alive), 
-                            // we just dispatch a toggle event to the frontend and let it handle the state.
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-toggle-sleep'));");
+                        let is_sleeping = if let Some(state) = app.try_state::<AppState>() {
+                            *state.is_sleeping.lock().unwrap()
+                        } else { false };
+                        
+                        if is_sleeping {
+                            do_wake_up_main(app);
+                        } else {
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-sleep'));");
+                            }
                         }
                     }
                     _ => {}

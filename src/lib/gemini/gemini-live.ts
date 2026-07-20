@@ -122,7 +122,14 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
 
 ## RUNTIME CONTEXT
 - DateTime: ${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}
-- Display: ${window.screen.width}×${window.screen.height}`;
+- Display: ${window.screen.width}×${window.screen.height}
+- OS Environment: ${
+  window.navigator.userAgent.includes('Linux') 
+    ? 'Linux. IMPORTANT: If mouse/keyboard automation fails on Linux, politely remind the user that Wayland requires them to click "Setup Wayland Automation" in the Settings -> Devices tab.' 
+    : window.navigator.userAgent.includes('Mac') 
+      ? 'macOS. IMPORTANT: If automation or screenshots fail on Mac, politely remind the user they must enable Accessibility & Screen Recording for Soltini in macOS System Settings.' 
+      : 'Windows (Seamless automation enabled).'
+}`;
 
       logger.add('info', 'Connecting', `Model: ${savedModel}, Voice: ${savedVoice}`);
 
@@ -238,7 +245,7 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                 this.onTranscript?.(inputText, true);
                 
                 const isSleepMode = useAvatarState.getState().isSleepMode;
-                if (isSleepMode && /\bwake\s*up\b/i.test(inputText)) {
+                if (isSleepMode && /\b(wake\s*up|soltini|saltini|sultini|sholtini|sortini|sol\s*ti\s*ni|hey\s+soltini|hello\s+soltini)\b/i.test(inputText)) {
                   logger.add('success', 'Wake Word', 'Detected wake word! Waking up system...');
                   window.dispatchEvent(new CustomEvent('soltini-wake-up'));
                 }

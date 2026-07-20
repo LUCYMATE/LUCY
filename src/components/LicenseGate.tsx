@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { Minus, X as XIcon } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -257,6 +258,23 @@ export function LicenseGate({ onAuthorized, onRequireActivation, serverUrl = DEF
             animation: 'fadeIn 0.4s ease, pulse-glow 3s ease-in-out infinite',
             pointerEvents: 'auto',
           }}>
+          
+            <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 8, zIndex: 10 }}>
+              <button 
+                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().minimize())} 
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 }}
+                title="Minimize"
+              >
+                <Minus size={18} />
+              </button>
+              <button 
+                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().close())} 
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 }}
+                title="Close"
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
 
           {/* ── LOCKED (Main UI) ── */}
           <>

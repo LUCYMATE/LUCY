@@ -8,7 +8,7 @@ import { clearFbxCache } from './animations/useFbxAnimation';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useEngineStore } from '../../lib/store/engineStore';
 import { useShallow } from 'zustand/react/shallow';
-import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft } from 'lucide-react';
+import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft, LogOut } from 'lucide-react';
 
 // Highly optimized FPS limiter using rAF instead of setInterval
 function FpsLimiter() {
@@ -520,6 +520,9 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     { id: 'back', icon: <ChevronLeft className="w-5 h-5 text-white/80" />, action: () => setShowSubMenu(false), label: 'Back' },
     { id: 'logs', icon: <Terminal className="w-5 h-5 text-purple-400" />, action: openLogs, label: 'Logs' },
     { id: 'tasks', icon: <CalendarClock className="w-5 h-5 text-purple-400" />, action: openTasks, label: 'Tasks' },
+    { id: 'quit', icon: <LogOut className="w-5 h-5 text-red-500" />, action: () => {
+      import('@tauri-apps/api/core').then(({ invoke }) => invoke('exit_app')).catch(() => window.close());
+    }, label: 'Quit' },
   ];
 
   const items = showSubMenu ? subItems : mainItems;

@@ -96,20 +96,12 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
       setShowLogs(false);
     };
 
-    const handleWakeUp = async () => {
+    const handleWakeUp = () => {
       useAvatarState.getState().setIsSleepMode(false);
       setShowSettings(false);
       setShowTasks(false);
       setShowChat(false);
       setShowLogs(false);
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        const win = getCurrentWindow();
-        await win.show();
-        await win.setFocus();
-      } catch (e) {
-        console.warn("Tauri window API not available");
-      }
     };
 
     const handleToggleSleep = () => {
