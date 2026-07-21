@@ -98,16 +98,16 @@ export class GeminiLive {
 - Context now: ${timeGreeting}.${timeContext}${petNamePrompt}
 
 ## AUTOMATION GATE (Read Carefully)
-You have a 'trigger_automation' tool that controls the OS. Use it ONLY when:
-  ✅ The user's LAST message is a clear, unambiguous IMPERATIVE command (e.g. "open YouTube", "search for X", "take a screenshot").
-  ❌ NEVER trigger if the user is merely mentioning, asking about, or discussing a website/app.
-  ❌ NEVER repeat an automation already visible in conversation history.
-  ❌ When uncertain, default to chatting. Do NOT act speculatively.
+You have direct tools for simple OS actions (press_key_combo). ALWAYS use these directly if they satisfy the user's request (e.g., locking PC, closing windows, switching tabs) because they execute instantly.
+For ALL other actions (opening apps, taking screenshots, searching the web, python scripts, complex clicking), you MUST use the 'trigger_automation' tool to delegate it to the background agent.
+  ✅ ONLY trigger actions if the user's LAST message is a clear imperative command.
+  ❌ NEVER trigger if the user is merely asking about or discussing an app.
 
 ## TOOL RULES
+- press_key_combo → use for OS navigation like Win+L (lock PC), Win+D (desktop), Alt+F4 (close), Ctrl+Tab.
+- trigger_automation → use for opening apps (e.g., "open spotify"), web search, typing, etc.
 - set_pose → call ONLY if user explicitly asks for a specific pose/animation.
-- save_memory → silently save important user facts when revealed naturally in conversation.
-- search_memory → call proactively when you need to recall specific user preferences or past context before answering.`;
+- save_memory / search_memory → silently manage user facts.`;
 
       const userPersonality = localStorage.getItem('soltini_system_instruction') || '';
       const petName = localStorage.getItem('soltini_pet_name') || '';
@@ -192,8 +192,6 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
 
                   if (result && result.error) {
                     logger.add('error', `Action Failed: ${toolName}`, result.error);
-                  } else {
-                    logger.add('success', `Action Completed: ${toolName}`, JSON.stringify(result));
                   }
                   functionResponses.push({
                     name: toolName,
@@ -384,6 +382,15 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                   }
                 },
                 {
+                  name: 'press_key_combo',
+                  description: 'Press a key combination using modifier keys. For locking PC use ["win","l"], closing windows use ["alt","f4"], switching tabs use ["ctrl","tab"].',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { keys: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Array of key names to press in order, e.g. ["ctrl","w"]' } },
+                    required: ['keys']
+                  }
+                },
+                {
                   name: 'go_to_sleep',
                   description: 'Puts the system and avatar into sleep mode (closes the UI). Use this when the user asks you to close yourself, go to sleep, or hide.',
                   parameters: {
@@ -466,16 +473,13 @@ You are ${BOT_NAME}'s silent execution engine. You receive a delegated task from
 "${requestText}"
 
 ## EXECUTION PRINCIPLES
-1. **Speed & Batching**: Return as many tool calls as logically possible in a single response to minimize round-trips. Chain steps without waiting if verification is not needed.
-2. **Open URLs**: Always use 'open_external_url' to launch websites. Never attempt to navigate via keyboard shortcuts.
-3. **Screen-Dependent Actions** (clicking specific elements): 
-   - Call 'capture_screen' FIRST to get a screenshot with a coordinate grid.
-   - Identify the target element using the grid. Calculate X,Y pixel coordinates precisely.
-   - Call 'move_and_click_mouse' with those exact coordinates.
-   - Do NOT call 'capture_screen' for non-visual steps like typing or pressing keys.
-4. **YouTube & Search**: After opening, press '/' with 'press_key' to focus the search bar → 'type_string' the query → 'press_key' Enter.
-5. **Positional Accuracy**: When asked for "the second video" or "third result", count organic (non-ad) items from top. Scroll with 'scroll_mouse' if needed and re-capture.
-6. **Tab Management**: Switch tabs via ["ctrl","tab"], close via ["ctrl","w"] using 'press_key_combo'.
+1. **ULTRA-FAST EXECUTION**: You MUST execute the requested tool in your VERY FIRST response. If asked to open an app, output 'open_app' immediately. DO NOT explain yourself.
+2. **BATCHING**: If a task requires multiple steps (e.g., "Open Spotify and play"), batch them! Output 'open_app' AND 'press_key' in the exact same response to save time.
+3. **Open URLs**: Always use 'open_external_url' to launch websites.
+4. **Open Desktop Apps**: If the user asks to open an app (e.g., WhatsApp, Spotify, Chrome), ALWAYS use 'open_app', NEVER 'open_external_url'.
+5. **Screen Actions**: Do NOT call 'capture_screen' for non-visual steps like typing, opening apps, or pressing keys. Only capture if you absolutely must click a visual coordinate.
+6. **YouTube & Search**: After opening, press '/' with 'press_key' to focus the search bar → 'type_string' the query → 'press_key' Enter.
+7. **Tab Management**: Switch tabs via ["ctrl","tab"], close via ["ctrl","w"] using 'press_key_combo'.
 7. **Completion**: When the task is fully done, output a brief natural-language summary of what you accomplished. Do NOT ask for further instructions.
 
 ## RECENT AUTOMATION HISTORY (Do NOT repeat these)
@@ -500,8 +504,6 @@ ${userPersonality}` : ''}`;
       let toolAgentModel = 'gemini-3-flash-preview';
 
       for (let i = 0; i < loopLimit; i++) {
-        logger.add('info', 'Tool Agent Thinking', `Running step ${i + 1}/${loopLimit} on ${toolAgentModel}...`);
-
         let response;
         try {
           response = await ai.models.generateContent({
@@ -609,7 +611,7 @@ ${userPersonality}` : ''}`;
                   },
                   {
                     name: 'open_app',
-                    description: 'Open a local desktop application or program (e.g., notepad, spotify, chrome, calc).',
+                    description: 'Open a local desktop application or program (e.g., notepad, spotify, chrome, whatsapp). For Windows Store apps, just provide the name.',
                     parameters: {
                       type: Type.OBJECT,
                       properties: { app_name: { type: Type.STRING, description: 'The name or executable of the app to open' } },
@@ -726,14 +728,11 @@ ${userPersonality}` : ''}`;
               logger.add('warning', 'Tool Agent Tool Call Skipped', 'Received a tool call without a valid name.');
               continue;
             }
-            logger.add('info', `Tool Agent Tool Call: ${toolName}`, JSON.stringify(args));
 
             const result = await executeTool(toolName, args, deferredMedia);
 
             if (result && result.error) {
               logger.add('error', `Automation Error: ${toolName}`, result.error);
-            } else {
-              logger.add('success', `Automation Success: ${toolName}`, JSON.stringify(result));
             }
             functionResponses.push({
               name: toolName,
@@ -773,7 +772,6 @@ ${userPersonality}` : ''}`;
         } else {
           // No more function calls, we are finished!
           finalResult = candidate?.content?.parts?.map((p: any) => p.text).join('\n') || 'Completed successfully.';
-          logger.add('success', 'Tool Agent Finished', finalResult);
 
           this.toolAgentHistory.push(`Request: "${requestText}" | Result: ${finalResult}`);
           if (this.toolAgentHistory.length > 5) this.toolAgentHistory.shift();
@@ -782,11 +780,8 @@ ${userPersonality}` : ''}`;
         }
       }
 
-      logger.add('success', 'Tool Agent Complete', finalResult);
-
       // Inject back to main session
       if (this.session) {
-        logger.add('info', 'Tool Agent Feedback', 'Injecting results back to main Voice Model...');
         this.session.sendClientContent({
           turns: [{
             role: 'user',
@@ -822,7 +817,6 @@ ${userPersonality}` : ''}`;
       return;
     }
     this.onThinking?.(true);
-    logger.add('info', 'Sending Text', text);
 
     try {
       this.session.sendClientContent({
@@ -845,9 +839,6 @@ ${userPersonality}` : ''}`;
     if (!this.isReady()) return;
     const base64 = this._toBase64(new Uint8Array(pcm16.buffer));
 
-    if (this.audioChunksSent === 0) {
-      logger.add('info', 'Audio Stream', `Started sending audio chunks to server (first chunk size: ${pcm16.length})`);
-    }
     this.audioChunksSent++;
 
     this.session.sendRealtimeInput({

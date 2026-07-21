@@ -37,11 +37,18 @@ export function useCoreEngine() {
       speechRecognitionRef.current = new SpeechRecognition();
       speechRecognitionRef.current.continuous = true;
       speechRecognitionRef.current.interimResults = true;
-      // Use system default language to better understand local accents
+      // Use Indian English (en-IN) model which is heavily trained on South Asian phonology and accents
+      speechRecognitionRef.current.lang = 'en-IN';
       speechRecognitionRef.current.onresult = (event: any) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const text = event.results[i][0].transcript.toLowerCase();
-          if (/\b(wake\s*up|soltini|saltini|sultini|sholtini|sortini|sol\s*ti\s*ni|hey\s+soltini|hello\s+soltini)\b/i.test(text)) {
+          const regexStr = `\\b(wake\\s*up|soltini|saltini|sultini|sholtini|sortini|soldini|zoltini|sol\\s*tiny|soul\\s*tiny|sole\\s*tiny|so\\s*tiny|cell\\s*tiny|soul\\s*teeny|sole\\s*teeny|sol\\s*teeny|salt\\s*in\\s*me|salt\\s*in\\s*e|salt\\s*and\\s*tea|soltany|sultan\\s*e|sol\\s*ti\\s*ni)\\b`;
+          const match = text.match(new RegExp(regexStr, 'i'));
+          if (match) {
+            const afterWakeWord = text.substring(match.index + match[0].length).trim();
+            if (afterWakeWord.length > 2) {
+              sessionStorage.setItem('soltini_pending_query', afterWakeWord);
+            }
             logger.add('success', 'Wake Word', `Detected locally: "${text}"`);
             if (speechRecognitionRef.current) {
               speechRecognitionRef.current.onend = null;
@@ -126,7 +133,6 @@ export function useCoreEngine() {
     if (!currentMicOn) {
       isMicPendingRef.current = true;
       try {
-        logger.add('info', 'User Action', 'Toggled microphone ON');
         playerRef.current?.stopCurrentPlayback();
         setSpeaking(false);
         modelBubbleIdRef.current = ''; 
@@ -164,7 +170,6 @@ export function useCoreEngine() {
     } else {
       isMicPendingRef.current = true;
       try {
-        logger.add('info', 'User Action', 'Toggled microphone OFF');
         try { recorderRef.current?.stop(); } catch (e) {}
         try { geminiRef.current?.endTurn(); } catch (e) {}
         setListening(false);
@@ -213,7 +218,11 @@ export function useCoreEngine() {
       if (state === 'connected' && !hasSentGreeting) {
         hasSentGreeting = true;
         setTimeout(() => {
-          if (!isWakeUp) {
+          const pendingQuery = sessionStorage.getItem('soltini_pending_query');
+          if (pendingQuery) {
+            gemini.sendText("System instruction: The user just woke you up and said this immediately: \"" + pendingQuery + "\". Respond naturally to this query directly instead of just saying hello.");
+            sessionStorage.removeItem('soltini_pending_query');
+          } else if (!isWakeUp) {
             gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
           } else {
             gemini.sendText("System instruction: The user just woke you up from sleep mode. Give a fun, casual, or slightly flirty 1-sentence greeting acknowledging you are back awake and ready to help. Do not say you are an AI.");
@@ -367,7 +376,7 @@ export function useCoreEngine() {
       
       // Request a dummy audio stream to keep the Windows microphone icon stationary 
       // and prevent it from flashing when SpeechRecognition restarts
-      navigator.mediaDevices.getUserMedia({ audio: true })
+      navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false } })
         .then(stream => { dummyMicStreamRef.current = stream; })
         .catch(() => {});
 

@@ -25,7 +25,7 @@ export class AudioRecorder {
       const audioConstraints: MediaTrackConstraints = {
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true,
+        autoGainControl: false,
         ...(savedDeviceId && savedDeviceId !== 'default' ? { deviceId: { exact: savedDeviceId } } : {})
       };
 
@@ -38,7 +38,7 @@ export class AudioRecorder {
         if (audioConstraints.deviceId) {
           logger.add('info', 'Mic Initialization', 'Failed with exact deviceId. Falling back to default microphone.');
           this.stream = await Promise.race([
-            navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+            navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } }),
             timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
           ]);
         } else {
@@ -71,7 +71,6 @@ export class AudioRecorder {
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
       }
-      logger.add('success', 'Mic Started', 'Microphone successfully connected and recording.');
     } catch (error) {
       logger.add('error', 'Mic Error', String(error));
       console.error('Error starting audio recorder:', error);

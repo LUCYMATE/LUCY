@@ -195,7 +195,8 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   } else if (name === 'open_app') {
     try {
       const appName = String(args.app_name || '').trim();
-      const output = await invoke('run_terminal_command', { command: `start ${appName}` });
+      const command = `start ${appName}: || start ${appName} || start ${appName}.exe`;
+      const output = await invoke('run_terminal_command', { command });
       result = { success: true, output };
     } catch (e) {
       result = { error: 'Failed to open app: ' + String(e) };
