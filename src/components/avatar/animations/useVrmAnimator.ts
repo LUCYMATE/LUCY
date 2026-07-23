@@ -100,6 +100,11 @@ export function useVrmAnimator({
     const t     = state.clock.elapsedTime;
     const rest  = restPose.current;
 
+    // Read the avatar store ONCE per frame instead of repeatedly. This hook runs at
+    // 15-60 FPS and previously called getState() 6+ times per frame; the read itself is
+    // cheap, but consolidating keeps the frame body tidy and avoids repeated lock work.
+    const avatarState = useAvatarState.getState();
+
     const isSitting   = basePose === 'sit';
     const isPeeking   = basePose.startsWith('peek') && !isWalking;
     const isPeekLeft  = basePose === 'peek-left';
@@ -109,7 +114,7 @@ export function useVrmAnimator({
       basePose === 'lean'        ||
       basePose === 'flying-kiss';
 
-    const actuallyHearing = isListening && useAvatarState.getState().isHearingSound;
+    const actuallyHearing = isListening && avatarState.isHearingSound;
 
     // Detect if the current pose is driven entirely by an FBX animation
     const proceduralPoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'caress', 'sleep', 'lie-down', 'edge-lean', 'point', 'dynamic-talk'];
@@ -117,11 +122,11 @@ export function useVrmAnimator({
 
     // To prevent the avatar from freezing for 2-3 frames while the FBX file loads from disk,
     // we force procedural animations to continue playing for 0.5 seconds after switching to an FBX pose.
-    const timeSincePoseChange = (Date.now() - useAvatarState.getState().lastPoseOverrideTime) / 1000;
+    const timeSincePoseChange = (Date.now() - avatarState.lastPoseOverrideTime) / 1000;
     const shouldSkipProcedural = isFbxPose && timeSincePoseChange > 0.5;
 
     // ── Model facing ──────────────────────────────────────────────────────
-    // Do NOT force model facing if an FBX animation is playing, 
+    // Do NOT force model facing if an FBX animation is playing,
     // otherwise animations that spin the character around will be blocked!
     if (vrm.scene && !shouldSkipProcedural) {
       vrm.scene.rotation.y = lerpAngle(vrm.scene.rotation.y, moveDirection, 0.1);
@@ -131,7 +136,7 @@ export function useVrmAnimator({
     if (isPeeking) {
       applyPeek(vrm, rest, t, isPeekLeft);
     } else if (!shouldSkipProcedural) {
-      applyLocomotion(vrm, rest, t, isWalking, isSitting, useAvatarState.getState().isDragging, useAvatarState.getState().dragOffset, basePose);
+      applyLocomotion(vrm, rest, t, isWalking, isSitting, avatarState.isDragging, avatarState.dragOffset, basePose);
     }
 
     // ── Step 2: Flirty pose (body shape override) ─────────────────────────
@@ -151,7 +156,7 @@ export function useVrmAnimator({
       applyGestures(
         vrm, rest, t,
         isGreeting, shouldSpeak, isThinking, actuallyHearing,
-        isWalking, emotion, isSitting, useAvatarState.getState().isDragging, basePose
+        isWalking, emotion, isSitting, avatarState.isDragging, basePose
       );
     }
 
@@ -168,7 +173,7 @@ export function useVrmAnimator({
         if (basePose === 'point') {
           // If we had a target position (e.g. from mouse), we'd pass it here.
           // For now, pass null and it will point forward.
-          targetPos = useAvatarState.getState().targetPosition;
+          targetPos = avatarState.targetPosition;
         }
         applyVersatilePoses(vrm, rest, t, basePose, targetPos);
       }

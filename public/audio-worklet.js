@@ -6,8 +6,8 @@ class AudioWorklet extends AudioWorkletProcessor {
     this.bufferIndex = 0;
     
     // Voice Activity Detection (VAD) properties
-    // Lowered threshold from 0.015 to 0.003 to catch very quiet speech like "hello"
-    this.threshold = 0.003; 
+    // Lowered threshold to 0.001 to catch very quiet speech and lower volume wake-up voices
+    this.threshold = 0.001; 
     this.framesSinceLastLoud = 100000; // Start assumed silent
     // Increased tail to 3.0 seconds to ensure Gemini's server VAD receives enough silence to trigger
     this.tailFrames = 16000 * 1.0; 

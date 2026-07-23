@@ -7,6 +7,9 @@ export class AudioRecorder {
   private workletNode: AudioWorkletNode | null = null;
   private analyser: AnalyserNode | null = null;
 
+  private heartbeatInterval: any = null;
+  private lastDataTime: number = 0;
+  public onMicFrozen?: () => void;
   public onData: ((data: Int16Array) => void) | null = null;
 
   getAnalyser(): AnalyserNode | null {
@@ -59,6 +62,7 @@ export class AudioRecorder {
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-worklet');
       
       this.workletNode.port.onmessage = (event) => {
+        this.lastDataTime = Date.now();
         if (this.onData) {
           this.onData(event.data);
         }
@@ -66,7 +70,32 @@ export class AudioRecorder {
       
       this.source.connect(this.analyser);
       this.source.connect(this.workletNode);
-      // Removed this.workletNode.connect(this.audioContext.destination) to prevent loopback
+      
+      // Prevent browser/WebView from suspending AudioContext after idle time
+      const keepAliveGain = this.audioContext.createGain();
+      keepAliveGain.gain.value = 0;
+      this.workletNode.connect(keepAliveGain);
+      keepAliveGain.connect(this.audioContext.destination);
+
+      this.lastDataTime = Date.now();
+      
+      this.heartbeatInterval = setInterval(() => {
+        // 1. Play a 1ms silent blip to keep the context awake
+        if (this.audioContext && this.audioContext.state !== 'closed') {
+          try {
+            const osc = this.audioContext.createOscillator();
+            osc.connect(keepAliveGain);
+            osc.start();
+            osc.stop(this.audioContext.currentTime + 0.001); // 1ms beep
+          } catch (e) {}
+        }
+
+        // 2. Check if the worklet stopped sending data (device slept or suspended)
+        if (Date.now() - this.lastDataTime > 15000) {
+          // No data received for 15 seconds! The mic is frozen.
+          if (this.onMicFrozen) this.onMicFrozen();
+        }
+      }, 10000); // Check every 10 seconds
 
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
@@ -79,6 +108,10 @@ export class AudioRecorder {
   }
 
   stop() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
     if (this.workletNode) {
       try { this.workletNode.disconnect(); } catch (e) {}
       this.workletNode = null;

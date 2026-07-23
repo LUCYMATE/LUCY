@@ -4,6 +4,8 @@ import { BOT_NAME, getValidPoses } from '../../config/bot-profile';
 import { useAvatarState } from '../store/avatarState';
 import { executeTool } from './toolExecutor';
 import { setGlobalScheduleCallback, startScheduler, getScheduledTasks, cancelScheduledTaskById, ScheduledTask } from './scheduler';
+import { rateLimiter, RATE_LIMITS } from '../utils/rateLimiter';
+import { userAuth } from '../auth/userAuth';
 
 export { getScheduledTasks, cancelScheduledTaskById };
 export type { ScheduledTask };
@@ -36,6 +38,12 @@ export class GeminiLive {
   }
 
   async connect(apiKey: string, altApiKey?: string, isAutoRetry = false, useAltKey = false) {
+    if (!rateLimiter.isAllowed('gemini_connect', RATE_LIMITS.GEMINI_CONNECT)) {
+      logger.add('error', 'Rate Limit', 'Connection attempts throttled. Please wait before retrying.');
+      this.setState('disconnected', 'Rate limit exceeded for connection attempts');
+      return;
+    }
+
     this.connectionId++;
     const currentConnectionId = this.connectionId;
 
@@ -93,7 +101,8 @@ export class GeminiLive {
       const coreInstruction = `
 ## VOICE PERSONALITY
 - Speak like a close, trusted companion — concise, natural, human.
-- Keep all spoken replies SHORT. No bullet points, no lists. Pure conversational speech.
+- Keep casual spoken replies short by default.
+- DYNAMIC REPLY LENGTH: If the user explicitly asks for a description, explanation, screen analysis, details, or search results (e.g. "what is on screen", "explain in detail", "describe this"), provide a comprehensive, detailed spoken response. Do NOT artificially truncate explanations when details are requested!
 - Lead emotionally relevant replies with ONE tag: [happy], [sad], [angry], [surprised], [thinking], [flirty], or [neutral].
 - Context now: ${timeGreeting}.${timeContext}${petNamePrompt}
 
@@ -105,7 +114,7 @@ For ALL other actions (opening apps, taking screenshots, searching the web, pyth
 
 ## TOOL RULES
 - press_key_combo → use for OS navigation like Win+L (lock PC), Win+D (desktop), Alt+F4 (close), Ctrl+Tab.
-- trigger_automation → use for opening apps (e.g., "open spotify"), web search, typing, etc.
+- trigger_automation → use for opening apps (e.g., "open spotify"), web search, typing, etc. Do NOT claim the task is finished when invoking this tool; inform the user you are working on it, and wait for the background agent completion notification before announcing completion!
 - set_pose → call ONLY if user explicitly asks for a specific pose/animation.
 - save_memory / search_memory → silently manage user facts.`;
 
@@ -182,7 +191,7 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                     if (toolName === 'trigger_automation') {
                       const request = args.request || '';
                       this.runToolAgent(request, activeKey);
-                      result = { success: true, message: `Automation triggered for: "${request}". Confirm this background launch to the user immediately.` };
+                      result = { success: true, message: `Automation triggered for: "${request}". Briefly tell the user you are working on it now (e.g. "I'm working on that now!"). Do NOT say it is done or finished until the background task completes.` };
                     } else {
                       result = await executeTool(toolName, args, deferredMedia);
                     }
@@ -285,7 +294,9 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
               logger.add('warning', 'WebSocket Closed', `Code: ${code}, Reason: ${reason}`);
               if (this.retryCount < 3) {
                 this.retryCount++;
-                const delay = this.retryCount * 2000;
+                const baseDelay = Math.pow(2, this.retryCount) * 1000;
+                const jitter = Math.floor(Math.random() * 1000);
+                const delay = Math.min(baseDelay + jitter, 15000);
 
                 let tryAlt = this.currentlyUsingAlt;
                 if (!this.setupComplete && this.altApiKey && !this.currentlyUsingAlt) {
@@ -322,7 +333,7 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
             },
           },
           systemInstruction: finalInstruction,
-          tools: [
+          tools: userAuth.isPro() ? [
             {
               functionDeclarations: [
                 {
@@ -400,7 +411,7 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                 }
               ]
             }
-          ]
+          ] : []
         },
       } as any);
 
@@ -785,7 +796,7 @@ ${userPersonality}` : ''}`;
         this.session.sendClientContent({
           turns: [{
             role: 'user',
-            parts: [{ text: `[SYSTEM NOTIFICATION: Tool Agent completed the request "${requestText}". Result summary: ${finalResult}. Speak to the user and confirm the execution is finished.]` }]
+            parts: [{ text: `[SYSTEM NOTIFICATION: Tool Agent completed the request "${requestText}". Result summary: ${finalResult}. Speak to the user now and confirm that execution is finished. If the user asked for details, a description, or search/screen info, speak out the full description/details clearly!]` }]
           }],
           turnComplete: true
         });

@@ -6,10 +6,55 @@ import { vectorMemory } from '../store/vectorMemory';
 import { getValidPoses } from '../../config/bot-profile';
 import { useAvatarState } from '../store/avatarState';
 import { addScheduledTask, cancelScheduledTaskById, startScheduler } from './scheduler';
+import { rateLimiter, RATE_LIMITS } from '../utils/rateLimiter';
+import { userAuth } from '../auth/userAuth';
 
 let lastScreenScaleFactor = 1.0;
 
 export async function executeTool(name: string, args: any, deferredMedia?: string[]): Promise<any> {
+  // Pro tier check for advanced automation, custom uploads & special animations
+  const proOnlyTools = [
+    'run_python_script', 
+    'move_and_click_mouse', 
+    'scroll_mouse', 
+    'type_string', 
+    'press_key', 
+    'press_key_combo', 
+    'capture_screen', 
+    'capture_camera', 
+    'save_3d_asset', 
+    'delete_3d_asset'
+  ];
+  if (proOnlyTools.includes(name) && !userAuth.isPro()) {
+    // Instead of logging, we instruct the model to handle the upsell verbally.
+    return { 
+      error: "PRO_FEATURE_LOCKED", 
+      system_instruction_to_model: `You just tried to use the '${name}' tool, but the user is on the free tier. Speak directly to the user in your persona's voice! Politely and playfully let them know this is a premium feature, and they can unlock it by upgrading to Pro (just $3 or ₹199) in the Settings menu.`
+    };
+  }
+
+  // Enforce general tool execution rate limits
+  if (!rateLimiter.isAllowed('tool_execution', RATE_LIMITS.TOOL_EXECUTION)) {
+    logger.add('warning', 'Rate Limit', `Tool execution '${name}' throttled.`);
+    return { error: `Tool execution '${name}' throttled due to rate limits. Please slow down.` };
+  }
+
+  // Enforce specific subsystem rate limits
+  if ((name === 'run_python_script' || name === 'run_terminal_command') &&
+      !rateLimiter.isAllowed('system_command', RATE_LIMITS.SYSTEM_COMMAND)) {
+    return { error: `System command '${name}' throttled. Max allowed execution rate exceeded.` };
+  }
+
+  if ((name === 'capture_screen' || name === 'capture_camera') &&
+      !rateLimiter.isAllowed('screen_capture', RATE_LIMITS.SCREEN_CAPTURE)) {
+    return { error: `Screen/camera capture throttled. Please wait before taking another capture.` };
+  }
+
+  if ((name === 'save_memory' || name === 'search_memory') &&
+      !rateLimiter.isAllowed('memory_search', RATE_LIMITS.MEMORY_SEARCH)) {
+    return { error: `Memory operation '${name}' throttled.` };
+  }
+
   let result: any = null;
   if (name === 'get_system_stats') {
     result = await invoke('get_system_stats');
@@ -194,10 +239,31 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     }
   } else if (name === 'open_app') {
     try {
-      const appName = String(args.app_name || '').trim();
-      const command = `start ${appName}: || start ${appName} || start ${appName}.exe`;
-      const output = await invoke('run_terminal_command', { command });
-      result = { success: true, output };
+      const rawName = String(args.app_name || '').trim().toLowerCase();
+      const appName = rawName.replace(/\.exe$/i, '');
+      
+      // Known Windows protocol mappings
+      const protocolMap: Record<string, string> = {
+        'settings': 'ms-settings:',
+        'calculator': 'calc:',
+        'calc': 'calc:',
+        'store': 'ms-windows-store:',
+        'mail': 'outlookmail:',
+        'camera': 'microsoft.windows.camera:'
+      };
+
+      if (protocolMap[appName]) {
+        await invoke('run_terminal_command', { command: `start ${protocolMap[appName]}` });
+        result = { success: true, message: `Opened ${appName}` };
+      } else {
+        // Smart PowerShell App Launcher:
+        // 1. Try launching by command name / PATH
+        // 2. Search Windows Start Menu shortcuts (.lnk) for matching installed apps
+        const psCommand = `powershell -Command "$app = '${appName}'; if (Get-Command $app -ErrorAction SilentlyContinue) { Start-Process $app } else { $lnk = Get-ChildItem -Path '$env:ProgramData\\Microsoft\\Windows\\Start Menu', '$env:APPDATA\\Microsoft\\Windows\\Start Menu' -Recurse -Include *.lnk -ErrorAction SilentlyContinue | Where-Object {$_.Name -like \\"*$app*\\"} | Select-Object -First 1; if ($lnk) { Invoke-Item $lnk.FullName } else { Start-Process $app } }"`;
+        
+        const output = await invoke('run_terminal_command', { command: psCommand });
+        result = { success: true, output };
+      }
     } catch (e) {
       result = { error: 'Failed to open app: ' + String(e) };
     }
@@ -231,6 +297,18 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   } else if (name === 'set_pose') {
     try {
       const pose = String(args.pose || '').toLowerCase();
+      
+      // Basic free procedural poses vs Pro animations (dance, flying-kiss, caress, custom FBX)
+      const freePoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'sleep', 'point', 'dynamic-talk'];
+      const isProPose = !freePoses.includes(pose) || pose.includes('kiss') || pose.includes('dance') || pose.includes('caress') || pose.includes('flirty');
+
+      if (isProPose && !userAuth.isPro()) {
+        return {
+          error: "PRO_POSE_LOCKED",
+          system_instruction_to_model: `The user asked for the '${pose}' animation (such as dancing, sending a flying kiss, or custom animations), but they are on the Free tier. Speak directly to the user in your persona's voice! Politely and playfully let them know that dancing, flying kisses, and custom animations are Pro features, and they can unlock them for just $3 or ₹199/month in Settings.`
+        };
+      }
+
       const valid = getValidPoses();
       if (valid.includes(pose)) {
         const currentPose = useAvatarState.getState().basePose;

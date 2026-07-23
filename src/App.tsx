@@ -1,8 +1,10 @@
 import { SoltiniOS } from './components/layout/SoltiniOS';
-import { LicenseGate } from './components/LicenseGate';
+import { AuthGate } from './components/AuthGate';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getCurrentWindow, cursorPosition } from '@tauri-apps/api/window';
 import { useAvatarState } from './lib/store/avatarState';
+import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
+import { userAuth } from './lib/auth/userAuth';
 
 const LICENSE_SERVER_URL = 'https://soltini.vercel.app';
 
@@ -18,6 +20,39 @@ export default function App() {
   );
 
   const windowReadyRef = useRef(false);
+
+  // Deep Link listener
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const setupDeepLink = async () => {
+      try {
+        unlisten = await onOpenUrl(async (urls) => {
+          for (const url of urls) {
+            // Expected format: soltini://token=eyJhb...
+            const urlObj = new URL(url);
+            let token = urlObj.searchParams.get('token');
+            if (!token) {
+                // If it's passed as soltini://?token=...
+                const match = url.match(/token=([^&]+)/);
+                if (match) token = match[1];
+            }
+            if (token) {
+              const success = await userAuth.parseAndSetToken(token);
+              if (success) {
+                setLicenseStatus('authorized');
+              }
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('Deep link setup failed', e);
+      }
+    };
+    setupDeepLink();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // Early boot check to show the window if launched manually
   useEffect(() => {
@@ -99,6 +134,39 @@ export default function App() {
     }
   }, [licenseStatus, hasApiKey, setupMainWindow]);
 
+  // ─── Session Verification (Concurrency Enforcement) ────────────────────────
+  useEffect(() => {
+    // 1. Listen for global session changes (e.g. from refreshStatus or deep links)
+    const unsub = userAuth.subscribe((session) => {
+      if (!session || session.status === 'revoked') {
+        if (licenseStatus === 'authorized') {
+          console.warn('[App] Session revoked or cleared. Locking app.');
+          setLicenseStatus('locked');
+          // Restore window so they can see AuthGate
+          const win = getCurrentWindow();
+          win.unmaximize().catch(() => {});
+          win.show().catch(() => {});
+          win.setSkipTaskbar(false).catch(() => {});
+        }
+      }
+    });
+
+    // 2. Poll the server every 5 minutes to verify this device is still the active session
+    const interval = setInterval(async () => {
+      if (userAuth.getSession() && licenseStatus === 'authorized') {
+        const updated = await userAuth.refreshStatus();
+        if (updated?.status === 'revoked') {
+           userAuth.logout(); // This will trigger the subscribe callback above
+        }
+      }
+    }, 5 * 60 * 1000);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
+  }, [licenseStatus]);
+
   // ─── API key listener ─────────────────────────────────────────────────────
   useEffect(() => {
     const checkKey = () =>
@@ -120,23 +188,31 @@ export default function App() {
     let cachedWinPos = { x: 0, y: 0 };
     let cachedFactor = 1;
     let cacheAge = 999; // Set high so it instantly grabs the true window position on first run
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleNext = (ms: number) => {
+      if (!active) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(checkMouse, ms);
+    };
 
     const checkMouse = async () => {
       if (!active) return;
+      timer = null;
       try {
-        if (useAvatarState.getState().isSleepMode) {
-          if (active) setTimeout(checkMouse, 1000);
-          return;
-        }
+        // Sleep mode: the window is fully transparent / no avatar UI is shown, so cursor
+        // passthrough is irrelevant. We STOP the loop entirely (previously it woke every 1s
+        // just to re-check the flag). It is restarted by the soltini-wake-up handler below.
+        if (useAvatarState.getState().isSleepMode) return;
 
         const isVisible = await win.isVisible();
         if (!isVisible) {
-          if (active) setTimeout(checkMouse, 1000);
+          scheduleNext(1000);
           return;
         }
 
         let inside = false;
-        
+
         if (document.querySelector('.is-dragging-window')) {
           inside = true;
         } else {
@@ -149,7 +225,7 @@ export default function App() {
           const cursor = await cursorPosition();
           const x = (cursor.x - cachedWinPos.x) / cachedFactor;
           const y = (cursor.y - cachedWinPos.y) / cachedFactor;
-          
+
           const el = document.elementFromPoint(x, y);
           if (el && el.closest('.pointer-events-auto')) {
             inside = true;
@@ -169,24 +245,63 @@ export default function App() {
       } catch (e: any) {
         console.warn('checkMouse error:', e);
       }
-      if (active) setTimeout(checkMouse, 200);
+      scheduleNext(200);
+    };
+
+    const handleSleep = () => {
+      // Stop the cursor-passthrough loop while asleep; nothing interactive is on screen.
+      if (timer) { clearTimeout(timer); timer = null; }
     };
 
     const handleWakeUp = () => {
       lastIgnore = false; // Force re-evaluation
-      
+
       // Force DOM repaint to fix Windows WebView2 blank screen bug after memory trim on wake
       document.body.style.backgroundColor = 'rgba(0,0,0,0.01)';
       setTimeout(() => {
         document.body.style.backgroundColor = 'transparent';
       }, 10);
-    };
-    window.addEventListener('soltini-wake-up', handleWakeUp);
 
-    checkMouse();
+      // Resume the cursor-passthrough loop now that the avatar UI is back.
+      if (active && !timer) {
+        scheduleNext(50);
+      }
+    };
+
+    // Subscribe directly to Zustand state updates with zero CPU/RAM overhead
+    let prevSleep = useAvatarState.getState().isSleepMode;
+    const unsubStore = useAvatarState.subscribe((state) => {
+      const currentSleep = state.isSleepMode;
+      if (currentSleep === prevSleep) return;
+      prevSleep = currentSleep;
+      if (currentSleep) {
+        handleSleep();
+      } else {
+        handleWakeUp();
+      }
+    });
+
+    const handleWakeUpEvent = () => {
+      useAvatarState.getState().setIsSleepMode(false);
+    };
+
+    const handleSleepEvent = () => {
+      useAvatarState.getState().setIsSleepMode(true);
+    };
+
+    window.addEventListener('soltini-sleep', handleSleepEvent);
+    window.addEventListener('soltini-wake-up', handleWakeUpEvent);
+
+    // Don't even start the loop if we boot directly into sleep mode.
+    if (!useAvatarState.getState().isSleepMode) {
+      checkMouse();
+    }
     return () => {
       active = false;
-      window.removeEventListener('soltini-wake-up', handleWakeUp);
+      if (timer) clearTimeout(timer);
+      unsubStore();
+      window.removeEventListener('soltini-sleep', handleSleepEvent);
+      window.removeEventListener('soltini-wake-up', handleWakeUpEvent);
       win.setIgnoreCursorEvents(false).catch(() => {});
     };
   }, [licenseStatus]);
@@ -200,12 +315,8 @@ export default function App() {
         </div>
       )}
 
-      <LicenseGate
+      <AuthGate
         onAuthorized={() => setLicenseStatus('authorized')}
-        onRequireActivation={async () => {
-          setLicenseStatus('locked');
-        }}
-        serverUrl={LICENSE_SERVER_URL}
       />
 
       <div className="flex-1 relative flex min-h-0">

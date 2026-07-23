@@ -16,6 +16,11 @@ let globalCachedUrl: string | null = null;
 let isGlobalLoading = false;
 let globalLoadCallbacks: ((vrm: VRM | null) => void)[] = [];
 
+// Reusable scratch objects for the flipped-custom-model slerp/lerp interceptors.
+// These run dozens of times per frame, so we must never allocate inside them.
+const _flipQuat = new THREE.Quaternion();
+const _flipVec = new THREE.Vector3();
+
 /** Strip ?t=... cache-bust param for comparison purposes */
 function baseUrl(url: string) {
   return url.split('?')[0];
@@ -181,6 +186,8 @@ export function VrmModel({
         // Mathematical Bridge for flipped Custom Models
         // We transparently intercept the slerp and lerp methods on the normalized bone nodes
         // and evaluate `flipCustomModel` on the fly to instantly invert X and Z axes.
+        // NOTE: these interceptors are invoked 30-60+ times PER FRAME across the whole skeleton,
+        // so they MUST NOT allocate. We reuse module-level scratch objects instead of `new`-ing.
         BONE_LIST.forEach(boneName => {
           const node = loadedVrm.humanoid.getNormalizedBoneNode(boneName);
           if (node) {
@@ -188,8 +195,8 @@ export function VrmModel({
             const origSlerp = node.quaternion.slerp.bind(node.quaternion);
             node.quaternion.slerp = function (qb: THREE.Quaternion, t: number) {
               if (useAvatarState.getState().flipCustomModel) {
-                const fixedQb = new THREE.Quaternion(-qb.x, qb.y, -qb.z, qb.w);
-                return origSlerp(fixedQb, t);
+                _flipQuat.set(-qb.x, qb.y, -qb.z, qb.w);
+                return origSlerp(_flipQuat, t);
               }
               return origSlerp(qb, t);
             };
@@ -199,12 +206,12 @@ export function VrmModel({
             const origLerp = node.position.lerp.bind(node.position);
             node.position.lerp = function (v: THREE.Vector3, t: number) {
               if (useAvatarState.getState().flipCustomModel) {
-                const fixedV = new THREE.Vector3(
+                _flipVec.set(
                   restPos.x - (v.x - restPos.x),
                   v.y,
                   restPos.z - (v.z - restPos.z)
                 );
-                return origLerp(fixedV, t);
+                return origLerp(_flipVec, t);
               }
               return origLerp(v, t);
             };

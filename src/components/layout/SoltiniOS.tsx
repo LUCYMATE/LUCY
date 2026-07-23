@@ -39,22 +39,22 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (isSleepMode) {
-      // Force aggressive garbage collection of heavy 3D assets to drop GPU/RAM usage to zero
       clearVrmCache();
       clearFbxCache();
-      // Drop memory used by chromium process for true near-zero memory footprint
-      // We loop this because the background Audio WebSockets cause V8 to rapidly allocate memory again
       setTimeout(() => trimMemory(), 500);
+      // Periodic trim to keep the SpeechRecognition wake-word listener's
+      // native memory leak bounded — Chromium's Web Speech API doesn't fully
+      // release resources, so RAM creeps up over time without this.
       interval = setInterval(() => {
         trimMemory();
-      }, 5000);
+      }, 300000);
     } else {
       // Aggressively keep RAM footprint low (~300MB) during normal active use
       // Delay the first trim by 10s to ensure the heavy VRM model finishes loading safely first!
       setTimeout(() => trimMemory(), 10000);
       interval = setInterval(() => {
         trimMemory();
-      }, 15000);
+      }, 300000); // 5 minutes — frequent enough to keep RAM bounded, infrequent enough to avoid paging thrashing
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -151,7 +151,7 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
     };
 
     const checkStats = async () => {
-      if (!isTauri) return;
+      if (!isTauri || !showLogs) return; // Only fetch system stats if Tauri & System Logs are open
       try {
         const stats = await getSystemStats();
         if (stats) {
@@ -185,7 +185,7 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
     startPolling();
 
     return () => stopPolling();
-  }, [isTauri, showSettings, isSleepMode]);
+  }, [isTauri, showSettings, isSleepMode, showLogs]);
 
   return (
     <div className={`flex h-full w-full relative min-h-0 p-0 max-w-none`}>

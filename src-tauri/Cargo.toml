@@ -49,6 +49,8 @@ aes-gcm = "0.10"
 rand = "0.8"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-single-instance = "2.4.3"
+ed25519-dalek = { version = "2.1", features = ["serde"] }
+tauri-plugin-deep-link = "2.4.9"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_Security", "Win32_System_Memory"] }

@@ -3,6 +3,8 @@ import { Upload, Trash2, Box, Activity, AlertCircle, Info } from 'lucide-react';
 import { saveAsset, listAssets, deleteAsset, AssetRecord } from '../../lib/system/assetDB';
 import { logger } from '../../lib/store/logger';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { userAuth } from '../../lib/auth/userAuth';
+import { useEngineStore } from '../../lib/store/engineStore';
 
 export function AssetLibrary() {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -35,6 +37,12 @@ export function AssetLibrary() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!userAuth.isPro()) {
+      if (vrmInputRef.current) vrmInputRef.current.value = '';
+      useEngineStore.getState().sendText("System instruction: The user tried to upload a custom 3D model (.VRM) in Asset Library, but they are on the Free tier. Speak directly to the user in your persona's voice! Politely and playfully let them know that uploading custom 3D avatars is a Pro feature, and they can unlock it for just $3 or ₹199/month in Settings.");
+      return;
+    }
+
     try {
       // First, delete any existing VRM models to keep only 1 custom model
       const existingVrms = assets.filter(a => a.type === 'vrm');
@@ -59,6 +67,12 @@ export function AssetLibrary() {
   const handleAnimUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !animSlug.trim()) return;
+
+    if (!userAuth.isPro()) {
+      if (animInputRef.current) animInputRef.current.value = '';
+      useEngineStore.getState().sendText("System instruction: The user tried to upload a custom 3D animation (.FBX/.BVH) in Asset Library, but they are on the Free tier. Speak directly to the user in your persona's voice! Politely and playfully let them know that uploading custom animations is a Pro feature, and they can unlock it for just $3 or ₹199/month in Settings.");
+      return;
+    }
 
     const slug = animSlug.trim().toLowerCase();
     

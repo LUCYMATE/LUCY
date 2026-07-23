@@ -30,7 +30,7 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self' tauri: asset: http: https: ws: wss: data: blob: 'unsafe-inline' 'unsafe-eval';",
       "assetProtocol": {
         "scope": ["$APPLOCALDATA/**", "$APPCONFIG/**", "$APPDATA/**"]
       }
@@ -48,6 +48,15 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "soltini"
+        ]
+      }
     }
   }
 }

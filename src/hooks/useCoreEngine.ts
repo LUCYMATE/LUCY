@@ -10,6 +10,7 @@ import { BOT_NAME } from '../config/bot-profile';
 import { chatHistory } from '../lib/store/chatHistory';
 import { useEngineStore } from '../lib/store/engineStore';
 import { listen } from '@tauri-apps/api/event';
+import { checkAppUpdate, markUpdateNotified } from '../lib/system/updateChecker';
 
 export function useCoreEngine() {
   const [initialized, setInitialized] = useState(false);
@@ -28,57 +29,93 @@ export function useCoreEngine() {
     if (!useAvatarState.getState().isSleepMode) return;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
+
+    // If an instance already exists, just restart it via .start() instead of
+    // creating a new one — each `new SpeechRecognition()` leaks native memory
+    // in Chromium/WebView2 that isn't freed until page teardown.
+    const existing = speechRecognitionRef.current;
+    if (existing) {
+      try { existing.start(); } catch (e) { /* already started or aborted */ }
+      return;
+    }
+
     try {
-      if (speechRecognitionRef.current) {
-        speechRecognitionRef.current.onend = null;
-        speechRecognitionRef.current.onerror = null;
-        try { speechRecognitionRef.current.stop(); } catch(e) {}
+      const sr = new SpeechRecognition();
+      
+      const SpeechGrammarList = (window as any).SpeechGrammarList || (window as any).webkitSpeechGrammarList;
+      if (SpeechGrammarList) {
+        const speechRecognitionList = new SpeechGrammarList();
+        const grammar = '#JSGF V1.0; grammar soltini; public <soltini> = wake up | soltini | saltini | sultini | hey soltini ;';
+        speechRecognitionList.addFromString(grammar, 1);
+        sr.grammars = speechRecognitionList;
       }
-      speechRecognitionRef.current = new SpeechRecognition();
-      speechRecognitionRef.current.continuous = true;
-      speechRecognitionRef.current.interimResults = true;
-      // Use Indian English (en-IN) model which is heavily trained on South Asian phonology and accents
-      speechRecognitionRef.current.lang = 'en-IN';
-      speechRecognitionRef.current.onresult = (event: any) => {
+
+      sr.continuous = false; // Prevent memory leak: when true, event.results grows indefinitely until RAM maxes out
+      sr.interimResults = true;
+      sr.maxAlternatives = 5; // Check top 5 alternatives to catch low-confidence whispers
+      sr.lang = 'en-IN';
+
+      sr.onresult = (event: any) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const text = event.results[i][0].transcript.toLowerCase();
-          const regexStr = `\\b(wake\\s*up|soltini|saltini|sultini|sholtini|sortini|soldini|zoltini|sol\\s*tiny|soul\\s*tiny|sole\\s*tiny|so\\s*tiny|cell\\s*tiny|soul\\s*teeny|sole\\s*teeny|sol\\s*teeny|salt\\s*in\\s*me|salt\\s*in\\s*e|salt\\s*and\\s*tea|soltany|sultan\\s*e|sol\\s*ti\\s*ni)\\b`;
-          const match = text.match(new RegExp(regexStr, 'i'));
-          if (match) {
-            const afterWakeWord = text.substring(match.index + match[0].length).trim();
-            if (afterWakeWord.length > 2) {
-              sessionStorage.setItem('soltini_pending_query', afterWakeWord);
+          const result = event.results[i];
+          for (let j = 0; j < result.length; j++) {
+            const text = result[j].transcript.toLowerCase();
+            const regexStr = `\\b(wake\\s*up|soltini|saltini|sultini|sholtini|sortini|soldini|zoltini|sol\\s*tiny|soul\\s*tiny|sole\\s*tiny|so\\s*tiny|cell\\s*tiny|soul\\s*teeny|sole\\s*teeny|sol\\s*teeny|salt\\s*in\\s*me|salt\\s*in\\s*e|salt\\s*and\\s*tea|soltany|sultan\\s*e|sol\\s*ti\\s*ni)\\b`;
+            const match = text.match(new RegExp(regexStr, 'i'));
+            if (match) {
+              const afterWakeWord = text.substring(match.index + match[0].length).trim();
+              if (afterWakeWord.length > 2) {
+                sessionStorage.setItem('soltini_pending_query', afterWakeWord);
+              }
+              logger.add('success', 'Wake Word', `Detected locally: "${text}"`);
+              sr.onend = null;
+              sr.onerror = null;
+              sr.stop();
+              import('@tauri-apps/api/core').then(({ invoke }) => {
+                const tryWake = (retries = 20) => {
+                  invoke('wake_up_main').catch((err) => {
+                    console.warn("IPC Wake Failed, retrying...", err);
+                    if (retries > 0) setTimeout(() => tryWake(retries - 1), 250);
+                  });
+                };
+                tryWake();
+              });
+              return;
             }
-            logger.add('success', 'Wake Word', `Detected locally: "${text}"`);
-            if (speechRecognitionRef.current) {
-              speechRecognitionRef.current.onend = null;
-              speechRecognitionRef.current.onerror = null;
-            }
-            speechRecognitionRef.current?.stop();
-            import('@tauri-apps/api/core').then(({ invoke }) => {
-              const tryWake = (retries = 20) => {
-                invoke('wake_up_main').catch((err) => {
-                  console.warn("IPC Wake Failed, retrying...", err);
-                  if (retries > 0) setTimeout(() => tryWake(retries - 1), 250);
-                });
-              };
-              tryWake();
-            });
-            return;
           }
         }
       };
-      speechRecognitionRef.current.onerror = (e: any) => {
+
+      const restart = () => {
         if (useAvatarState.getState().isSleepMode) {
-          setTimeout(startWakeWordListener, 2000);
+          try { sr.start(); } catch (e) { startWakeWordListener(); }
         }
       };
-      speechRecognitionRef.current.onend = () => {
-        if (useAvatarState.getState().isSleepMode) {
-          setTimeout(startWakeWordListener, 1000);
+
+      sr.onerror = () => setTimeout(restart, 2000);
+      sr.onend = () => setTimeout(restart, 100); // Fast restart to catch subsequent words
+
+      // Watchdog timer: forcefully abort and restart the listener every 60 seconds.
+      // This prevents Chromium's aggressive 5-minute microphone suspension and zombie API bugs.
+      const watchdog = setInterval(() => {
+        if (!useAvatarState.getState().isSleepMode) {
+          clearInterval(watchdog);
+          return;
         }
+        try { sr.abort(); } catch(e) {}
+        setTimeout(() => {
+          if (useAvatarState.getState().isSleepMode) {
+            try { sr.start(); } catch(e) {}
+          }
+        }, 200);
+      }, 60000);
+
+      sr.onstart = () => {
+        // clear any existing watchdog? No, let the watchdog run continuously every 60s
       };
-      speechRecognitionRef.current.start();
+
+      speechRecognitionRef.current = sr;
+      sr.start();
       logger.add('info', 'Sleep Mode', 'Gemini disconnected. Lightweight wake-word listener active.');
     } catch (e) {
       logger.add('warning', 'Sleep Mode', 'Speech recognition not available - wake word disabled');
@@ -140,6 +177,14 @@ export function useCoreEngine() {
         if (recorderRef.current) {
           recorderRef.current.onData = (pcm16) => {
             geminiRef.current?.sendAudio(pcm16);
+          };
+          recorderRef.current.onMicFrozen = () => {
+            if (useAvatarState.getState().isMicOn) {
+              // Toggle off then toggle back on
+              toggleMicRef.current().then(() => {
+                setTimeout(() => toggleMicRef.current(), 500);
+              });
+            }
           };
           try {
             const ctx = new AudioContext();
@@ -217,11 +262,16 @@ export function useCoreEngine() {
 
       if (state === 'connected' && !hasSentGreeting) {
         hasSentGreeting = true;
-        setTimeout(() => {
+        setTimeout(async () => {
           const pendingQuery = sessionStorage.getItem('soltini_pending_query');
+          const updateInfo = await checkAppUpdate();
+
           if (pendingQuery) {
             gemini.sendText("System instruction: The user just woke you up and said this immediately: \"" + pendingQuery + "\". Respond naturally to this query directly instead of just saying hello.");
             sessionStorage.removeItem('soltini_pending_query');
+          } else if (updateInfo && updateInfo.isNewNotification) {
+            markUpdateNotified(updateInfo.updateId);
+            gemini.sendText(`System instruction: A brand new update for Soltini (version ${updateInfo.version}) is now available for ${updateInfo.platform}! Speak directly to the user in a cheerful, enthusiastic voice to let them know that a new update is ready, and politely tell them to check Settings to download it.`);
           } else if (!isWakeUp) {
             gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
           } else {

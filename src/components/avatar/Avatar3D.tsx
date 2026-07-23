@@ -24,7 +24,7 @@ function FpsLimiter() {
 
   useEffect(() => {
     const unsub = useAvatarState.subscribe((s) => {
-      isActive.current = s.isSpeaking || s.isThinking || s.isWalking || s.isListening || s.isHearingSound || s.isDragging;
+      isActive.current = s.isSpeaking || s.isThinking || s.isWalking || s.isDragging;
     });
     return () => unsub();
   }, []);
@@ -32,10 +32,13 @@ function FpsLimiter() {
   useEffect(() => {
     let lastTime = 0;
     let frameId = 0;
-    const interval = 1000 / limit;
 
     const loop = (time: number) => {
-      if (isActive.current && time - lastTime >= interval) {
+      // 60/30 FPS when active, 15 FPS when idle to keep breathing/blinking alive with 4x less CPU overhead
+      const currentLimit = isActive.current ? limit : 15;
+      const interval = 1000 / currentLimit;
+
+      if (time - lastTime >= interval) {
         lastTime = time - ((time - lastTime) % interval);
         invalidate();
       }
@@ -286,6 +289,7 @@ function SceneManager() {
       const diffY = targetPosition.y - groupRef.current.position.y;
       distance = Math.sqrt(diffX * diffX + diffY * diffY);
 
+      let positionChanged = false;
       if (isWalking && distance > 0.01 && !isDragging) {
         const speed = basePose.startsWith('peek') ? 0.8 : 1.5;
         const step = speed * delta;
@@ -295,16 +299,27 @@ function SceneManager() {
           groupRef.current.position.x += (diffX / distance) * step;
           groupRef.current.position.y += (diffY / distance) * step;
         }
+        positionChanged = true;
       } else {
         _lerpTarget.set(targetPosition.x, targetPosition.y, targetPosition.z);
-        groupRef.current.position.lerp(_lerpTarget, isDragging ? 0.2 : delta * 5.0);
+        // Only keep lerping (and flag a change) while the avatar is still noticeably moving.
+        // Once it has effectively arrived, we stop both the math and the per-frame store write,
+        // which previously fired ~15-60x/sec even on a perfectly still avatar.
+        if (distance > 0.0005 || isDragging) {
+          groupRef.current.position.lerp(_lerpTarget, isDragging ? 0.2 : delta * 5.0);
+          positionChanged = true;
+        }
       }
 
-      useAvatarState.getState().setWorldPosition({
-        x: groupRef.current.position.x,
-        y: groupRef.current.position.y,
-        z: groupRef.current.position.z
-      });
+      // Only push the new position into the store when the avatar actually moved. This avoids
+      // a per-frame Zustand notification (and any downstream IPC/subscriber work) while idle.
+      if (positionChanged) {
+        useAvatarState.getState().setWorldPosition({
+          x: groupRef.current.position.x,
+          y: groupRef.current.position.y,
+          z: groupRef.current.position.z
+        });
+      }
 
       const flip = useAvatarState.getState().flipCustomModel;
       let targetRotY = flip ? 0 : Math.PI;
@@ -790,8 +805,8 @@ export function Avatar3D() {
   return (
     <div className="w-full h-full pointer-events-none relative">
       <Canvas
-        dpr={1}
-        frameloop="always"
+        dpr={[1, 1.5]}
+        frameloop="demand"
         gl={{ powerPreference: "low-power", antialias: true, alpha: true }}
         style={{ pointerEvents: 'none' }}
       >

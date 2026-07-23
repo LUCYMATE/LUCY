@@ -15,8 +15,8 @@ use sha2::Sha256;
 // HMAC key — MUST match HMAC_SECRET in Vercel environment variable
 // Format: "<hwid>:<ACCESS_CODE>" signed with this key
 const HMAC_KEY: &[u8] = b"52e590ec0fab06527b45d3a6ebeabe6e74e3d99878a7fbbd6f47e3763234accf";
-// Offline token re-verify interval (24 hours in seconds)
-const OFFLINE_GRACE_SECONDS: i64 = 24 * 60 * 60;
+// Offline token re-verify interval (7 days in seconds)
+const OFFLINE_GRACE_SECONDS: i64 = 7 * 24 * 60 * 60;
 
 struct AppState {
     sys: Mutex<System>,
@@ -73,10 +73,7 @@ fn get_system_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, 
 }
 
 #[tauri::command]
-fn open_external_url(app_handle: tauri::AppHandle, url: String, state: tauri::State<AppState>) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+fn open_external_url(app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
     app_handle
         .opener()
         .open_url(url, None::<&str>)
@@ -135,13 +132,59 @@ fn type_string(text: String, state: tauri::State<AppState>) -> Result<(), String
     Ok(())
 }
 
+fn run_command_with_timeout(mut cmd: std::process::Command, timeout_secs: u64) -> Result<std::process::Output, String> {
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn process: {}", e))?;
+
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                return child.wait_with_output().map_err(|e| format!("Failed to collect output: {}", e));
+            }
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("Process execution timed out after {} seconds", timeout_secs));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                return Err(format!("Error waiting on process: {}", e));
+            }
+        }
+    }
+}
+
+fn sanitize_identifier(input: &str) -> Result<String, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("Identifier cannot be empty".to_string());
+    }
+    if !trimmed.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+        return Err("Invalid characters in identifier".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
 #[tauri::command]
 fn run_python_script(script: String, state: tauri::State<AppState>) -> Result<String, String> {
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
     let temp_dir = std::env::temp_dir();
-    let file_path = temp_dir.join("soltini_temp_script.py");
+    let unique_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let file_path = temp_dir.join(format!("soltini_script_{}_{}.py", unique_id, std::process::id()));
     std::fs::write(&file_path, script).map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "windows")]
@@ -153,22 +196,21 @@ fn run_python_script(script: String, state: tauri::State<AppState>) -> Result<St
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
 
-    let output = cmd.output().map_err(|e| {
-        format!(
-            "Failed to execute python: {}. Ensure Python is installed.",
-            e
-        )
-    })?;
+    let res = run_command_with_timeout(cmd, 30);
+    let _ = std::fs::remove_file(&file_path);
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    match res {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    let _ = std::fs::remove_file(file_path);
-
-    if !output.status.success() {
-        Ok(format!("Stdout:\n{}\nStderr:\n{}", stdout, stderr))
-    } else {
-        Ok(stdout)
+            if !output.status.success() {
+                Ok(format!("Stdout:\n{}\nStderr:\n{}", stdout, stderr))
+            } else {
+                Ok(stdout)
+            }
+        }
+        Err(err_msg) => Err(format!("Python execution error: {}", err_msg)),
     }
 }
 
@@ -178,7 +220,7 @@ fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Resul
         return Err("Unauthorized".to_string());
     }
     #[cfg(target_os = "windows")]
-    let mut cmd = {
+    let cmd = {
         use std::os::windows::process::CommandExt;
         let mut c = std::process::Command::new("cmd");
         c.args(&["/C", &command]);
@@ -187,15 +229,13 @@ fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Resul
     };
 
     #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
+    let cmd = {
         let mut c = std::process::Command::new("sh");
         c.args(&["-c", &command]);
         c
     };
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
+    let output = run_command_with_timeout(cmd, 30)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -209,7 +249,12 @@ fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Resul
 
 #[cfg(target_os = "windows")]
 fn trim_memory_internal() {
-    let mut sys = sysinfo::System::new_all();
+    // NOTE: Previously this used `System::new_all()`, which on every call rebuilt a
+    // complete system-wide snapshot — every CPU, disk, network, temperature component,
+    // and user — just to enumerate our own child processes. That alone was the largest
+    // steady-state CPU cost (especially in sleep mode where this was polled every 5s).
+    // We now refresh ONLY the process list, which is all we need to find descendants.
+    let mut sys = sysinfo::System::new();
     sys.refresh_processes();
 
     let current_pid = sysinfo::get_current_pid().unwrap();
@@ -233,7 +278,7 @@ fn trim_memory_internal() {
     for pid in all_descendants {
         unsafe {
             let handle = windows_sys::Win32::System::Threading::OpenProcess(
-                windows_sys::Win32::System::Threading::PROCESS_ALL_ACCESS,
+                windows_sys::Win32::System::Threading::PROCESS_SET_QUOTA | windows_sys::Win32::System::Threading::PROCESS_QUERY_INFORMATION,
                 0,
                 pid.as_u32(),
             );
@@ -442,6 +487,9 @@ fn save_3d_asset(
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+    let safe_id = sanitize_identifier(&id)?;
+    let safe_asset_type = sanitize_identifier(&asset_type)?;
+
     let local_data = app_handle
         .path()
         .app_local_data_dir()
@@ -450,7 +498,7 @@ fn save_3d_asset(
     std::fs::create_dir_all(&assets_dir).map_err(|e| e.to_string())?;
 
     let bytes = STANDARD.decode(&data_base64).map_err(|e| e.to_string())?;
-    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+    let file_path = assets_dir.join(format!("{}.{}", safe_id, safe_asset_type));
     std::fs::write(&file_path, bytes).map_err(|e| e.to_string())?;
 
     let registry_path = assets_dir.join("registry.json");
@@ -466,9 +514,9 @@ fn save_3d_asset(
         .unwrap_or_default()
         .as_millis() as u64;
 
-    registry[id.clone()] = serde_json::json!({
-        "id": id,
-        "type": asset_type,
+    registry[safe_id.clone()] = serde_json::json!({
+        "id": safe_id,
+        "type": safe_asset_type,
         "name": name,
         "timestamp": now
     });
@@ -486,6 +534,8 @@ fn delete_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+    let safe_id = sanitize_identifier(&id)?;
+
     let local_data = app_handle
         .path()
         .app_local_data_dir()
@@ -496,14 +546,16 @@ fn delete_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).unwrap_or_else(|_| "{}".to_string());
         if let Ok(mut registry) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(asset) = registry.get(&id) {
+            if let Some(asset) = registry.get(&safe_id) {
                 if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
-                    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
-                    let _ = std::fs::remove_file(file_path);
+                    if let Ok(safe_asset_type) = sanitize_identifier(asset_type) {
+                        let file_path = assets_dir.join(format!("{}.{}", safe_id, safe_asset_type));
+                        let _ = std::fs::remove_file(file_path);
+                    }
                 }
             }
             if let Some(obj) = registry.as_object_mut() {
-                obj.remove(&id);
+                obj.remove(&safe_id);
             }
             let _ = std::fs::write(
                 registry_path,
@@ -542,6 +594,8 @@ fn read_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State<A
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+    let safe_id = sanitize_identifier(&id)?;
+
     let local_data = app_handle
         .path()
         .app_local_data_dir()
@@ -552,14 +606,15 @@ fn read_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State<A
     let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
     let registry: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
 
-    if let Some(asset) = registry.get(&id) {
+    if let Some(asset) = registry.get(&safe_id) {
         if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
-            let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+            let safe_asset_type = sanitize_identifier(asset_type)?;
+            let file_path = assets_dir.join(format!("{}.{}", safe_id, safe_asset_type));
             let bytes = std::fs::read(&file_path).map_err(|e| e.to_string())?;
             let b64 = STANDARD.encode(&bytes);
             return Ok(serde_json::json!({
                 "data": b64,
-                "type": asset_type
+                "type": safe_asset_type
             })
             .to_string());
         }
@@ -572,6 +627,8 @@ fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String, state: tauri::Sta
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+    let safe_id = sanitize_identifier(&id)?;
+
     let local_data = app_handle
         .path()
         .app_local_data_dir()
@@ -582,9 +639,10 @@ fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String, state: tauri::Sta
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
         if let Ok(registry) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(asset) = registry.get(&id) {
+            if let Some(asset) = registry.get(&safe_id) {
                 if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
-                    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+                    let safe_asset_type = sanitize_identifier(asset_type)?;
+                    let file_path = assets_dir.join(format!("{}.{}", safe_id, safe_asset_type));
                     return Ok(file_path.to_string_lossy().to_string());
                 }
             }
@@ -598,6 +656,8 @@ fn read_3d_asset_bytes(app_handle: tauri::AppHandle, id: String, state: tauri::S
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
+    let safe_id = sanitize_identifier(&id)?;
+
     let local_data = app_handle
         .path()
         .app_local_data_dir()
@@ -608,9 +668,10 @@ fn read_3d_asset_bytes(app_handle: tauri::AppHandle, id: String, state: tauri::S
     if registry_path.exists() {
         let content = std::fs::read_to_string(&registry_path).map_err(|e| e.to_string())?;
         if let Ok(registry) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(asset) = registry.get(&id) {
+            if let Some(asset) = registry.get(&safe_id) {
                 if let Some(asset_type) = asset.get("type").and_then(|v| v.as_str()) {
-                    let file_path = assets_dir.join(format!("{}.{}", id, asset_type));
+                    let safe_asset_type = sanitize_identifier(asset_type)?;
+                    let file_path = assets_dir.join(format!("{}.{}", safe_id, safe_asset_type));
                     return std::fs::read(&file_path).map_err(|e| e.to_string());
                 }
             }
@@ -798,8 +859,9 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
         if let Ok(token_data) = serde_json::from_str::<serde_json::Value>(&content) {
             let hwid = token_data["hwid"].as_str().unwrap_or("");
             let access_code = token_data["access_code"].as_str().unwrap_or("");
-            if !hwid.is_empty() && !access_code.is_empty() {
-                return serde_json::json!({ "success": true, "hwid": hwid, "access_code": access_code });
+            let signature = token_data["signature"].as_str().unwrap_or("");
+            if !hwid.is_empty() && !access_code.is_empty() && !signature.is_empty() {
+                return serde_json::json!({ "success": true, "hwid": hwid, "access_code": access_code, "signature": signature });
             }
         }
     }
@@ -900,6 +962,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             do_wake_up_main(app);
@@ -1060,8 +1123,13 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            if let Some(win) = app.get_webview_window("main") {
-                win.show().ok();
+            // Only show the window on manual launch — autostart keeps it hidden
+            // so it enters sleep/pet mode without a visible transparent overlay.
+            let is_autostart = std::env::args().any(|arg| arg == "--autostart");
+            if !is_autostart {
+                if let Some(win) = app.get_webview_window("main") {
+                    win.show().ok();
+                }
             }
 
             Ok(())
