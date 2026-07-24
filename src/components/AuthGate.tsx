@@ -37,6 +37,14 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         setTimeout(onAuthorized, 800);
       } else {
         setStage('locked');
+        
+        // Ensure the window behaves like a normal window again if they are logged out
+        import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+          const win = getCurrentWindow();
+          win.setAlwaysOnTop(false).catch(() => {});
+          win.unmaximize().catch(() => {});
+          win.setSkipTaskbar(false).catch(() => {});
+        }).catch(() => {});
       }
     });
     return () => { 
