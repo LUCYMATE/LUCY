@@ -102,6 +102,7 @@ export default function App() {
       const win = getCurrentWindow();
       
       if (!isHidden) {
+        await safe(win.setAlwaysOnTop(true)); // Force restore alwaysOnTop
         await safe(win.maximize());
         await safe(win.show());
       }
