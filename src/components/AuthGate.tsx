@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Minus, X as XIcon } from 'lucide-react';
 import { userAuth } from '../lib/auth/userAuth';
 import { openExternalUrl } from '../lib/system/tauriBridge';
@@ -6,6 +6,9 @@ import { openExternalUrl } from '../lib/system/tauriBridge';
 export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
   const [stage, setStage] = useState<'checking' | 'locked' | 'authorized'>('checking');
   
+  const [sessionId] = useState(() => crypto.randomUUID());
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
   const checkAuth = useCallback(async () => {
     setStage('checking');
     const session = userAuth.getSession();
@@ -24,6 +27,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     const unsub = userAuth.subscribe((session) => {
       if (session && session.status !== 'revoked') {
         setStage('authorized');
+        if (pollingRef.current) clearInterval(pollingRef.current);
         
         // Restore alwaysOnTop when authorized
         import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
@@ -35,7 +39,10 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         setStage('locked');
       }
     });
-    return () => { unsub(); };
+    return () => { 
+      unsub(); 
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
   }, [checkAuth, onAuthorized]);
 
   const handleSignIn = async () => {
@@ -47,8 +54,23 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       console.warn("Failed to drop alwaysOnTop", e);
     }
 
-    // Open the authentication portal in the default browser.
-    openExternalUrl('https://soltini.vercel.app/auth/google');
+    // Start polling the backend for the session token
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    pollingRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`https://soltini.vercel.app/api/auth/session?id=${sessionId}`);
+        const data = await res.json();
+        if (data.success && data.status === 'authenticated' && data.token) {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          await userAuth.parseAndSetToken(data.token);
+        }
+      } catch (err) {
+        console.warn("Session polling failed", err);
+      }
+    }, 2000);
+
+    // Open the authentication portal with the session ID
+    openExternalUrl(`https://soltini.vercel.app/auth/google?session_id=${sessionId}`);
   };
 
   return (
