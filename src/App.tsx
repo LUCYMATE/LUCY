@@ -26,24 +26,47 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     const setupDeepLink = async () => {
       try {
-        unlisten = await onOpenUrl(async (urls) => {
-          for (const url of urls) {
-            // Expected format: soltini://token=eyJhb...
+        const handleLink = async (url: string) => {
+          // Handle multiple deep link formats
+          let token: string | null = null;
+          try {
             const urlObj = new URL(url);
-            let token = urlObj.searchParams.get('token');
-            if (!token) {
-                // If it's passed as soltini://?token=...
-                const match = url.match(/token=([^&]+)/);
-                if (match) token = match[1];
-            }
-            if (token) {
-              const success = await userAuth.parseAndSetToken(token);
-              if (success) {
-                setLicenseStatus('authorized');
-              }
+            token = urlObj.searchParams.get('token') || urlObj.searchParams.get('t');
+          } catch (_) {}
+
+          if (!token) {
+            const match = url.match(/[?#&/]?token=([^&\s]+)/);
+            if (match) token = decodeURIComponent(match[1]);
+          }
+
+          if (token) {
+            console.log('[DeepLink] Received token, parsing...');
+            const success = await userAuth.parseAndSetToken(token);
+            if (success) {
+              setLicenseStatus('authorized');
+              try { await getCurrentWindow().setAlwaysOnTop(true); } catch (_) {}
             }
           }
+        };
+
+        // Listen for the official deep link plugin (works on first instance)
+        unlisten = await onOpenUrl(async (urls) => {
+          for (const url of urls) await handleLink(url);
         });
+
+        // Listen for the manual event emitted by the single-instance plugin (works when a second instance was spawned)
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlistenEvent = await listen<string>('soltini-deep-link-manual', (e) => {
+          handleLink(e.payload);
+        });
+        
+        // Ensure both unlisteners are called
+        const originalUnlisten = unlisten;
+        unlisten = () => {
+            if (originalUnlisten) originalUnlisten();
+            unlistenEvent();
+        };
+
       } catch (e) {
         console.warn('Deep link setup failed', e);
       }

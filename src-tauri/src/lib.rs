@@ -964,9 +964,16 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             do_wake_up_main(app);
             let _ = app.emit("soltini-exit-pet-mode", ());
+            
+            // Manually forward any deep links to the primary instance
+            for arg in args {
+                if arg.starts_with("soltini://") {
+                    let _ = app.emit("soltini-deep-link-manual", arg);
+                }
+            }
         }))
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
