@@ -40,7 +40,7 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
   useEffect(() => {
     const poll = async () => {
       const s = useAvatarState.getState();
-      if (s.isDragging || s.isSpeaking || s.isAvatarLocked || s.isSleepMode) return;
+      if (s.isSleepMode) return;
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const rawRects = await invoke<DesktopRect[]>('get_desktop_rectangles');
@@ -54,8 +54,17 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
         }));
         console.log('[DesktopMate] Polled rectangles:', rects);
         s.setDesktopRectangles(rects);
+        const errorEl = document.getElementById('backend-error-alert');
+        if (errorEl) errorEl.remove();
       } catch (e) {
         console.warn('Failed to poll desktop rectangles', e);
+        if (!document.getElementById('backend-error-alert')) {
+          const div = document.createElement('div');
+          div.id = 'backend-error-alert';
+          div.className = 'fixed top-20 left-1/2 -translate-x-1/2 bg-red-600 text-white p-4 rounded-xl z-[9999] pointer-events-auto shadow-2xl font-bold text-center border-4 border-white';
+          div.innerHTML = '⚠️ BACKEND RESTART REQUIRED ⚠️<br/>You must kill the terminal (Ctrl+C) and run "npm run tauri dev" again!<br/>The new Window Snapping feature cannot work until you restart.';
+          document.body.appendChild(div);
+        }
       }
     };
     

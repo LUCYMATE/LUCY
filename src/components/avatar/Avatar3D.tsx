@@ -706,7 +706,17 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
       const threshold = 50; // snap threshold in pixels
       for (const rect of s.desktopRectangles) {
         if (screenX >= rect.x - 50 && screenX <= rect.x + rect.width + 50) {
-          if (Math.abs(screenFeetY - rect.y) < threshold) {
+          
+          let isMatch = false;
+          if (rect.is_taskbar) {
+            // Taskbar is at the bottom, so if they drag it anywhere near or below the top edge, snap it!
+            isMatch = screenFeetY > rect.y - threshold;
+          } else {
+            // Windows: must be near the title bar specifically
+            isMatch = Math.abs(screenFeetY - rect.y) < threshold;
+          }
+
+          if (isMatch) {
             snapped = true;
             s.setAnchor({ type: rect.is_taskbar ? 'taskbar' : 'window', rect });
             const edgeWorldY = -(rect.y - wh / 2) / 250;

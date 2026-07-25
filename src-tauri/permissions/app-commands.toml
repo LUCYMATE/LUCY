@@ -127,3 +127,8 @@ commands.allow = ["wake_up_main"]
 identifier = "allow-is-autostart"
 description = "Allows checking if launched via autostart"
 commands.allow = ["is_autostart"]
+
+[[permission]]
+identifier = "allow-get-desktop-rectangles"
+description = "Allows getting desktop windows and taskbar coordinates"
+commands.allow = ["get_desktop_rectangles"]
