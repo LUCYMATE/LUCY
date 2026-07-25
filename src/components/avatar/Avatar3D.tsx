@@ -403,24 +403,26 @@ function SceneManager() {
 
   return (
     <group ref={groupRef}>
-      <group ref={scaleGroupRef} position={[0, -1.2, 0]}>
-        <Stool visible={isCurrentlySitting} />
-        <FlyingKisses active={basePose === 'flying-kiss'} />
+      <group ref={scaleGroupRef}>
+        <group position={[0, -1.2, 0]}>
+          <Stool visible={isCurrentlySitting} />
+          <FlyingKisses active={basePose === 'flying-kiss'} />
 
-        {modelUrl && (
-          <VrmModel
-            url={modelUrl}
-            reloadKey={vrmReloadKey}
-            isSpeaking={isSpeaking}
-            isThinking={isThinking}
-            isListening={isListening}
-            basePose={basePose}
-            isWalking={isWalking}
-            emotion={emotion}
-            moveDirection={internalMoveDir}
-            isSitting={isCurrentlySitting}
-          />
-        )}
+          {modelUrl && (
+            <VrmModel
+              url={modelUrl}
+              reloadKey={vrmReloadKey}
+              isSpeaking={isSpeaking}
+              isThinking={isThinking}
+              isListening={isListening}
+              basePose={basePose}
+              isWalking={isWalking}
+              emotion={emotion}
+              moveDirection={internalMoveDir}
+              isSitting={isCurrentlySitting}
+            />
+          )}
+        </group>
       </group>
 
       <Html center zIndexRange={[100, 0]}>
@@ -667,8 +669,8 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
       
       const minX = -edgeX;
       const maxX = edgeX;
-      const maxY = edgeY - 0.15 * avatarScale;
-      const minY = -edgeY - 0.15 * avatarScale;
+      const maxY = edgeY + 0.5 * avatarScale;
+      const minY = -edgeY + 0.5 * avatarScale;
 
       cursorTargetRef.current.x = Math.max(minX, Math.min(maxX, cursorTargetRef.current.x + movementX));
       cursorTargetRef.current.y = Math.max(minY, Math.min(maxY, cursorTargetRef.current.y + movementY));
@@ -720,7 +722,7 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
   const getHandleStyle = (yLocal: number, widthBase: number, heightBase: number) => {
     const w = widthBase * avatarScale;
     const h = heightBase * avatarScale;
-    const yPixel = (-1.2 + yLocal * avatarScale) * ZOOM;
+    const yPixel = (-1.2 * avatarScale + yLocal * avatarScale) * ZOOM;
     return {
       position: 'absolute' as const,
       width: w,

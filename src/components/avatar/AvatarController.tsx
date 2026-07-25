@@ -87,8 +87,8 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       const avatarScale = s.avatarScale || 1;
       const minX = -edgeX;
       const maxX = edgeX;
-      const minY = -edgeY - 0.15 * avatarScale;
-      const maxY = edgeY - 0.15 * avatarScale;
+      const minY = -edgeY + 0.5 * avatarScale;
+      const maxY = edgeY + 0.5 * avatarScale;
 
       const screenToWorld = (screenX: number, screenY: number) => {
         return {
