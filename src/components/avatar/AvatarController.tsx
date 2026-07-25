@@ -98,8 +98,8 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       };
 
       const rects = s.desktopRectangles || [];
-      const taskbars = rects.filter(r => r.is_taskbar);
-      const windows = rects.filter(r => !r.is_taskbar);
+      const taskbars = rects.filter(r => r.is_taskbar && r.x < ww && r.x + r.width > 0 && r.y < wh && r.y + r.height > 0);
+      const windows = rects.filter(r => !r.is_taskbar && r.x < ww && r.x + r.width > 0 && r.y < wh && r.y + r.height > 0);
 
       let targetX = currentX;
       let targetY = currentY;
@@ -126,13 +126,13 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
           targetY = minY + Math.random() * (maxY - minY);
         }
       } else if (r < 0.70) {
-        if (windows.length > 0 && Math.random() > 0.5) {
+        if (windows.length > 0 && Math.random() > 0.3) {
           targetPose = 'sleep';
           const win = windows[Math.floor(Math.random() * windows.length)];
           const randomX = win.x + 50 + Math.random() * Math.max(0, win.width - 100);
           const worldPos = screenToWorld(randomX, win.y);
           targetX = worldPos.x;
-          targetY = worldPos.y + 1.18 * avatarScale; // Offset by 1.18 so stomach rests exactly on the edge
+          targetY = worldPos.y + 1.15 * avatarScale; // Proper offset so hips rest on title bar
         } else {
           targetPose = 'stand';
           if (!s.isAvatarLocked) {
@@ -143,12 +143,12 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       } else if (r < 0.85) {
         targetPose = 'sit';
         if (!s.isAvatarLocked) {
-          if (taskbars.length > 0 && Math.random() > 0.3) {
+          if (taskbars.length > 0 && Math.random() > 0.2) {
             const tb = taskbars[0];
             const randomX = tb.x + 100 + Math.random() * Math.max(0, tb.width - 200);
             const worldPos = screenToWorld(randomX, tb.y);
             targetX = worldPos.x;
-            targetY = worldPos.y + 0.82 * avatarScale; // Offset by 0.82 so hips/stool rest exactly on the edge
+            targetY = worldPos.y + 1.2 * avatarScale; // Proper offset so stool rests on taskbar
           } else {
             targetX = minX + Math.random() * (maxX - minX);
             targetY = minY + Math.random() * (maxY - minY);
@@ -172,7 +172,7 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       setTargetPosition({ x: targetX, y: targetY, z: 0 });
       setIsWalking(true);
 
-    }, 15000);
+    }, 8000); // 8-second interval so users don't wait forever to see magic
 
     return () => {
       clearInterval(wanderInterval);
