@@ -44,29 +44,39 @@ export function applyLocomotion(
     fr(VRMHumanBoneName.Head, -bendX * 0.5 - pitchForward * 0.5, 0, -bendZ * 0.5, 0.1); // Head tries to look back
 
   } else if (basePose === 'sleep') {
-    // SLEEP POSE
+    // DESKTOP MATE SLEEP POSE: Lying on stomach/side, chin on hands, kicking legs upwards
     const breath = Math.sin(t * 1.5) * 0.003;
     
-    // Slump Hips & Spine
-    fr(VRMHumanBoneName.Hips, 0.2, 0, 0, poseSmooth);
-    tr(VRMHumanBoneName.Hips, 0, -0.45 + breath, 0, poseSmooth);
-    fr(VRMHumanBoneName.Spine, 0.15, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.Chest, breath, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.Head, 0.25, 0.1, -0.05, poseSmooth);
+    // Lay flat on stomach (pitch forward ~80 degrees) with a slight side tilt (yaw/roll)
+    fr(VRMHumanBoneName.Hips, 1.4, 0.4, 0.1, poseSmooth);
+    tr(VRMHumanBoneName.Hips, 0, -0.78 + breath, 0, poseSmooth);
+    
+    // Arch back up to look at screen
+    fr(VRMHumanBoneName.Spine, -0.4, -0.2, 0, poseSmooth);
+    fr(VRMHumanBoneName.Chest, -0.3 + breath, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.Neck, -0.3, -0.4, 0, poseSmooth);
+    fr(VRMHumanBoneName.Head, -0.2, -0.3, 0.1, poseSmooth);
 
-    // Periodic leg twitching every 6 seconds
-    const twitchCycle = t % 6.0;
-    let legTwitch = 0;
-    if (twitchCycle > 4.5 && twitchCycle < 4.8) {
-      legTwitch = Math.sin(t * 30.0) * 0.08; // High frequency wobble
-    }
+    // Arms resting/holding head
+    fr(VRMHumanBoneName.LeftUpperArm, -1.2, 0, -0.8, poseSmooth);
+    fr(VRMHumanBoneName.LeftLowerArm, -2.2, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.RightUpperArm, -1.0, 0, 0.5, poseSmooth);
+    fr(VRMHumanBoneName.RightLowerArm, -2.0, 0, 0, poseSmooth);
 
-    fr(VRMHumanBoneName.LeftUpperLeg, 1.4 + legTwitch, 0.1, 0.0, poseSmooth); 
-    fr(VRMHumanBoneName.RightUpperLeg, 1.4 - legTwitch, -0.1, 0.0, poseSmooth);
-    fr(VRMHumanBoneName.LeftLowerLeg, -1.3 + legTwitch, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.RightLowerLeg, -1.3 - legTwitch, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.LeftFoot, 0.4, 0, 0, poseSmooth);
-    fr(VRMHumanBoneName.RightFoot, 0.4, 0, 0, poseSmooth);
+    // Legs playing/kicking upwards
+    const kickSpeed = 2.5;
+    const lKick = Math.sin(t * kickSpeed) * 0.35;
+    const rKick = Math.sin(t * kickSpeed - 1.5) * 0.35; // offset phase
+
+    // Upper legs extend slightly back
+    fr(VRMHumanBoneName.LeftUpperLeg, 0.1, 0, 0.1, poseSmooth); 
+    fr(VRMHumanBoneName.RightUpperLeg, 0.1, 0, -0.1, poseSmooth);
+    
+    // Lower legs bend up (negative X bends knee back)
+    fr(VRMHumanBoneName.LeftLowerLeg, -1.4 + lKick, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.RightLowerLeg, -1.4 + rKick, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.LeftFoot, 0.2, 0, 0, poseSmooth);
+    fr(VRMHumanBoneName.RightFoot, 0.2, 0, 0, poseSmooth);
 
   } else if (isSitting && !isWalking) {
     // SITTING POSES

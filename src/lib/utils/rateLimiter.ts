@@ -64,18 +64,18 @@ export const rateLimiter = new RateLimiter();
 
 // Pre-defined rate limit configurations for Soltini modules
 export const RATE_LIMITS = {
-  // Max 5 Live connection attempts per 30 seconds, min 2s between attempts
-  GEMINI_CONNECT: { maxCalls: 5, windowMs: 30_000, minIntervalMs: 2_000 },
+  // Max 10 Live connection attempts per 30 seconds
+  GEMINI_CONNECT: { maxCalls: 10, windowMs: 30_000, minIntervalMs: 1_000 },
   
-  // Max 30 tool executions per minute, min 300ms between calls
-  TOOL_EXECUTION: { maxCalls: 30, windowMs: 60_000, minIntervalMs: 300 },
+  // Max 120 tool executions per minute, no minimum interval
+  TOOL_EXECUTION: { maxCalls: 120, windowMs: 60_000, minIntervalMs: 0 },
   
-  // Max 10 screen captures per 10 seconds, min 500ms apart
-  SCREEN_CAPTURE: { maxCalls: 10, windowMs: 10_000, minIntervalMs: 500 },
+  // Max 30 screen captures per 10 seconds, min 200ms apart
+  SCREEN_CAPTURE: { maxCalls: 30, windowMs: 10_000, minIntervalMs: 200 },
 
-  // Max 15 vector memory queries per minute
-  MEMORY_SEARCH: { maxCalls: 15, windowMs: 60_000, minIntervalMs: 1_000 },
+  // Max 60 vector memory queries per minute
+  MEMORY_SEARCH: { maxCalls: 60, windowMs: 60_000, minIntervalMs: 200 },
 
-  // Max 10 terminal/python commands per minute
-  SYSTEM_COMMAND: { maxCalls: 10, windowMs: 60_000, minIntervalMs: 1_000 },
+  // Max 60 terminal/python commands per minute
+  SYSTEM_COMMAND: { maxCalls: 60, windowMs: 60_000, minIntervalMs: 200 },
 };

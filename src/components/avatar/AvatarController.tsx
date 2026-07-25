@@ -5,6 +5,7 @@ import { Avatar3D } from './Avatar3D';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
 import { BasePose } from './animations/core';
+import { DesktopRect } from '../../lib/store/avatarState';
 
 interface AvatarControllerProps {
   onLoad?: () => void;
@@ -35,6 +36,33 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
     isAvatarLocked: s.isAvatarLocked
   })));
 
+  // Desktop Rectangles Polling
+  useEffect(() => {
+    const poll = async () => {
+      const s = useAvatarState.getState();
+      if (s.isDragging || s.isSpeaking || s.isAvatarLocked || s.isSleepMode) return;
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const rawRects = await invoke<DesktopRect[]>('get_desktop_rectangles');
+        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        const rects = rawRects.map(r => ({
+          ...r,
+          x: r.x / dpr,
+          y: r.y / dpr,
+          width: r.width / dpr,
+          height: r.height / dpr,
+        }));
+        console.log('[DesktopMate] Polled rectangles:', rects);
+        s.setDesktopRectangles(rects);
+      } catch (e) {
+        console.warn('Failed to poll desktop rectangles', e);
+      }
+    };
+    
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Autonomous Wandering Orchestrator in 3D Space
   useEffect(() => {
@@ -62,6 +90,17 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       const minY = -edgeY - 0.15 * avatarScale;
       const maxY = edgeY - 0.15 * avatarScale;
 
+      const screenToWorld = (screenX: number, screenY: number) => {
+        return {
+          x: (screenX - ww / 2) / 250,
+          y: -(screenY - wh / 2) / 250,
+        };
+      };
+
+      const rects = s.desktopRectangles || [];
+      const taskbars = rects.filter(r => r.is_taskbar);
+      const windows = rects.filter(r => !r.is_taskbar);
+
       let targetX = currentX;
       let targetY = currentY;
       let targetPose: BasePose = 'sit';
@@ -87,16 +126,33 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
           targetY = minY + Math.random() * (maxY - minY);
         }
       } else if (r < 0.70) {
-        targetPose = 'stand';
-        if (!s.isAvatarLocked) {
-          targetX = minX + Math.random() * (maxX - minX);
-          targetY = minY + Math.random() * (maxY - minY);
+        if (windows.length > 0 && Math.random() > 0.5) {
+          targetPose = 'sleep';
+          const win = windows[Math.floor(Math.random() * windows.length)];
+          const randomX = win.x + 50 + Math.random() * Math.max(0, win.width - 100);
+          const worldPos = screenToWorld(randomX, win.y);
+          targetX = worldPos.x;
+          targetY = worldPos.y + 1.18 * avatarScale; // Offset by 1.18 so stomach rests exactly on the edge
+        } else {
+          targetPose = 'stand';
+          if (!s.isAvatarLocked) {
+            targetX = minX + Math.random() * (maxX - minX);
+            targetY = minY + Math.random() * (maxY - minY);
+          }
         }
       } else if (r < 0.85) {
         targetPose = 'sit';
         if (!s.isAvatarLocked) {
-          targetX = minX + Math.random() * (maxX - minX);
-          targetY = minY + Math.random() * (maxY - minY);
+          if (taskbars.length > 0 && Math.random() > 0.3) {
+            const tb = taskbars[0];
+            const randomX = tb.x + 100 + Math.random() * Math.max(0, tb.width - 200);
+            const worldPos = screenToWorld(randomX, tb.y);
+            targetX = worldPos.x;
+            targetY = worldPos.y + 0.82 * avatarScale; // Offset by 0.82 so hips/stool rest exactly on the edge
+          } else {
+            targetX = minX + Math.random() * (maxX - minX);
+            targetY = minY + Math.random() * (maxY - minY);
+          }
         }
       } else if (r < 0.95) {
         targetPose = 'stand';

@@ -115,7 +115,7 @@ For ALL other actions (opening apps, taking screenshots, searching the web, pyth
   ❌ NEVER trigger if the user is merely asking about or discussing an app.
 
 ## TOOL RULES
-- auto_scroll_reels → Starts/stops background exact video completion automatic scrolling. This is a PRO ONLY feature. If the user asks for it, just try to run it.
+- auto_scroll_reels → Starts or stops hands-free auto-scrolling for short videos (like YouTube Shorts or Reels). It uses a reliable universal timer engine to press down/up at specific intervals.
 - go_to_sleep → MUST be called whenever the user says "go to sleep", "sleep", "close yourself", or "hide". This is a FREE feature available to all users!
 - press_key → If the user says "next", "scroll down", "skip", or "scroll up", immediately use press_key({ key: "down" }) or press_key({ key: "up" }) to scroll the video/page! This is a FREE feature available to all users!
 - press_key_combo → use for OS navigation like Win+L (lock PC), Win+D (desktop), Alt+F4 (close), Ctrl+Tab.
@@ -414,11 +414,13 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                 },
                 {
                   name: 'auto_scroll_reels',
-                  description: 'Starts or stops 100% hands-free intelligent auto-scrolling for YouTube Shorts, Instagram Reels, or TikTok.',
+                  description: 'Starts or stops hands-free auto-scrolling for YouTube Shorts, Instagram Reels, or TikTok using a reliable universal timer engine.',
                   parameters: {
                     type: 'OBJECT',
                     properties: {
-                      action: { type: 'STRING', description: 'start or stop' }
+                      action: { type: 'STRING', description: 'start or stop' },
+                      direction: { type: 'STRING', description: 'down or up (default down). down for next video, up for previous video.' },
+                      interval_seconds: { type: 'INTEGER', description: 'How many seconds to wait between scrolls. Default is 30 if not specified by user.' }
                     },
                     required: ['action']
                   }

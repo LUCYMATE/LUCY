@@ -3,6 +3,14 @@ import { BasePose, Emotion } from '../../components/avatar/animations/core';
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
+export interface DesktopRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  is_taskbar: boolean;
+}
+
 interface AvatarState {
   isSpeaking: boolean;
   isThinking: boolean;
@@ -28,6 +36,7 @@ interface AvatarState {
   isDynamicTalkingEnabled: boolean;
   preSpeakingState: { position: { x: number; y: number; z: number }, scale: number, pose: BasePose } | null;
   isSleepMode: boolean;
+  desktopRectangles: DesktopRect[];
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -53,6 +62,7 @@ interface AvatarState {
   setDynamicTalkingEnabled: (val: boolean) => void;
   setPreSpeakingState: (val: { position: { x: number; y: number; z: number }, scale: number, pose: BasePose } | null) => void;
   setIsSleepMode: (val: boolean) => void;
+  setDesktopRectangles: (val: DesktopRect[]) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -80,6 +90,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isDynamicTalkingEnabled: localStorage.getItem('soltini_dynamic_talking') === 'true',
   preSpeakingState: null,
   isSleepMode: false,
+  desktopRectangles: [],
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -105,4 +116,5 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setDynamicTalkingEnabled: (val) => set({ isDynamicTalkingEnabled: val }),
   setPreSpeakingState: (val) => set({ preSpeakingState: val }),
   setIsSleepMode: (val) => set({ isSleepMode: val }),
+  setDesktopRectangles: (val) => set({ desktopRectangles: val }),
 }));

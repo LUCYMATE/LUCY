@@ -54,7 +54,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   }
 
   // Enforce general tool execution rate limits
-  if (!rateLimiter.isAllowed('tool_execution', RATE_LIMITS.TOOL_EXECUTION)) {
+  if (!rateLimiter.isAllowed(`tool_execution_${name}`, RATE_LIMITS.TOOL_EXECUTION)) {
     logger.add('warning', 'Rate Limit', `Tool execution '${name}' throttled.`);
     return { error: `Tool execution '${name}' throttled due to rate limits. Please slow down.` };
   }
@@ -215,49 +215,24 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       }
       
       try {
-        // EXACT VIDEO COMPLETION ENGINE (Windows Media Session)
-        const psScript = `
-          [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media, ContentType = WindowsRuntime] | Out-Null
-          $manager = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync().GetResults()
-          $wshell = New-Object -ComObject wscript.shell
-          $lastPos = 0
-          $lastStatus = 0
-          while ($true) {
-            $session = $manager.GetCurrentSession()
-            if ($session) {
-              $timeline = $session.GetTimelineProperties()
-              $playback = $session.GetPlaybackInfo()
-              $status = if ($playback) { $playback.PlaybackStatus } else { 0 }
+        const interval = parseInt(args.interval_seconds as string, 10) || 30;
+        const direction = args.direction === 'up' ? 'up' : 'down';
 
-              if ($timeline -and $timeline.EndTime.TotalSeconds -gt 0) {
-                $pos = $timeline.Position.TotalSeconds
-                $end = $timeline.EndTime.TotalSeconds
-                
-                # Check for completion (end reached, loop detected, or paused near the end)
-                $isAtEnd = ($end - $pos -le 0.3)
-                $didLoop = ($lastPos -gt 0 -and $pos -lt ($lastPos - 1.0))
-                $didPauseNearEnd = ($lastStatus -eq 4 -and $status -eq 5 -and ($end - $pos -le 2.0))
-                
-                if ($isAtEnd -or $didLoop -or $didPauseNearEnd) {
-                  $wshell.SendKeys('{DOWN}')
-                  Start-Sleep -Seconds 2
-                  $lastPos = 0
-                } else {
-                  $lastPos = $pos
-                }
-              }
-              $lastStatus = $status
-            }
-            Start-Sleep -Milliseconds 300
+        const keyPress = direction === 'up' ? '{UP}' : '{DOWN}';
+        const psScript = `
+          $wshell = New-Object -ComObject wscript.shell
+          while ($true) {
+            Start-Sleep -Seconds ${interval}
+            $wshell.SendKeys('${keyPress}')
           }
         `;
         autoScrollProcess = Command.create('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psScript]);
         await autoScrollProcess.spawn();
-      } catch (e) {
-        console.warn("Failed to spawn exact video completion engine:", e);
-      }
 
-      result = { success: true, message: `100% Exact Video-End Auto-Scrolling activated! I will intelligently scroll to the next video the EXACT moment it finishes. Say 'stop auto scroll' anytime.` };
+        result = { success: true, message: `Auto-Scrolling activated! Tell the user playfully that you've started scrolling ${direction} every ${interval} seconds.` };
+      } catch (e) {
+        result = { error: 'Failed to start auto scroll timer: ' + String(e) };
+      }
     }
   } else if (name === 'search_web') {
     try {
@@ -404,7 +379,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       const pose = String(args.pose || '').toLowerCase();
       
       // Basic free procedural poses vs Pro animations (dance, flying-kiss, caress, custom FBX)
-      const freePoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'sleep', 'point', 'dynamic-talk'];
+      const freePoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'sleep', 'point', 'dynamic-talk', 'thinking'];
       const isProPose = !freePoses.includes(pose) || pose.includes('kiss') || pose.includes('dance') || pose.includes('caress') || pose.includes('flirty');
 
       if (isProPose && !userAuth.isPro()) {

@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Soltini Auto Scroll",
+  "version": "1.0",
+  "description": "Automatically scrolls YouTube Shorts, Instagram Reels, and TikTok videos precisely when they finish.",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.instagram.com/*",
+        "*://*.tiktok.com/*"
+      ],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_title": "Toggle Soltini Auto Scroll"
+  }
+}

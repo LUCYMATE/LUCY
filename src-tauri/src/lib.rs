@@ -941,6 +941,71 @@ fn exit_app() {
     std::process::exit(0);
 }
 
+#[derive(serde::Serialize)]
+struct DesktopRect {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    is_taskbar: bool,
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn enum_window_proc(hwnd: windows_sys::Win32::Foundation::HWND, lparam: windows_sys::Win32::Foundation::LPARAM) -> windows_sys::Win32::Foundation::BOOL {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsWindowVisible, IsIconic, GetWindowRect, GetWindowTextLengthW};
+    
+    if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+        return 1;
+    }
+
+    let len = GetWindowTextLengthW(hwnd);
+    if len == 0 {
+        return 1;
+    }
+    
+    let mut rect: windows_sys::Win32::Foundation::RECT = std::mem::zeroed();
+    if GetWindowRect(hwnd, &mut rect) != 0 {
+        let rects = &mut *(lparam as *mut Vec<DesktopRect>);
+        rects.push(DesktopRect {
+            x: rect.left,
+            y: rect.top,
+            width: rect.right - rect.left,
+            height: rect.bottom - rect.top,
+            is_taskbar: false,
+        });
+    }
+    1
+}
+
+#[tauri::command]
+fn get_desktop_rectangles() -> Vec<DesktopRect> {
+    let mut rects = Vec::new();
+    
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, GetWindowRect, EnumWindows};
+        unsafe {
+            let tray_class: Vec<u16> = "Shell_TrayWnd".encode_utf16().chain(std::iter::once(0)).collect();
+            let taskbar_hwnd = FindWindowW(tray_class.as_ptr(), std::ptr::null());
+            if !taskbar_hwnd.is_null() {
+                let mut rect: windows_sys::Win32::Foundation::RECT = std::mem::zeroed();
+                if GetWindowRect(taskbar_hwnd, &mut rect) != 0 {
+                    rects.push(DesktopRect {
+                        x: rect.left,
+                        y: rect.top,
+                        width: rect.right - rect.left,
+                        height: rect.bottom - rect.top,
+                        is_taskbar: true,
+                    });
+                }
+            }
+            
+            EnumWindows(Some(enum_window_proc), &mut rects as *mut _ as isize);
+        }
+    }
+    rects
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -998,6 +1063,7 @@ pub fn run() {
             is_autostart,
             setup_wayland_automation,
             exit_app,
+            get_desktop_rectangles,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

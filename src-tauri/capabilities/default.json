@@ -78,6 +78,16 @@
           "args": true
         }
       ]
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "powershell",
+          "cmd": "powershell",
+          "args": true
+        }
+      ]
     }
   ]
 }
