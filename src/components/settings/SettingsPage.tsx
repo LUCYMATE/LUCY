@@ -703,28 +703,48 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
               <p className="text-white/60 text-sm mb-6">Soltini's "invisible brain". The AI will silently extract and save important facts about you (e.g. your hobbies, preferences) from your conversations to personalize future interactions.</p>
             </div>
             
-            <div className="bg-black/20 border border-white/5 rounded-2xl p-6">
-              {memories.length === 0 ? (
-                <p className="text-white/40 text-sm italic">No memories saved yet. Talk to Soltini naturally, and she will silently remember important details about you!</p>
-              ) : (
-                <div className="space-y-3">
-                  {memories.map(m => (
-                    <div key={m.id} className="flex items-start justify-between bg-black/40 p-4 rounded-xl border border-white/5 gap-4">
-                      <div className="flex flex-col gap-1">
-                        <p className="text-white/90 text-sm leading-relaxed">{m.text}</p>
-                        <p className="text-white/30 text-xs">{new Date(m.createdAt).toLocaleString()}</p>
-                      </div>
-                      <button 
-                        onClick={() => vectorMemory.deleteMemory(m.id)} 
-                        className="text-pink-500 hover:text-pink-400 text-sm px-3 py-1.5 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 shrink-0 transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ))}
+            {!userAuth.isPro() ? (
+              <div className="bg-black/30 border border-pink-500/20 rounded-2xl p-8 text-center flex flex-col items-center justify-center gap-4 relative overflow-hidden backdrop-blur-md">
+                <div className="w-14 h-14 rounded-full bg-pink-500/10 border border-pink-500/30 flex items-center justify-center text-pink-400 text-2xl shadow-lg shadow-pink-500/10">
+                  🔒
                 </div>
-              )}
-            </div>
+                <div>
+                  <h4 className="text-xl font-bold text-white mb-2">Personalized Memory is a Pro Feature</h4>
+                  <p className="text-white/60 text-sm max-w-md leading-relaxed">
+                    Soltini silently collects and saves your preferences for free in the background. Upgrade to Pro to view your memory bank, edit facts, and allow Soltini to recall them in real-time conversations!
+                  </p>
+                </div>
+                <button 
+                  onClick={() => window.open('https://soltini.vercel.app/pricing', '_blank')}
+                  className="mt-2 px-6 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-medium rounded-full shadow-lg shadow-pink-500/20 transition-all text-sm cursor-pointer"
+                >
+                  Upgrade to Pro ($3 / ₹199)
+                </button>
+              </div>
+            ) : (
+              <div className="bg-black/20 border border-white/5 rounded-2xl p-6">
+                {memories.length === 0 ? (
+                  <p className="text-white/40 text-sm italic">No memories saved yet. Talk to Soltini naturally, and she will silently remember important details about you!</p>
+                ) : (
+                  <div className="space-y-3">
+                    {memories.map(m => (
+                      <div key={m.id} className="flex items-start justify-between bg-black/40 p-4 rounded-xl border border-white/5 gap-4">
+                        <div className="flex flex-col gap-1">
+                          <p className="text-white/90 text-sm leading-relaxed">{m.text}</p>
+                          <p className="text-white/30 text-xs">{new Date(m.createdAt).toLocaleString()}</p>
+                        </div>
+                        <button 
+                          onClick={() => vectorMemory.deleteMemory(m.id)} 
+                          className="text-pink-500 hover:text-pink-400 text-sm px-3 py-1.5 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 shrink-0 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

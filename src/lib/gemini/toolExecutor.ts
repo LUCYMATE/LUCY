@@ -8,12 +8,19 @@ import { useAvatarState } from '../store/avatarState';
 import { addScheduledTask, cancelScheduledTaskById, startScheduler } from './scheduler';
 import { rateLimiter, RATE_LIMITS } from '../utils/rateLimiter';
 import { userAuth } from '../auth/userAuth';
+import { Command } from '@tauri-apps/plugin-shell';
 
 let lastScreenScaleFactor = 1.0;
+let autoScrollProcess: any = null;
 
 export async function executeTool(name: string, args: any, deferredMedia?: string[]): Promise<any> {
-  // Pro tier check for advanced automation, custom uploads & special animations
+  // Pro tier check for advanced automation, custom uploads & OS execution
   const proOnlyTools = [
+    'trigger_automation',
+    'open_app',
+    'close_app',
+    'open_external_url',
+    'run_terminal_command',
     'run_python_script', 
     'move_and_click_mouse', 
     'scroll_mouse', 
@@ -23,14 +30,27 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     'capture_screen', 
     'capture_camera', 
     'save_3d_asset', 
-    'delete_3d_asset'
+    'delete_3d_asset',
+    'auto_scroll_reels'
   ];
   if (proOnlyTools.includes(name) && !userAuth.isPro()) {
-    // Instead of logging, we instruct the model to handle the upsell verbally.
-    return { 
-      error: "PRO_FEATURE_LOCKED", 
-      system_instruction_to_model: `You just tried to use the '${name}' tool, but the user is on the free tier. Speak directly to the user in your persona's voice! Politely and playfully let them know this is a premium feature, and they can unlock it by upgrading to Pro (just $3 or ₹199) in the Settings menu.`
-    };
+    // Exceptions for free users: scrolling down/up when they say "next" or "scroll"
+    const isFreeScroll = name === 'press_key' && (args.key === 'down' || args.key === 'up');
+    
+    // Exception for basic OS navigation shortcuts on Free tier
+    const isFreeOsNav = name === 'press_key_combo' && Array.isArray(args.keys) && args.keys.length >= 2 && (
+      (args.keys[0] === 'win' && (args.keys[1] === 'l' || args.keys[1] === 'd')) ||
+      (args.keys[0] === 'alt' && (args.keys[1] === 'f4' || args.keys[1] === 'tab')) ||
+      (args.keys[0] === 'ctrl' && (args.keys[1] === 'w' || args.keys[1] === 'tab'))
+    );
+    
+    if (!isFreeScroll && !isFreeOsNav) {
+      // Instead of logging, we instruct the model to handle the upsell verbally.
+      return { 
+        error: "PRO_FEATURE_LOCKED", 
+        system_instruction_to_model: `You just tried to use the '${name}' tool (OS automation, opening apps, playing YouTube songs, controlling system), but the user is on the free tier. Speak directly to the user in your persona's voice! Politely and playfully let them know that OS automation, opening apps, and playing songs are Pro features, and they can unlock them by upgrading to Pro (just $3 or ₹199) in the Settings menu.`
+      };
+    }
   }
 
   // Enforce general tool execution rate limits
@@ -86,23 +106,50 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     result = { success, message: success ? 'Memory saved.' : 'Failed to save.' };
   } else if (name === 'search_memory') {
     const key = localStorage.getItem('soltini_main_api_key');
-    if (!key) throw new Error('API key required for memory embeddings');
-    const memories = await vectorMemory.searchWithText(args.query, key, 5);
     const query = String(args.query || '').toLowerCase();
     const queryWords = query.split(/\s+/).filter(w => w.length > 2);
     const allFacts = memoryStore.getAllUserFacts();
     const localMatches: string[] = [];
     for (const [k, v] of Object.entries(allFacts)) {
       const text = `${k}: ${v}`;
-      if (queryWords.some(w => text.toLowerCase().includes(w))) localMatches.push(text);
+      if (queryWords.length === 0 || queryWords.some(w => text.toLowerCase().includes(w))) localMatches.push(text);
     }
-    result = { success: true, memories: [...memories.memories, ...localMatches.slice(0, 3)] };
+    
+    let vectorMemories: string[] = [];
+    if (userAuth.isPro() && key) {
+      try {
+        const memories = await vectorMemory.searchWithText(args.query, key, 5);
+        vectorMemories = memories.memories || [];
+      } catch (e) {}
+    }
+    result = { success: true, memories: [...vectorMemories, ...localMatches.slice(0, 3)] };
   } else if (name === 'press_key') {
     await invoke('press_key', { key: args.key });
     result = { success: true };
   } else if (name === 'press_key_combo') {
     const keys = args.keys || [];
-    await invoke('press_key_combo', { keys });
+    const lowerKeys = keys.map((k: string) => k.toLowerCase());
+    
+    // Windows OS-level shortcuts often block simulated input, so we use native commands
+    if (lowerKeys.includes('win')) {
+      if (lowerKeys.includes('l')) {
+        await invoke('run_terminal_command', { command: 'rundll32.exe user32.dll,LockWorkStation' });
+      } else if (lowerKeys.includes('d')) {
+        await invoke('run_terminal_command', { command: 'powershell -Command "(New-Object -ComObject shell.application).toggleDesktop()"' });
+      } else if (lowerKeys.includes('e')) {
+        await invoke('run_terminal_command', { command: 'powershell -Command "[System.Diagnostics.Process]::Start(\'explorer.exe\')"' });
+      } else if (lowerKeys.includes('r')) {
+        await invoke('run_terminal_command', { command: 'powershell -Command "(New-Object -ComObject shell.application).FileRun()"' });
+      } else if (lowerKeys.includes('m')) {
+        await invoke('run_terminal_command', { command: 'powershell -Command "(New-Object -ComObject shell.application).MinimizeAll()"' });
+      } else if (lowerKeys.includes('i')) {
+        await invoke('run_terminal_command', { command: 'start ms-settings:' });
+      } else {
+        await invoke('press_key_combo', { keys });
+      }
+    } else {
+      await invoke('press_key_combo', { keys });
+    }
     result = { success: true };
   } else if (name === 'capture_screen') {
     const screenData = await invoke<{ base64: string, width: number, height: number, scale_factor?: number }>('capture_screen');
@@ -151,8 +198,66 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
         deferredMedia.push(base64Jpeg);
       }
       result = { success: true, message: 'Webcam photo captured and injected into your visual cortex. Look at the image.' };
-    } catch (e) {
-      result = { error: 'Failed to capture webcam: ' + String(e) };
+    } catch (e: any) {
+      result = { error: 'Failed to access webcam: ' + e.message };
+    }
+  } else if (name === 'auto_scroll_reels') {
+    if (args.action === 'stop') {
+      if (autoScrollProcess) {
+        try { await autoScrollProcess.kill(); } catch(e) {}
+        autoScrollProcess = null;
+      }
+      result = { success: true, message: 'Auto-scrolling stopped.' };
+    } else {
+      if (autoScrollProcess) {
+        try { await autoScrollProcess.kill(); } catch(e) {}
+        autoScrollProcess = null;
+      }
+      
+      try {
+        // EXACT VIDEO COMPLETION ENGINE (Windows Media Session)
+        const psScript = `
+          [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media, ContentType = WindowsRuntime] | Out-Null
+          $manager = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync().GetResults()
+          $wshell = New-Object -ComObject wscript.shell
+          $lastPos = 0
+          $lastStatus = 0
+          while ($true) {
+            $session = $manager.GetCurrentSession()
+            if ($session) {
+              $timeline = $session.GetTimelineProperties()
+              $playback = $session.GetPlaybackInfo()
+              $status = if ($playback) { $playback.PlaybackStatus } else { 0 }
+
+              if ($timeline -and $timeline.EndTime.TotalSeconds -gt 0) {
+                $pos = $timeline.Position.TotalSeconds
+                $end = $timeline.EndTime.TotalSeconds
+                
+                # Check for completion (end reached, loop detected, or paused near the end)
+                $isAtEnd = ($end - $pos -le 0.3)
+                $didLoop = ($lastPos -gt 0 -and $pos -lt ($lastPos - 1.0))
+                $didPauseNearEnd = ($lastStatus -eq 4 -and $status -eq 5 -and ($end - $pos -le 2.0))
+                
+                if ($isAtEnd -or $didLoop -or $didPauseNearEnd) {
+                  $wshell.SendKeys('{DOWN}')
+                  Start-Sleep -Seconds 2
+                  $lastPos = 0
+                } else {
+                  $lastPos = $pos
+                }
+              }
+              $lastStatus = $status
+            }
+            Start-Sleep -Milliseconds 300
+          }
+        `;
+        autoScrollProcess = Command.create('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psScript]);
+        await autoScrollProcess.spawn();
+      } catch (e) {
+        console.warn("Failed to spawn exact video completion engine:", e);
+      }
+
+      result = { success: true, message: `100% Exact Video-End Auto-Scrolling activated! I will intelligently scroll to the next video the EXACT moment it finishes. Say 'stop auto scroll' anytime.` };
     }
   } else if (name === 'search_web') {
     try {

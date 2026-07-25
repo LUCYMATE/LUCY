@@ -68,6 +68,16 @@
         }
       ]
     },
-    "fs:default"
+    "fs:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "powershell",
+          "cmd": "powershell",
+          "args": true
+        }
+      ]
+    }
   ]
 }

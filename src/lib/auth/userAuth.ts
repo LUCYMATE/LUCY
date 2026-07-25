@@ -31,13 +31,37 @@ class UserAuthManager {
         const parsed: UserSession = JSON.parse(stored);
         if (parsed.expiresAt > Date.now()) {
           this.session = parsed;
+          this.authorizeRust(parsed.token);
         } else {
           this.logout();
         }
+      } else {
+        this.authorizeRust();
       }
     } catch (e) {
       console.warn('[UserAuth] Failed to load local user session:', e);
+      this.authorizeRust();
     }
+  }
+
+  public authorizeRust(token?: string) {
+    const t = token || this.session?.token;
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      if (t) {
+        const tokenParts = t.split('.');
+        if (tokenParts.length === 3) {
+          invoke('verify_license', {
+            tokenPayload: `${tokenParts[0]}.${tokenParts[1]}`,
+            signature: tokenParts[2]
+          }).then(() => console.log('[UserAuth] Rust backend authorized via token.'))
+            .catch(() => {
+              invoke('check_authorization').catch(() => {});
+            });
+          return;
+        }
+      }
+      invoke('check_authorization').catch(() => {});
+    }).catch(() => {});
   }
 
   public getSession(): UserSession | null {
@@ -55,9 +79,21 @@ class UserAuthManager {
   }
 
   public logout() {
+    const oldSession = this.session;
     this.session = null;
     localStorage.removeItem(STORAGE_KEY);
     this.notify();
+
+    if (oldSession && oldSession.token) {
+      fetch('https://soltini.vercel.app/api/auth/logout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${oldSession.token}`
+        },
+        body: JSON.stringify({ token: oldSession.token })
+      }).catch(err => console.warn('[UserAuth] Logout API error:', err));
+    }
   }
 
   public subscribe(fn: (session: UserSession | null) => void) {
@@ -78,69 +114,68 @@ class UserAuthManager {
 
       const pubKeyEnv = import.meta.env.VITE_ED25519_PUBLIC_KEY;
       const parts = cleanToken.split('.');
+      
+      const padB64 = (str: string) => {
+        let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        return b64;
+      };
 
       if (parts.length === 3) {
         // JWT format: header.payload.signature
         const [header, payload, signature] = parts;
         
         // Base64Url decode payload
-        const payloadStr = decodeURIComponent(atob(payload.replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+        const payloadStr = decodeURIComponent(atob(padB64(payload)).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
         data = JSON.parse(payloadStr);
 
-        // Verify ED25519 Signature if public key is provided and tier is pro
-        if (pubKeyEnv && data.tier === 'pro') {
-          try {
-            // Support both Hex and Base64 public keys
-            let keyBytes: Uint8Array;
-            if (/^[0-9a-fA-F]+$/.test(pubKeyEnv)) {
-              keyBytes = new Uint8Array((pubKeyEnv.match(/.{1,2}/g) || []).map(byte => parseInt(byte, 16)));
-            } else {
-              keyBytes = Uint8Array.from(atob(pubKeyEnv), c => c.charCodeAt(0));
-            }
+        if (!pubKeyEnv) {
+          console.error('[UserAuth] VITE_ED25519_PUBLIC_KEY is not set. Cannot verify token.');
+          return false;
+        }
 
-            const cryptoKey = await window.crypto.subtle.importKey(
-              "raw",
-              keyBytes,
-              { name: "Ed25519" },
-              false,
-              ["verify"]
-            );
-
-            // Convert Base64Url signature to Uint8Array
-            const sigB64 = signature.replace(/-/g, '+').replace(/_/g, '/');
-            const sigBytes = Uint8Array.from(atob(sigB64), c => c.charCodeAt(0));
-
-            // Verify standard JWT signed data: "header.payload"
-            const signedData = new TextEncoder().encode(`${header}.${payload}`);
-
-            isVerified = await window.crypto.subtle.verify(
-              { name: "Ed25519" },
-              cryptoKey,
-              sigBytes,
-              signedData
-            );
-            
-            if (!isVerified) {
-              console.warn('[UserAuth] ED25519 Signature verification failed for PRO tier.');
-              data.tier = 'free'; // Downgrade to free if signature is invalid
-            }
-          } catch (cryptoErr) {
-            console.error('[UserAuth] Crypto verification error:', cryptoErr);
-            data.tier = 'free'; // Downgrade on crypto failure
+        try {
+          // Support both Hex and Base64 public keys
+          let keyBytes: Uint8Array;
+          if (/^[0-9a-fA-F]+$/.test(pubKeyEnv)) {
+            keyBytes = new Uint8Array((pubKeyEnv.match(/.{1,2}/g) || []).map(byte => parseInt(byte, 16)));
+          } else {
+            keyBytes = Uint8Array.from(atob(pubKeyEnv), c => c.charCodeAt(0));
           }
-        } else if (!pubKeyEnv && data.tier === 'pro') {
-           // If no public key is provided to verify, we shouldn't blindly trust PRO
-           console.warn('[UserAuth] VITE_ED25519_PUBLIC_KEY is not set. Downgrading PRO to free for security.');
-           data.tier = 'free';
+
+          const cryptoKey = await window.crypto.subtle.importKey(
+            "raw",
+            keyBytes,
+            { name: "Ed25519" },
+            false,
+            ["verify"]
+          );
+
+          // Convert Base64Url signature to Uint8Array
+          const sigB64 = padB64(signature);
+          const sigBytes = Uint8Array.from(atob(sigB64), c => c.charCodeAt(0));
+
+          // Verify standard JWT signed data: "header.payload"
+          const signedData = new TextEncoder().encode(`${header}.${payload}`);
+
+          isVerified = await window.crypto.subtle.verify(
+            { name: "Ed25519" },
+            cryptoKey,
+            sigBytes,
+            signedData
+          );
+          
+          if (!isVerified) {
+            console.warn('[UserAuth] ED25519 Signature verification failed.');
+            return false;
+          }
+        } catch (cryptoErr) {
+          console.error('[UserAuth] Crypto verification error:', cryptoErr);
+          return false;
         }
       } else {
-        // Fallback for old base64 JSON format (insecure, downgrade PRO)
-        const jsonStr = atob(cleanToken);
-        data = JSON.parse(jsonStr);
-        if (data.tier === 'pro') {
-          console.warn('[UserAuth] Old token format used without signature. Downgrading PRO to free.');
-          data.tier = 'free';
-        }
+        console.error('[UserAuth] Invalid token format. Expected 3-part JWT.');
+        return false;
       }
 
       if (data && data.email && data.tier) {
@@ -154,6 +189,20 @@ class UserAuthManager {
           expiresAt: data.expiresAt || (Date.now() + 30 * 24 * 60 * 60 * 1000)
         };
         this.setSession(newSession);
+
+        // Notify the Rust backend so it unlocks the system API commands
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const tokenParts = cleanToken.split('.');
+          await invoke('verify_license', {
+            tokenPayload: `${tokenParts[0]}.${tokenParts[1]}`,
+            signature: tokenParts[2]
+          });
+          console.log("[UserAuth] Rust backend successfully authorized.");
+        } catch (invokeErr) {
+          console.error("[UserAuth] Failed to authorize Rust backend:", invokeErr);
+        }
+
         return true;
       }
     } catch (e) {
@@ -193,6 +242,9 @@ class UserAuthManager {
           this.setSession(updatedSession);
           return updatedSession;
         }
+      } else {
+        this.logout();
+        return null;
       }
     } catch (e) {
       console.warn('[UserAuth] Server refresh status check failed:', e);

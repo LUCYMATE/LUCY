@@ -5,18 +5,23 @@ import { openExternalUrl } from '../lib/system/tauriBridge';
 
 export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
   const [stage, setStage] = useState<'checking' | 'locked' | 'authorized'>('checking');
-  
-  const [sessionId] = useState(() => crypto.randomUUID());
+  const [authError, setAuthError] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const checkAuth = useCallback(async () => {
     setStage('checking');
     const session = userAuth.getSession();
-    if (session) {
+    if (session && session.status !== 'revoked') {
       setStage('authorized');
+      setAuthError(null);
       setTimeout(onAuthorized, 800);
     } else {
       setStage('locked');
+      if (session?.status === 'revoked') {
+        setAuthError('Your access has been revoked or suspended. Please contact support.');
+      } else {
+        setAuthError(null);
+      }
     }
   }, [onAuthorized]);
 
@@ -24,10 +29,17 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     checkAuth();
     
     // Listen for auth state changes from deep link or other sources
+    const handleAuthError = (e: any) => {
+      setAuthError(e.detail || 'Authentication failed.');
+      if (pollingRef.current) clearTimeout(pollingRef.current);
+    };
+    window.addEventListener('soltini-auth-error', handleAuthError);
+
     const unsub = userAuth.subscribe((session) => {
       if (session && session.status !== 'revoked') {
         setStage('authorized');
-        if (pollingRef.current) clearInterval(pollingRef.current);
+        setAuthError(null);
+        if (pollingRef.current) clearTimeout(pollingRef.current);
         
         // Restore alwaysOnTop when authorized
         import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
@@ -37,23 +49,36 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         setTimeout(onAuthorized, 800);
       } else {
         setStage('locked');
+        if (session?.status === 'revoked') {
+          setAuthError('Your access has been revoked or suspended. Please contact support.');
+        } else {
+          setAuthError(null);
+        }
         
         // Ensure the window behaves like a normal window again if they are logged out
         import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
           const win = getCurrentWindow();
           win.setAlwaysOnTop(false).catch(() => {});
+          win.setIgnoreCursorEvents(false).catch(() => {});
           win.unmaximize().catch(() => {});
           win.setSkipTaskbar(false).catch(() => {});
+          import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
+            win.setSize(new LogicalSize(1000, 700)).catch(() => {});
+            win.center().catch(() => {});
+          }).catch(() => {});
         }).catch(() => {});
       }
     });
     return () => { 
       unsub(); 
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      window.removeEventListener('soltini-auth-error', handleAuthError);
+      if (pollingRef.current) clearTimeout(pollingRef.current);
     };
   }, [checkAuth, onAuthorized]);
 
   const handleSignIn = async () => {
+    const sessionId = crypto.randomUUID();
+
     // Drop alwaysOnTop so the browser opens in front of the app
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -62,23 +87,62 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       console.warn("Failed to drop alwaysOnTop", e);
     }
 
-    // Start polling the backend for the session token
-    if (pollingRef.current) clearInterval(pollingRef.current);
-    pollingRef.current = setInterval(async () => {
+    setAuthError(null);
+
+    // Generate PKCE code verifier and challenge
+    const generateVerifier = () => {
+      const array = new Uint8Array(32);
+      window.crypto.getRandomValues(array);
+      return btoa(String.fromCharCode.apply(null, Array.from(array))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    };
+    
+    const codeVerifier = generateVerifier();
+    
+    // Hash it for the challenge
+    const encoder = new TextEncoder();
+    const data = encoder.encode(codeVerifier);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const codeChallenge = btoa(String.fromCharCode.apply(null, hashArray)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    const stateParam = crypto.randomUUID();
+    localStorage.setItem('soltini_auth_state', stateParam);
+
+    // Start polling the backend for the session token with exponential backoff
+    if (pollingRef.current) clearTimeout(pollingRef.current);
+    let attempts = 0;
+    
+    const poll = async () => {
       try {
-        const res = await fetch(`https://soltini.vercel.app/api/auth/session?id=${sessionId}`);
+        const res = await fetch(`https://soltini.vercel.app/api/auth/session?id=${sessionId}&code_verifier=${codeVerifier}`);
         const data = await res.json();
         if (data.success && data.status === 'authenticated' && data.token) {
-          if (pollingRef.current) clearInterval(pollingRef.current);
-          await userAuth.parseAndSetToken(data.token);
+          const success = await userAuth.parseAndSetToken(data.token);
+          if (!success) {
+            setAuthError('Invalid token received. Signature verification failed.');
+          }
+          return;
         }
       } catch (err) {
         console.warn("Session polling failed", err);
       }
-    }, 2000);
+      
+      attempts++;
+      if (attempts === 8) {
+        setAuthError('Still waiting for authentication...');
+      }
 
-    // Open the authentication portal with the session ID
-    openExternalUrl(`https://soltini.vercel.app/auth/google?session_id=${sessionId}`);
+      if (attempts < 20) {
+        const nextDelay = Math.min(2000 * Math.pow(1.5, Math.floor(attempts / 3)), 10000);
+        pollingRef.current = setTimeout(poll, nextDelay) as any;
+      } else {
+        setAuthError('Login timed out — try again.');
+      }
+    };
+    poll();
+
+    // Open the authentication portal with the session ID and PKCE challenge
+    openExternalUrl(`https://soltini.vercel.app/auth/google?session_id=${sessionId}&code_challenge=${codeChallenge}&state=${stateParam}`);
   };
 
   return (
@@ -131,7 +195,8 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
             border: '1px solid rgba(99,102,241,0.2)',
             borderRadius: 24,
             padding: '40px 40px',
-            animation: 'fadeIn 0.4s ease, pulse-glow 3s ease-in-out infinite',
+            boxShadow: '0 0 25px rgba(129,140,248,0.15)',
+            animation: 'fadeIn 0.4s ease',
             pointerEvents: 'auto',
           }}>
           
@@ -163,14 +228,14 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
               }}>🔒</div>
               <h1 style={{
                 fontSize: 22, fontWeight: 700, margin: '0 0 8px',
-                background: 'linear-gradient(90deg, #818cf8, #c084fc)',
+                background: authError ? 'linear-gradient(90deg, #ef4444, #f87171)' : 'linear-gradient(90deg, #818cf8, #c084fc)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
               }}>
-                Sign in to Soltini
+                {authError ? 'Access Revoked' : 'Sign in to Soltini'}
               </h1>
-              <p style={{ color: '#475569', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
-                You must sign in with Google to use Soltini on this device.
+              <p style={{ color: authError ? '#fca5a5' : '#475569', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+                {authError || 'You must sign in with Google to use Soltini on this device.'}
               </p>
             </div>
 

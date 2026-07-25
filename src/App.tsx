@@ -28,23 +28,42 @@ export default function App() {
       try {
         const handleLink = async (url: string) => {
           // Handle multiple deep link formats
+          // Handle multiple deep link formats
           let token: string | null = null;
+          let state: string | null = null;
           try {
             const urlObj = new URL(url);
             token = urlObj.searchParams.get('token') || urlObj.searchParams.get('t');
+            state = urlObj.searchParams.get('state');
           } catch (_) {}
 
           if (!token) {
-            const match = url.match(/[?#&/]?token=([^&\s]+)/);
-            if (match) token = decodeURIComponent(match[1]);
+            const matchToken = url.match(/[?#&/]?token=([^&\s]+)/);
+            if (matchToken) token = decodeURIComponent(matchToken[1]);
+            const matchState = url.match(/[?#&/]?state=([^&\s]+)/);
+            if (matchState) state = decodeURIComponent(matchState[1]);
           }
 
           if (token) {
+            const expectedState = localStorage.getItem('soltini_auth_state');
+            if (!expectedState || state !== expectedState) {
+              console.warn('[DeepLink] Invalid or missing state parameter. Ignoring token.');
+              window.dispatchEvent(new CustomEvent('soltini-auth-error', { detail: 'Security mismatch. The login request may have expired or was initiated from another tab.' }));
+              return;
+            }
+            localStorage.removeItem('soltini_auth_state');
             console.log('[DeepLink] Received token, parsing...');
             const success = await userAuth.parseAndSetToken(token);
             if (success) {
-              setLicenseStatus('authorized');
-              try { await getCurrentWindow().setAlwaysOnTop(true); } catch (_) {}
+              const session = userAuth.getSession();
+              if (session && session.status !== 'revoked') {
+                setLicenseStatus('authorized');
+                try { await getCurrentWindow().setAlwaysOnTop(true); } catch (_) {}
+              } else {
+                setLicenseStatus('locked');
+              }
+            } else {
+              window.dispatchEvent(new CustomEvent('soltini-auth-error', { detail: 'Token verification failed. Please try again.' }));
             }
           }
         };
@@ -105,6 +124,7 @@ export default function App() {
         await safe(win.setAlwaysOnTop(true)); // Force restore alwaysOnTop
         await safe(win.maximize());
         await safe(win.show());
+        await safe(win.setIgnoreCursorEvents(true)); // Force click-through mode on login restore
       }
       
       // Hide from taskbar now that authentication is complete. 
@@ -163,15 +183,17 @@ export default function App() {
     // 1. Listen for global session changes (e.g. from refreshStatus or deep links)
     const unsub = userAuth.subscribe((session) => {
       if (!session || session.status === 'revoked') {
-        if (licenseStatus === 'authorized') {
-          console.warn('[App] Session revoked or cleared. Locking app.');
-          setLicenseStatus('locked');
-          // Restore window so they can see AuthGate
-          const win = getCurrentWindow();
-          win.unmaximize().catch(() => {});
-          win.show().catch(() => {});
-          win.setSkipTaskbar(false).catch(() => {});
-        }
+        console.warn('[App] Session revoked or cleared. Locking app.');
+        setLicenseStatus('locked');
+        // Restore window so they can see AuthGate
+        const win = getCurrentWindow();
+        win.unmaximize().catch(() => {});
+        win.show().catch(() => {});
+        win.setSkipTaskbar(false).catch(() => {});
+        import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
+          win.setSize(new LogicalSize(1000, 700)).catch(() => {});
+          win.center().catch(() => {});
+        }).catch(() => {});
       }
     });
 
@@ -275,10 +297,19 @@ export default function App() {
     const handleSleep = () => {
       // Stop the cursor-passthrough loop while asleep; nothing interactive is on screen.
       if (timer) { clearTimeout(timer); timer = null; }
+      // Explicitly set window ignore cursor events to true so desktop is 100% click-through!
+      lastIgnore = true;
+      win.setIgnoreCursorEvents(true).catch(() => {});
     };
 
     const handleWakeUp = () => {
       lastIgnore = false; // Force re-evaluation
+
+      // Ensure the window gets restored and maximized properly
+      const win = getCurrentWindow();
+      win.setAlwaysOnTop(true).catch(() => {});
+      win.maximize().catch(() => {});
+      win.show().catch(() => {});
 
       // Force DOM repaint to fix Windows WebView2 blank screen bug after memory trim on wake
       document.body.style.backgroundColor = 'rgba(0,0,0,0.01)';

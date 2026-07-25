@@ -28,7 +28,7 @@ export class AudioRecorder {
       const audioConstraints: MediaTrackConstraints = {
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: false,
+        autoGainControl: true,
         ...(savedDeviceId && savedDeviceId !== 'default' ? { deviceId: { exact: savedDeviceId } } : {})
       };
 
@@ -41,7 +41,7 @@ export class AudioRecorder {
         if (audioConstraints.deviceId) {
           logger.add('info', 'Mic Initialization', 'Failed with exact deviceId. Falling back to default microphone.');
           this.stream = await Promise.race([
-            navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } }),
+            navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
             timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
           ]);
         } else {
@@ -62,7 +62,6 @@ export class AudioRecorder {
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-worklet');
       
       this.workletNode.port.onmessage = (event) => {
-        this.lastDataTime = Date.now();
         if (this.onData) {
           this.onData(event.data);
         }
@@ -80,7 +79,7 @@ export class AudioRecorder {
       this.lastDataTime = Date.now();
       
       this.heartbeatInterval = setInterval(() => {
-        // 1. Play a 1ms silent blip to keep the context awake
+        // Play a 1ms silent blip to keep the AudioContext awake on Chromium/Tauri WebViews
         if (this.audioContext && this.audioContext.state !== 'closed') {
           try {
             const osc = this.audioContext.createOscillator();
@@ -88,12 +87,6 @@ export class AudioRecorder {
             osc.start();
             osc.stop(this.audioContext.currentTime + 0.001); // 1ms beep
           } catch (e) {}
-        }
-
-        // 2. Check if the worklet stopped sending data (device slept or suspended)
-        if (Date.now() - this.lastDataTime > 15000) {
-          // No data received for 15 seconds! The mic is frozen.
-          if (this.onMicFrozen) this.onMicFrozen();
         }
       }, 10000); // Check every 10 seconds
 

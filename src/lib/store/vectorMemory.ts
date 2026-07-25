@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { logger } from './logger';
+import { userAuth } from '../auth/userAuth';
 
 export interface MemoryFact {
   id: string;
@@ -98,11 +99,25 @@ export class VectorMemoryManager {
 
     const embedding = embeddingResult as number[];
 
-    // Check if a highly similar fact already exists to prevent duplicates
+    // Check if a similar fact already exists to prevent duplicate boxes
     const searchResults = this.search(embedding, 1);
-    if (searchResults.length > 0 && searchResults[0].score > 0.95) {
-      logger.add('info', 'Memory System', `Fact already known: "${text}"`);
-      return { success: true }; // Consider it successful since we already know it
+    if (searchResults.length > 0) {
+      const topMatch = searchResults[0];
+      if (topMatch.score > 0.90) {
+        // Virtually identical fact — just update timestamp
+        topMatch.fact.createdAt = Date.now();
+        this.saveToStorage();
+        logger.add('info', 'Memory System', `Fact updated (identical): "${text}"`);
+        return { success: true };
+      } else if (topMatch.score >= 0.70) {
+        // Similar fact — update the existing box content rather than creating a duplicate box!
+        topMatch.fact.text = text;
+        topMatch.fact.embedding = embedding;
+        topMatch.fact.createdAt = Date.now();
+        this.saveToStorage();
+        logger.add('info', 'Memory System', `Fact updated (refined): "${text}"`);
+        return { success: true };
+      }
     }
 
     const memory: MemoryFact = {
@@ -131,6 +146,11 @@ export class VectorMemoryManager {
   }
 
   public async searchWithText(query: string, apiKey: string, topK: number = 5): Promise<{ memories: string[], error?: string }> {
+    // Memory recall is restricted to Pro users
+    if (!userAuth.isPro()) {
+      return { memories: [], error: 'PRO_RECALL_LOCKED' };
+    }
+
     if (this.memories.length === 0) return { memories: [] };
     
     const embeddingResult = await this.generateEmbedding(query, apiKey);

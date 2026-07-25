@@ -20,10 +20,11 @@ export function useCoreEngine() {
   const modelBubbleIdRef = useRef<string>('');
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasSentGreetingRef = useRef(false);
 
-  // Shared dummy mic stream for sleep mode
   const dummyMicStreamRef = useRef<MediaStream | null>(null);
   const speechRecognitionRef = useRef<any>(null);
+  const speechWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startWakeWordListener = useCallback(() => {
     if (!useAvatarState.getState().isSleepMode) return;
@@ -35,8 +36,14 @@ export function useCoreEngine() {
     // in Chromium/WebView2 that isn't freed until page teardown.
     const existing = speechRecognitionRef.current;
     if (existing) {
-      try { existing.start(); } catch (e) { /* already started or aborted */ }
-      return;
+      try { 
+        existing.start(); 
+        return;
+      } catch (e: any) { 
+        if (e.name === 'InvalidStateError') return; // Already started
+        // If it's a different error, the instance is likely dead.
+        try { existing.abort(); } catch (_) {}
+      }
     }
 
     try {
@@ -92,20 +99,34 @@ export function useCoreEngine() {
         }
       };
 
-      sr.onerror = () => setTimeout(restart, 2000);
-      sr.onend = () => setTimeout(restart, 100); // Fast restart to catch subsequent words
+      sr.onerror = (event: any) => {
+        // 'no-speech' happens constantly in silence. Restart instantly so we don't have a 2-second deaf window!
+        if (event.error === 'no-speech') {
+          setTimeout(restart, 50);
+        } else {
+          setTimeout(restart, 2000);
+        }
+      };
+      sr.onend = () => setTimeout(restart, 50); // Fast restart to catch subsequent words
 
       // Watchdog timer: forcefully abort and restart the listener every 60 seconds.
+      // Clear any existing watchdog
+      if (speechWatchdogRef.current) {
+        clearInterval(speechWatchdogRef.current);
+      }
+
       // This prevents Chromium's aggressive 5-minute microphone suspension and zombie API bugs.
-      const watchdog = setInterval(() => {
+      speechWatchdogRef.current = setInterval(() => {
         if (!useAvatarState.getState().isSleepMode) {
-          clearInterval(watchdog);
+          if (speechWatchdogRef.current) clearInterval(speechWatchdogRef.current);
           return;
         }
         try { sr.abort(); } catch(e) {}
         setTimeout(() => {
           if (useAvatarState.getState().isSleepMode) {
-            try { sr.start(); } catch(e) {}
+            try { sr.start(); } catch(e) {
+              startWakeWordListener();
+            }
           }
         }, 200);
       }, 60000);
@@ -256,12 +277,15 @@ export function useCoreEngine() {
 
     player.start();
 
-    let hasSentGreeting = false;
+    if (isWakeUp) {
+      hasSentGreetingRef.current = false;
+    }
+
     gemini.onStateChange = (state, detail) => {
       setConnectionState(state);
 
-      if (state === 'connected' && !hasSentGreeting) {
-        hasSentGreeting = true;
+      if (state === 'connected' && !hasSentGreetingRef.current) {
+        hasSentGreetingRef.current = true;
         setTimeout(async () => {
           const pendingQuery = sessionStorage.getItem('soltini_pending_query');
           const updateInfo = await checkAppUpdate();
