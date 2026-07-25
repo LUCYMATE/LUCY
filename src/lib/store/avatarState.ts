@@ -37,6 +37,7 @@ interface AvatarState {
   preSpeakingState: { position: { x: number; y: number; z: number }, scale: number, pose: BasePose } | null;
   isSleepMode: boolean;
   desktopRectangles: DesktopRect[];
+  anchor: { type: 'window' | 'taskbar', rect: DesktopRect } | null;
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -63,6 +64,7 @@ interface AvatarState {
   setPreSpeakingState: (val: { position: { x: number; y: number; z: number }, scale: number, pose: BasePose } | null) => void;
   setIsSleepMode: (val: boolean) => void;
   setDesktopRectangles: (val: DesktopRect[]) => void;
+  setAnchor: (val: { type: 'window' | 'taskbar', rect: DesktopRect } | null) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -91,6 +93,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
   preSpeakingState: null,
   isSleepMode: false,
   desktopRectangles: [],
+  anchor: null,
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -117,4 +120,5 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setPreSpeakingState: (val) => set({ preSpeakingState: val }),
   setIsSleepMode: (val) => set({ isSleepMode: val }),
   setDesktopRectangles: (val) => set({ desktopRectangles: val }),
+  setAnchor: (val) => set({ anchor: val }),
 }));

@@ -87,8 +87,8 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       const avatarScale = s.avatarScale || 1;
       const minX = -edgeX;
       const maxX = edgeX;
-      const minY = -edgeY + 0.5 * avatarScale;
-      const maxY = edgeY + 0.5 * avatarScale;
+      const minY = -edgeY + 0.48 * avatarScale;
+      const maxY = edgeY + 0.48 * avatarScale;
 
       const screenToWorld = (screenX: number, screenY: number) => {
         return {
@@ -104,6 +104,21 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       let targetX = currentX;
       let targetY = currentY;
       let targetPose: BasePose = 'sit';
+
+      if (s.anchor) {
+        // Locked to a window or taskbar
+        targetPose = Math.random() > 0.5 ? 'sit' : 'sleep';
+        targetX = currentX;
+        
+        // Recalculate Y in case scale changed, ensuring perfect resting
+        const edgeWorldY = -(s.anchor.rect.y - wh / 2) / 250;
+        targetY = edgeWorldY + (s.anchor.type === 'taskbar' ? 1.2 : 1.15) * avatarScale;
+        
+        setBasePose(targetPose);
+        setTargetPosition({ x: targetX, y: targetY, z: 0 });
+        setIsWalking(true);
+        return;
+      }
 
       if (r < 0.04) {
         targetPose = 'peek-left';
@@ -125,36 +140,14 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
           targetX = minX + Math.random() * (maxX - minX);
           targetY = minY + Math.random() * (maxY - minY);
         }
-      } else if (r < 0.70) {
-        if (windows.length > 0 && Math.random() > 0.3) {
-          targetPose = 'sleep';
-          const win = windows[Math.floor(Math.random() * windows.length)];
-          const randomX = win.x + 50 + Math.random() * Math.max(0, win.width - 100);
-          const worldPos = screenToWorld(randomX, win.y);
-          targetX = worldPos.x;
-          targetY = worldPos.y + 1.15 * avatarScale; // Proper offset so hips rest on title bar
-        } else {
-          targetPose = 'stand';
-          if (!s.isAvatarLocked) {
-            targetX = minX + Math.random() * (maxX - minX);
-            targetY = minY + Math.random() * (maxY - minY);
-          }
-        }
-      } else if (r < 0.85) {
-        targetPose = 'sit';
+      } else if (r < 0.80) {
+        // Just wander around normally
+        targetPose = 'stand';
         if (!s.isAvatarLocked) {
-          if (taskbars.length > 0 && Math.random() > 0.2) {
-            const tb = taskbars[0];
-            const randomX = tb.x + 100 + Math.random() * Math.max(0, tb.width - 200);
-            const worldPos = screenToWorld(randomX, tb.y);
-            targetX = worldPos.x;
-            targetY = worldPos.y + 1.2 * avatarScale; // Proper offset so stool rests on taskbar
-          } else {
-            targetX = minX + Math.random() * (maxX - minX);
-            targetY = minY + Math.random() * (maxY - minY);
-          }
+          targetX = minX + Math.random() * (maxX - minX);
+          targetY = minY + Math.random() * (maxY - minY);
         }
-      } else if (r < 0.95) {
+      } else if (r < 0.90) {
         targetPose = 'stand';
         targetX = currentX;
       } else {
@@ -204,14 +197,14 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       if (r < 0.5) {
         // 50% chance: Bottom center, big face, dynamic taskbar anchoring
         const newScale = 2.5;
-        const bottomY = -edgeY - 0.15 * newScale;
+        const bottomY = -edgeY + 0.5 * newScale;
         s.setAvatarScale(newScale);
         setTargetPosition({ x: 0, y: bottomY, z: 0 });
         setBasePose('dynamic-talk');
       } else if (r < 0.75) {
         // 25% chance: Side edge, leaning in
         const newScale = 2.0;
-        const bottomY = -edgeY - 0.15 * newScale;
+        const bottomY = -edgeY + 0.5 * newScale;
         const isLeft = Math.random() > 0.5;
         s.setAvatarScale(newScale);
         setTargetPosition({ x: isLeft ? -edgeX + 0.3 : edgeX - 0.3, y: bottomY, z: 0 });
@@ -219,7 +212,7 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
       } else {
         // 25% chance: Standing up, offset, natural
         const newScale = 1.6;
-        const bottomY = -edgeY - 0.15 * newScale;
+        const bottomY = -edgeY + 0.5 * newScale;
         s.setAvatarScale(newScale);
         setTargetPosition({ x: (Math.random() - 0.5) * 1.5, y: bottomY, z: 0 });
         setBasePose('stand');

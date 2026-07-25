@@ -669,8 +669,8 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
       
       const minX = -edgeX;
       const maxX = edgeX;
-      const maxY = edgeY + 0.5 * avatarScale;
-      const minY = -edgeY + 0.5 * avatarScale;
+      const maxY = edgeY + 0.2 * avatarScale;
+      const minY = -edgeY + 0.2 * avatarScale;
 
       cursorTargetRef.current.x = Math.max(minX, Math.min(maxX, cursorTargetRef.current.x + movementX));
       cursorTargetRef.current.y = Math.max(minY, Math.min(maxY, cursorTargetRef.current.y + movementY));
@@ -688,10 +688,49 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
     const s = useAvatarState.getState();
     s.setIsDragging(false);
     s.setDragOffset({ x: 0, y: 0 });
-    s.setTargetPosition({ ...s.worldPosition });
-    if (s.isAvatarLocked) {
-      s.setLockedPosition({ ...s.worldPosition });
+
+    const finalX = cursorTargetRef.current?.x ?? s.worldPosition.x;
+    const finalY = cursorTargetRef.current?.y ?? s.worldPosition.y;
+
+    const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
+
+    const screenX = finalX * 250 + ww / 2;
+    // Check if the feet are near the top edge
+    const feetY = finalY - 1.2 * avatarScale;
+    const screenFeetY = -feetY * 250 + wh / 2;
+
+    let snapped = false;
+
+    if (s.desktopRectangles) {
+      const threshold = 50; // snap threshold in pixels
+      for (const rect of s.desktopRectangles) {
+        if (screenX >= rect.x - 50 && screenX <= rect.x + rect.width + 50) {
+          if (Math.abs(screenFeetY - rect.y) < threshold) {
+            snapped = true;
+            s.setAnchor({ type: rect.is_taskbar ? 'taskbar' : 'window', rect });
+            const edgeWorldY = -(rect.y - wh / 2) / 250;
+            s.setTargetPosition({ 
+              x: finalX, 
+              y: edgeWorldY + (rect.is_taskbar ? 1.2 : 1.15) * avatarScale,
+              z: 0 
+            });
+            s.setIsAvatarLocked(true);
+            s.setBasePose('sit');
+            break;
+          }
+        }
+      }
     }
+
+    if (!snapped) {
+      s.setAnchor(null);
+      s.setTargetPosition({ x: finalX, y: finalY, z: 0 });
+      if (s.isAvatarLocked) {
+        s.setLockedPosition({ x: finalX, y: finalY, z: 0 });
+      }
+    }
+
     e.currentTarget.releasePointerCapture(e.pointerId);
     
     if (s.basePose.startsWith('peek')) {
