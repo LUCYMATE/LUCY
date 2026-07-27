@@ -1,0 +1,134 @@
+[[permission]]
+identifier = "allow-start-native-mic"
+description = "Allows starting native microphone capture"
+commands.allow = ["start_native_mic"]
+
+[[permission]]
+identifier = "allow-stop-native-mic"
+description = "Allows stopping native microphone capture"
+commands.allow = ["stop_native_mic"]
+
+[[permission]]
+identifier = "allow-check-microphone-permission"
+description = "Allows checking OS microphone permission state"
+commands.allow = ["check_microphone_permission"]
+
+[[permission]]
+identifier = "allow-open-microphone-privacy-settings"
+description = "Allows opening OS microphone privacy settings"
+commands.allow = ["open_microphone_privacy_settings"]
+
+[[permission]]
+identifier = "allow-get-system-stats"
+description = "Allows reading system CPU and memory stats"
+commands.allow = ["get_system_stats"]
+
+[[permission]]
+identifier = "allow-open-external-url"
+description = "Allows opening external URLs"
+commands.allow = ["open_external_url"]
+
+[[permission]]
+identifier = "allow-move-and-click-mouse"
+description = "Allows moving and clicking the mouse"
+commands.allow = ["move_and_click_mouse"]
+
+[[permission]]
+identifier = "allow-type-string"
+description = "Allows typing text via keyboard simulation"
+commands.allow = ["type_string"]
+
+[[permission]]
+identifier = "allow-run-python-script"
+description = "Allows running local python scripts"
+commands.allow = ["run_python_script"]
+
+[[permission]]
+identifier = "allow-run-terminal-command"
+description = "Allows running terminal commands"
+commands.allow = ["run_terminal_command"]
+
+[[permission]]
+identifier = "allow-press-key"
+description = "Allows pressing special keyboard keys"
+commands.allow = ["press_key"]
+
+[[permission]]
+identifier = "allow-capture-screen"
+description = "Allows capturing the screen"
+commands.allow = ["capture_screen"]
+
+[[permission]]
+identifier = "allow-scroll-mouse"
+description = "Allows scrolling the mouse wheel"
+commands.allow = ["scroll_mouse"]
+
+[[permission]]
+identifier = "allow-press-key-combo"
+description = "Allows pressing keyboard key combinations (e.g., Ctrl+W)"
+commands.allow = ["press_key_combo"]
+
+[[permission]]
+identifier = "allow-save-3d-asset"
+description = "Allows saving 3D assets to local storage"
+commands.allow = ["save_3d_asset"]
+
+[[permission]]
+identifier = "allow-delete-3d-asset"
+description = "Allows deleting 3D assets"
+commands.allow = ["delete_3d_asset"]
+
+[[permission]]
+identifier = "allow-list-3d-assets"
+description = "Allows listing 3D assets"
+commands.allow = ["list_3d_assets"]
+
+[[permission]]
+identifier = "allow-read-3d-asset"
+description = "Allows reading 3D asset data"
+commands.allow = ["read_3d_asset"]
+
+[[permission]]
+identifier = "allow-get-3d-asset-path"
+description = "Allows getting absolute paths of 3D assets"
+commands.allow = ["get_3d_asset_path"]
+
+[[permission]]
+identifier = "allow-get-device-hwid"
+description = "Allows retrieving the device hardware ID for license verification"
+commands.allow = ["get_device_hwid"]
+
+[[permission]]
+identifier = "allow-verify-license"
+description = "Allows verifying the license signature from the server"
+commands.allow = ["verify_license"]
+
+[[permission]]
+identifier = "allow-check-authorization"
+description = "Allows checking and restoring authorization state"
+commands.allow = ["check_authorization"]
+
+[[permission]]
+identifier = "allow-trim-memory"
+description = "Allows trimming memory working sets"
+commands.allow = ["trim_memory"]
+
+[[permission]]
+identifier = "allow-enter-sleep-mode"
+description = "Allows entering sleep mode"
+commands.allow = ["enter_sleep_mode"]
+
+[[permission]]
+identifier = "allow-wake-up-main"
+description = "Allows waking up main window"
+commands.allow = ["wake_up_main"]
+
+[[permission]]
+identifier = "allow-is-autostart"
+description = "Allows checking if launched via autostart"
+commands.allow = ["is_autostart"]
+
+[[permission]]
+identifier = "allow-get-desktop-rectangles"
+description = "Allows getting desktop windows and taskbar coordinates"
+commands.allow = ["get_desktop_rectangles"]
