@@ -8,7 +8,7 @@
 
 body {
   font-family: var(--font-sans);
-  background-color: transparent;
+  background-color: rgba(0, 0, 0, 0.005);
   color: #fff;
   margin: 0;
   overflow: hidden;

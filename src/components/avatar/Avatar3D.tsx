@@ -542,10 +542,13 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
 
   const items = showSubMenu ? subItems : mainItems;
 
+  const clampedX = typeof window !== 'undefined' ? Math.max(130, Math.min(window.innerWidth - 130, x)) : x;
+  const clampedY = typeof window !== 'undefined' ? Math.max(130, Math.min(window.innerHeight - 130, y)) : y;
+
   return (
     <div
       className="avatar-context-menu fixed pointer-events-auto z-[9999] animate-in fade-in zoom-in-95 duration-200"
-      style={{ left: x, top: y, width: 0, height: 0 }}
+      style={{ left: clampedX, top: clampedY, width: 0, height: 0 }}
     >
       {/* Pink Round Ribbon Path (Track) */}
       <svg 
@@ -856,7 +859,7 @@ export function Avatar3D() {
       <Canvas
         dpr={[1, 1.5]}
         frameloop="demand"
-        gl={{ powerPreference: "low-power", antialias: true, alpha: true }}
+        gl={{ powerPreference: "low-power", antialias: true, alpha: true, preserveDrawingBuffer: false }}
         style={{ pointerEvents: 'none' }}
       >
         <WebGLContextLoser />

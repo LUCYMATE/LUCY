@@ -121,6 +121,7 @@ For ALL other actions (opening apps, taking screenshots, searching the web, pyth
 - press_key_combo → use for OS navigation like Win+L (lock PC), Win+D (desktop), Alt+F4 (close), Ctrl+Tab.
 - trigger_automation → use for opening apps (e.g., "open spotify"), web search, typing, etc. Do NOT claim the task is finished when invoking this tool; inform the user you are working on it, and wait for the background agent completion notification before announcing completion!
 - set_pose → call ONLY if user explicitly asks for a specific pose/animation.
+- set_pet_name → ALWAYS call this if the user tells you their name or a nickname to call them (do NOT use save_memory for names).
 - save_memory / search_memory → silently manage user facts.`;
 
       const userPersonality = localStorage.getItem('soltini_system_instruction') || '';
@@ -466,6 +467,15 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                     type: 'OBJECT',
                     properties: {}
                   }
+                },
+                {
+                  name: 'set_pet_name',
+                  description: 'Set a cute pet name the user wants you to call them. Persists across sessions.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { name: { type: 'STRING', description: 'The pet name to call the user' } },
+                    required: ['name']
+                  }
                 }
               ]
             }
@@ -535,7 +545,6 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
       return;
     }
 
-    const { useAvatarState } = await import('../store/avatarState');
     useAvatarState.getState().setToolAgentRunning(true);
     logger.add('info', 'Tool Agent Launched', `Executing background request: "${requestText}"`);
 

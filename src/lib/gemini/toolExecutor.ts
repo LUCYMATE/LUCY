@@ -5,7 +5,7 @@ import { memoryStore } from '../memory/memory-store';
 import { vectorMemory } from '../store/vectorMemory';
 import { getValidPoses } from '../../config/bot-profile';
 import { useAvatarState } from '../store/avatarState';
-import { addScheduledTask, cancelScheduledTaskById, startScheduler } from './scheduler';
+import { addScheduledTask, cancelScheduledTaskById, startScheduler, getScheduledTasks } from './scheduler';
 import { rateLimiter, RATE_LIMITS } from '../utils/rateLimiter';
 import { userAuth } from '../auth/userAuth';
 import { Command } from '@tauri-apps/plugin-shell';
@@ -287,7 +287,6 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       result = { success: true, message: `Task scheduled to execute exactly at ${new Date(targetTimeMs).toLocaleString()} with ID: ${newId}` };
     }
   } else if (name === 'list_scheduled_tasks') {
-    const { getScheduledTasks } = await import('./scheduler');
     const tasks = getScheduledTasks();
     if (tasks.length === 0) {
       result = { success: true, message: 'No tasks currently scheduled.' };

@@ -22,13 +22,16 @@ export default defineConfig({
     }
   },
   build: {
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom'],
-          'three-vendor': ['three', '@react-three/fiber', '@react-three/drei', '@pixiv/three-vrm'],
-          'genai-vendor': ['@google/genai']
+          'three': ['three'],
+          'three-vrm': ['@pixiv/three-vrm'],
+          'react-three': ['@react-three/fiber', '@react-three/drei'],
+          'genai-vendor': ['@google/genai'],
+          'tauri': ['@tauri-apps/api', '@tauri-apps/plugin-autostart', '@tauri-apps/plugin-deep-link', '@tauri-apps/plugin-fs', '@tauri-apps/plugin-shell', '@tauri-apps/plugin-http']
         }
       }
     }

@@ -3,8 +3,10 @@ import { AuthGate } from './components/AuthGate';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getCurrentWindow, cursorPosition } from '@tauri-apps/api/window';
 import { useAvatarState } from './lib/store/avatarState';
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
+import { onOpenUrl, register } from '@tauri-apps/plugin-deep-link';
 import { userAuth } from './lib/auth/userAuth';
+import { invoke } from '@tauri-apps/api/core';
+import { useWindowPassthrough } from './hooks/useWindowPassthrough';
 
 const LICENSE_SERVER_URL = 'https://soltini.vercel.app';
 
@@ -26,6 +28,8 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     const setupDeepLink = async () => {
       try {
+        // Register soltini:// protocol on Linux desktop
+        register('soltini').catch(() => {});
         const handleLink = async (url: string) => {
           // Handle multiple deep link formats
           // Handle multiple deep link formats
@@ -100,7 +104,6 @@ export default function App() {
   useEffect(() => {
     const bootCheck = async () => {
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
         const isAutostart = await invoke<boolean>('is_autostart');
         const win = getCurrentWindow();
         await safe(win.setIgnoreCursorEvents(true));
@@ -143,14 +146,12 @@ export default function App() {
       const initWindow = async () => {
         let isAutostart = false;
         try {
-          const { invoke } = await import('@tauri-apps/api/core');
           isAutostart = await invoke<boolean>('is_autostart');
         } catch(e) {}
         
         await setupMainWindow(isAutostart);
         const win = getCurrentWindow();
         try {
-          const { invoke } = await import('@tauri-apps/api/core');
           const autostartPlugin = await import('@tauri-apps/plugin-autostart');
           const autostartEnabled = await autostartPlugin.isEnabled();
           if (!autostartEnabled) {
@@ -226,143 +227,10 @@ export default function App() {
   }, []);
 
   // ─── Cursor passthrough ──────────────────────────────────────────
-
-  useEffect(() => {
-    let active = true;
-    let lastIgnore = true;
-    const win = getCurrentWindow();
-    let cachedWinPos = { x: 0, y: 0 };
-    let cachedFactor = 1;
-    let cacheAge = 999; // Set high so it instantly grabs the true window position on first run
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const scheduleNext = (ms: number) => {
-      if (!active) return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(checkMouse, ms);
-    };
-
-    const checkMouse = async () => {
-      if (!active) return;
-      timer = null;
-      try {
-        // Sleep mode: the window is fully transparent / no avatar UI is shown, so cursor
-        // passthrough is irrelevant. We STOP the loop entirely (previously it woke every 1s
-        // just to re-check the flag). It is restarted by the soltini-wake-up handler below.
-        if (useAvatarState.getState().isSleepMode) return;
-
-        const isVisible = await win.isVisible();
-        if (!isVisible) {
-          scheduleNext(1000);
-          return;
-        }
-
-        let inside = false;
-
-        if (document.querySelector('.is-dragging-window')) {
-          inside = true;
-        } else {
-          cacheAge++;
-          if (cacheAge > 25) {
-            cachedWinPos = await win.outerPosition();
-            cachedFactor = await win.scaleFactor();
-            cacheAge = 0;
-          }
-          const cursor = await cursorPosition();
-          const x = (cursor.x - cachedWinPos.x) / cachedFactor;
-          const y = (cursor.y - cachedWinPos.y) / cachedFactor;
-
-          const el = document.elementFromPoint(x, y);
-          if (el && el.closest('.pointer-events-auto')) {
-            inside = true;
-          }
-        }
-
-        if (inside !== !lastIgnore) {
-          lastIgnore = !inside;
-          if (active) {
-             try {
-                await win.setIgnoreCursorEvents(lastIgnore);
-             } catch (err: any) {
-                console.warn('IgnoreCursorEvents error:', err);
-             }
-          }
-        }
-      } catch (e: any) {
-        console.warn('checkMouse error:', e);
-      }
-      scheduleNext(200);
-    };
-
-    const handleSleep = () => {
-      // Stop the cursor-passthrough loop while asleep; nothing interactive is on screen.
-      if (timer) { clearTimeout(timer); timer = null; }
-      // Explicitly set window ignore cursor events to true so desktop is 100% click-through!
-      lastIgnore = true;
-      win.setIgnoreCursorEvents(true).catch(() => {});
-    };
-
-    const handleWakeUp = () => {
-      lastIgnore = false; // Force re-evaluation
-
-      // Ensure the window gets restored and maximized properly
-      const win = getCurrentWindow();
-      win.setAlwaysOnTop(true).catch(() => {});
-      win.maximize().catch(() => {});
-      win.show().catch(() => {});
-
-      // Force DOM repaint to fix Windows WebView2 blank screen bug after memory trim on wake
-      document.body.style.backgroundColor = 'rgba(0,0,0,0.01)';
-      setTimeout(() => {
-        document.body.style.backgroundColor = 'transparent';
-      }, 10);
-
-      // Resume the cursor-passthrough loop now that the avatar UI is back.
-      if (active && !timer) {
-        scheduleNext(50);
-      }
-    };
-
-    // Subscribe directly to Zustand state updates with zero CPU/RAM overhead
-    let prevSleep = useAvatarState.getState().isSleepMode;
-    const unsubStore = useAvatarState.subscribe((state) => {
-      const currentSleep = state.isSleepMode;
-      if (currentSleep === prevSleep) return;
-      prevSleep = currentSleep;
-      if (currentSleep) {
-        handleSleep();
-      } else {
-        handleWakeUp();
-      }
-    });
-
-    const handleWakeUpEvent = () => {
-      useAvatarState.getState().setIsSleepMode(false);
-    };
-
-    const handleSleepEvent = () => {
-      useAvatarState.getState().setIsSleepMode(true);
-    };
-
-    window.addEventListener('soltini-sleep', handleSleepEvent);
-    window.addEventListener('soltini-wake-up', handleWakeUpEvent);
-
-    // Don't even start the loop if we boot directly into sleep mode.
-    if (!useAvatarState.getState().isSleepMode) {
-      checkMouse();
-    }
-    return () => {
-      active = false;
-      if (timer) clearTimeout(timer);
-      unsubStore();
-      window.removeEventListener('soltini-sleep', handleSleepEvent);
-      window.removeEventListener('soltini-wake-up', handleWakeUpEvent);
-      win.setIgnoreCursorEvents(false).catch(() => {});
-    };
-  }, [licenseStatus]);
+  useWindowPassthrough(licenseStatus);
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col bg-transparent">
+    <div className="h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col" style={{ backgroundColor: 'rgba(0, 0, 0, 0.005)' }}>
 
       {!hasApiKey && licenseStatus === 'authorized' && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[9999] bg-pink-500/90 text-white px-6 py-3 rounded-full shadow-[0_0_20px_rgba(236,72,153,0.5)] border border-pink-400 font-bold flex items-center gap-2 animate-bounce pointer-events-auto">

@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use enigo::{Enigo, Key, KeyboardControllable, MouseButton, MouseControllable};
-use screenshots::Screen;
+use xcap::Monitor;
 use std::sync::Mutex;
 use sysinfo::System;
 use tauri::menu::{Menu, MenuItem};
@@ -419,11 +419,11 @@ fn capture_screen(state: tauri::State<AppState>) -> Result<serde_json::Value, St
     if !*state.authorized.lock().unwrap() {
         return Err("Unauthorized".to_string());
     }
-    let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
-    let screen = screens.first().ok_or("No screen found")?;
+    let monitors = Monitor::all().map_err(|e| format!("Failed to get monitors: {}", e))?;
+    let monitor = monitors.first().ok_or("No screen found")?;
 
-    let img = screen
-        .capture()
+    let img = monitor
+        .capture_image()
         .map_err(|e| format!("Capture failed: {}", e))?;
 
     let orig_width = img.width();
@@ -436,11 +436,11 @@ fn capture_screen(state: tauri::State<AppState>) -> Result<serde_json::Value, St
         1.0
     };
 
-    let mut dynamic_img = screenshots::image::DynamicImage::ImageRgba8(img);
+    let mut dynamic_img = image::DynamicImage::ImageRgba8(img);
     if scale_factor > 1.0 {
         let new_width = (orig_width as f32 / scale_factor).round() as u32;
         let new_height = (orig_height as f32 / scale_factor).round() as u32;
-        dynamic_img = dynamic_img.resize_exact(new_width, new_height, screenshots::image::imageops::FilterType::Triangle);
+        dynamic_img = dynamic_img.resize_exact(new_width, new_height, image::imageops::FilterType::Triangle);
     }
     
     let mut final_img = dynamic_img.to_rgba8();
@@ -466,11 +466,11 @@ fn capture_screen(state: tauri::State<AppState>) -> Result<serde_json::Value, St
     }
 
     let mut bytes = Vec::new();
-    let dynamic_final = screenshots::image::DynamicImage::ImageRgba8(final_img);
+    let dynamic_final = image::DynamicImage::ImageRgba8(final_img);
     dynamic_final
         .write_to(
             &mut std::io::Cursor::new(&mut bytes),
-            screenshots::image::ImageFormat::Jpeg,
+            image::ImageFormat::Jpeg,
         )
         .map_err(|e| format!("JPEG conversion failed: {}", e))?;
 
@@ -724,7 +724,29 @@ fn get_device_hwid() -> Result<String, String> {
         }
         Err("Could not retrieve hardware ID".to_string())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(id) = std::fs::read_to_string("/etc/machine-id") {
+            let trimmed = id.trim().to_string();
+            if !trimmed.is_empty() {
+                return Ok(trimmed);
+            }
+        }
+        if let Ok(id) = std::fs::read_to_string("/var/lib/dbus/machine-id") {
+            let trimmed = id.trim().to_string();
+            if !trimmed.is_empty() {
+                return Ok(trimmed);
+            }
+        }
+        if let Ok(id) = std::fs::read_to_string("/sys/class/dmi/id/product_uuid") {
+            let trimmed = id.trim().to_string();
+            if !trimmed.is_empty() {
+                return Ok(trimmed);
+            }
+        }
+        Err("Could not retrieve Linux hardware ID".to_string())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         Err("Hardware ID not supported on this platform".to_string())
     }
@@ -881,8 +903,11 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
             let win_clone = win.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(300));
-                let _ = win_clone.set_ignore_cursor_events(true);
-                let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
+                let w = win_clone.clone();
+                let _ = win_clone.run_on_main_thread(move || {
+                    let _ = w.set_ignore_cursor_events(true);
+                    let _ = w.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
+                });
             });
         }
     }
@@ -979,6 +1004,7 @@ unsafe extern "system" fn enum_window_proc(hwnd: windows_sys::Win32::Foundation:
 
 #[tauri::command]
 fn get_desktop_rectangles() -> Vec<DesktopRect> {
+    #[allow(unused_mut)]
     let mut rects = Vec::new();
     
     #[cfg(target_os = "windows")]
@@ -1010,6 +1036,17 @@ fn get_desktop_rectangles() -> Vec<DesktopRect> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        // Prevent dmabuf rendering artifacts on Linux
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+        if std::env::var_os("GDK_BACKEND").is_none() {
+            std::env::set_var("GDK_BACKEND", "x11,wayland");
+        }
+    }
+
     // Single instance is handled by tauri-plugin-single-instance
 
     tauri::Builder::default()
@@ -1098,27 +1135,15 @@ pub fn run() {
                     .build(),
             )?;
 
-            // Background thread: try registering shortcuts until successful
+            // Register global shortcuts safely on setup
             {
-                let app_handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    use tauri_plugin_global_shortcut::GlobalShortcutExt;
-                    let shortcuts = ["CommandOrControl+Alt+X", "CommandOrControl+Alt+S", "CommandOrControl+Alt+M", "F9"];
-                    for _ in 0..20 {
-                        let mut all_success = true;
-                        for s in shortcuts.iter() {
-                            if !app_handle.global_shortcut().is_registered(*s) {
-                                if app_handle.global_shortcut().register(*s).is_err() {
-                                    all_success = false;
-                                }
-                            }
-                        }
-                        if all_success {
-                            break;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(500));
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                let shortcuts = ["CommandOrControl+Alt+X", "CommandOrControl+Alt+S", "CommandOrControl+Alt+M", "F9"];
+                for s in shortcuts.iter() {
+                    if !app.global_shortcut().is_registered(*s) {
+                        let _ = app.global_shortcut().register(*s);
                     }
-                });
+                }
             }
 
             // Tray Menu
