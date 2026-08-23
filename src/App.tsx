@@ -6,6 +6,7 @@ import { getCurrentWindow, cursorPosition } from '@tauri-apps/api/window';
 import { useAvatarState } from './lib/store/avatarState';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { userAuth } from './lib/auth/userAuth';
+import { emitCrossWindow, listenCrossWindow } from './lib/events/crossWindowEventBus';
 
 const LICENSE_SERVER_URL = 'https://soltini.vercel.app';
 
@@ -171,7 +172,7 @@ function MainApp() {
 
         if (!isAutostart) {
           if (!hasApiKey && !useAvatarState.getState().isSleepMode) {
-            setTimeout(() => window.dispatchEvent(new CustomEvent('soltini-open-settings')), 800);
+            setTimeout(() => emitCrossWindow('soltini-open-settings'), 800);
           }
         }
       };
@@ -219,10 +220,10 @@ function MainApp() {
     const checkKey = () =>
       setHasApiKey(!!localStorage.getItem('soltini_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY);
     window.addEventListener('storage', checkKey);
-    window.addEventListener('soltini-api-key-saved', checkKey);
+    const unsubKey = listenCrossWindow('soltini-api-key-saved', checkKey);
     return () => {
       window.removeEventListener('storage', checkKey);
-      window.removeEventListener('soltini-api-key-saved', checkKey);
+      unsubKey();
     };
   }, []);
 
@@ -345,8 +346,8 @@ function MainApp() {
       useAvatarState.getState().setIsSleepMode(true);
     };
 
-    window.addEventListener('soltini-sleep', handleSleepEvent);
-    window.addEventListener('soltini-wake-up', handleWakeUpEvent);
+    const unsubSleep = listenCrossWindow('soltini-sleep', handleSleepEvent);
+    const unsubWake = listenCrossWindow('soltini-wake-up', handleWakeUpEvent);
 
     // Don't even start the loop if we boot directly into sleep mode.
     if (!useAvatarState.getState().isSleepMode) {
@@ -356,8 +357,8 @@ function MainApp() {
       active = false;
       if (timer) clearTimeout(timer);
       unsubStore();
-      window.removeEventListener('soltini-sleep', handleSleepEvent);
-      window.removeEventListener('soltini-wake-up', handleWakeUpEvent);
+      unsubSleep();
+      unsubWake();
       win.setIgnoreCursorEvents(false).catch(() => {});
     };
   }, [licenseStatus]);

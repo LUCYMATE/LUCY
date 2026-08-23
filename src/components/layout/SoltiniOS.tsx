@@ -16,6 +16,7 @@ import { useChatStore } from '../../lib/store/chatStore';
 import { useEngineStore } from '../../lib/store/engineStore';
 import { clearVrmCache } from '../avatar/VrmModel';
 import { clearFbxCache } from '../avatar/animations/useFbxAnimation';
+import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
   
@@ -26,16 +27,19 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
 
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [latency, setLatency] = useState<string>('checking...');
+  const [cpu, setCpu] = useState<number>(0);
+  const [memory, setMemory] = useState<string>('0 / 0 GB');
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const isTauri = isTauriApp();
 
   useEffect(() => {
     const loadTasks = () => setTasks(getScheduledTasks());
     loadTasks();
-    const handleTasksChanged = () => {
+    const unsub = listenCrossWindow('soltini-tasks-changed', () => {
       loadTasks();
-      import('@tauri-apps/api/event').then(({ emit }) => emit('soltini-sync-tasks'));
-    };
-    window.addEventListener('soltini-tasks-changed', handleTasksChanged);
-    return () => window.removeEventListener('soltini-tasks-changed', handleTasksChanged);
+      emitCrossWindow('soltini-sync-tasks', getScheduledTasks());
+    });
+    return () => unsub();
   }, []);
 
   // IPC Bridge for Secondary Window
@@ -65,8 +69,9 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
           isMicOn: useAvatarState.getState().isMicOn, 
           connectionState: useAvatarState.getState().connectionState 
         });
-        emit('soltini-sync-logs', logger.getLogs()); // we need to ensure logger.getLogs() exists
-        emit('soltini-sync-tasks');
+        emit('soltini-sync-logs', logger.getLogs());
+        emit('soltini-sync-tasks', getScheduledTasks());
+        emit('soltini-sync-stats', { cpu, memory, latency });
       });
 
       // Cleanup subscription
@@ -80,7 +85,7 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
     return () => {
       if ((window as any)._ipcUnsub) (window as any)._ipcUnsub();
     };
-  }, []);
+  }, [cpu, memory, latency]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -88,39 +93,19 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
       clearVrmCache();
       clearFbxCache();
       setTimeout(() => trimMemory(), 500);
-      // Periodic trim to keep the SpeechRecognition wake-word listener's
-      // native memory leak bounded — Chromium's Web Speech API doesn't fully
-      // release resources, so RAM creeps up over time without this.
       interval = setInterval(() => {
         trimMemory();
       }, 300000);
     } else {
-      // Aggressively keep RAM footprint low (~300MB) during normal active use
-      // Delay the first trim by 10s to ensure the heavy VRM model finishes loading safely first!
       setTimeout(() => trimMemory(), 10000);
       interval = setInterval(() => {
         trimMemory();
-      }, 300000); // 5 minutes — frequent enough to keep RAM bounded, infrequent enough to avoid paging thrashing
+      }, 300000);
     }
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [isSleepMode]);
-  
-  const [cpu, setCpu] = useState<number>(0);
-  const [memory, setMemory] = useState<string>('0 / 0 GB');
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [tasksPos, setTasksPos] = useState<{x: number, y: number} | null>(null);
-  const isTauri = isTauriApp();
-  const logsEndRef = useRef<HTMLDivElement>(null);
-  const logsContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Always scroll to the newest log, with a tiny delay to ensure DOM is updated
-    setTimeout(() => {
-      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 50);
-  }, [logs]);
 
   useEffect(() => {
     const openTab = async (tab: string) => {
@@ -128,11 +113,13 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
         const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
         const existing = await WebviewWindow.getByLabel('settings');
         if (existing) {
-          existing.setFocus();
-          import('@tauri-apps/api/event').then(({ emit }) => emit('soltini-switch-tab', tab));
+          await existing.unminimize().catch(() => {});
+          await existing.show().catch(() => {});
+          await existing.setFocus().catch(() => {});
+          await emitCrossWindow('soltini-switch-tab', tab);
           return;
         }
-        new WebviewWindow('settings', {
+        const win = new WebviewWindow('settings', {
           url: `index.html#settings?tab=${tab}`,
           title: 'Soltini Dashboard',
           width: 900,
@@ -140,6 +127,9 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
           x: 200,
           y: 200,
           resizable: true
+        });
+        win.once('tauri://error', (e) => {
+          console.warn('Failed to open settings window:', e);
         });
       } catch (e) {
         console.warn('Failed to open settings window', e);
@@ -164,27 +154,24 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
     const handleToggleSleep = () => {
       const isSleep = useAvatarState.getState().isSleepMode;
       if (isSleep) {
-        window.dispatchEvent(new CustomEvent('soltini-wake-up'));
+        emitCrossWindow('soltini-wake-up');
       } else {
-        window.dispatchEvent(new CustomEvent('soltini-sleep'));
+        emitCrossWindow('soltini-sleep');
       }
     };
 
-    window.addEventListener('soltini-toggle-sleep', handleToggleSleep);
-    window.addEventListener('soltini-open-settings', handleOpenSettings);
-    window.addEventListener('soltini-open-tasks', handleOpenTasks);
-    window.addEventListener('soltini-open-chat', handleOpenChat);
-    window.addEventListener('soltini-open-logs', handleOpenLogs);
-    window.addEventListener('soltini-sleep', handleSleep);
-    window.addEventListener('soltini-wake-up', handleWakeUp);
+    const unsubs = [
+      listenCrossWindow('soltini-toggle-sleep', handleToggleSleep),
+      listenCrossWindow('soltini-open-settings', handleOpenSettings),
+      listenCrossWindow('soltini-open-tasks', handleOpenTasks),
+      listenCrossWindow('soltini-open-chat', handleOpenChat),
+      listenCrossWindow('soltini-open-logs', handleOpenLogs),
+      listenCrossWindow('soltini-sleep', handleSleep),
+      listenCrossWindow('soltini-wake-up', handleWakeUp)
+    ];
+
     return () => {
-      window.removeEventListener('soltini-toggle-sleep', handleToggleSleep);
-      window.removeEventListener('soltini-open-settings', handleOpenSettings);
-      window.removeEventListener('soltini-open-tasks', handleOpenTasks);
-      window.removeEventListener('soltini-open-chat', handleOpenChat);
-      window.removeEventListener('soltini-open-logs', handleOpenLogs);
-      window.removeEventListener('soltini-sleep', handleSleep);
-      window.removeEventListener('soltini-wake-up', handleWakeUp);
+      unsubs.forEach(u => u());
     };
   }, []);
 
@@ -201,35 +188,43 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
         const start = performance.now();
         await fetch('/index.html?t=' + start, { method: 'HEAD' });
         const rtt = Math.round(performance.now() - start);
-        setLatency(`${rtt}ms`);
+        const newLat = `${rtt}ms`;
+        setLatency(newLat);
+        return newLat;
       } catch (e) {
         setLatency('Offline');
+        return 'Offline';
       }
     };
 
     const checkStats = async () => {
-      if (!isTauri) return; // Fetch system stats continuously so it's ready if logs window opens
+      const currentPing = await checkPing();
+      if (!isTauri) return;
       try {
         const stats = await getSystemStats();
         if (stats) {
-          setCpu(Math.round(stats.cpu_usage));
+          const newCpu = Math.round(stats.cpu_usage);
           const appMB = (stats.app_memory / (1024 * 1024)).toFixed(0);
-          setMemory(`${appMB} MB`);
+          const newMem = `${appMB} MB`;
+          setCpu(newCpu);
+          setMemory(newMem);
+          emitCrossWindow('soltini-sync-stats', {
+            cpu: newCpu,
+            memory: newMem,
+            latency: currentPing
+          });
         }
       } catch (e) {
         console.warn('Failed to fetch system stats:', e);
       }
     };
 
-    // Only run stats when sidebar is visible (not in pet mode or when settings is closed)
     const startPolling = () => {
       if (isSleepMode) return;
-      checkPing();
       checkStats();
       interval = setInterval(() => {
-        checkPing();
         checkStats();
-      }, 15000);
+      }, 10000);
     };
 
     const stopPolling = () => {
@@ -245,10 +240,8 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
   }, [isTauri, isSleepMode]);
 
   return (
-    <div className={`flex h-full w-full relative min-h-0 p-0 max-w-none`}>
-      
+    <div className="flex h-full w-full relative min-h-0 p-0 max-w-none">
       {!isSleepMode && <SystemIndicators />}
-      
       {!isSleepMode && <AvatarController />}
     </div>
   );

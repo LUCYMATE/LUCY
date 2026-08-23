@@ -5,6 +5,7 @@ import { logger } from '../../lib/store/logger';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { userAuth } from '../../lib/auth/userAuth';
 import { useEngineStore } from '../../lib/store/engineStore';
+import { emitCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 export function AssetLibrary() {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -58,7 +59,7 @@ export function AssetLibrary() {
       loadAssets();
 
       // Notify the live avatar scene to reload with the new model immediately
-      window.dispatchEvent(new CustomEvent('soltini-vrm-changed'));
+      emitCrossWindow('soltini-vrm-changed');
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to upload avatar: ${error}`);
     }
@@ -99,8 +100,8 @@ export function AssetLibrary() {
       await loadAssets();
 
       // Notify the live AI session about the new animation so it can use it immediately
-      window.dispatchEvent(new CustomEvent('soltini-animation-added', { detail: { slug } }));
-      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+      emitCrossWindow('soltini-animation-added', { slug });
+      emitCrossWindow('soltini-settings-changed');
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to save animation: ${error}`);
     }
@@ -121,9 +122,7 @@ export function AssetLibrary() {
       
       await loadAssets();
       // Notify live scene: if we deleted the avatar, reload the model; otherwise just refresh
-      window.dispatchEvent(new CustomEvent(
-        id === 'custom-avatar' ? 'soltini-vrm-changed' : 'soltini-settings-changed'
-      ));
+      emitCrossWindow(id === 'custom-avatar' ? 'soltini-vrm-changed' : 'soltini-settings-changed');
     } catch (e) {
       logger.add('error', 'Asset DB', `Failed to delete asset`);
     }
@@ -207,6 +206,7 @@ export function AssetLibrary() {
                    const next = !flipCustomModel;
                    setFlipCustomModel(next);
                    localStorage.setItem('soltini_flip_vrm', String(next));
+                   emitCrossWindow('soltini-vrm-changed');
                  }}
                  className={`relative w-10 h-5 rounded-full transition-colors ${flipCustomModel ? 'bg-blue-500' : 'bg-black/40 border border-blue-500/20'}`}
                >

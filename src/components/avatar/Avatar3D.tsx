@@ -9,6 +9,7 @@ import { useAvatarState } from '../../lib/store/avatarState';
 import { useEngineStore } from '../../lib/store/engineStore';
 import { useShallow } from 'zustand/react/shallow';
 import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, Wand2, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft, LogOut } from 'lucide-react';
+import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 // Highly optimized FPS limiter using rAF instead of setInterval
 function FpsLimiter() {
@@ -18,8 +19,8 @@ function FpsLimiter() {
 
   useEffect(() => {
     const handleFpsChange = () => setLimit(localStorage.getItem('soltini_low_fps') === 'true' ? 30 : 60);
-    window.addEventListener('soltini-settings-changed', handleFpsChange);
-    return () => window.removeEventListener('soltini-settings-changed', handleFpsChange);
+    const unsub = listenCrossWindow('soltini-settings-changed', handleFpsChange);
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -271,11 +272,12 @@ function SceneManager() {
       refreshModelUrl(true);
     };
     
-    window.addEventListener('soltini-settings-changed', onSettingsChanged);
-    window.addEventListener('soltini-vrm-changed', onVrmChanged);
+    const unsubs = [
+      listenCrossWindow('soltini-settings-changed', onSettingsChanged),
+      listenCrossWindow('soltini-vrm-changed', onVrmChanged)
+    ];
     return () => {
-      window.removeEventListener('soltini-settings-changed', onSettingsChanged);
-      window.removeEventListener('soltini-vrm-changed', onVrmChanged);
+      unsubs.forEach(u => u());
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -448,7 +450,7 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
   const setSize = (pct: number) => {
     localStorage.setItem('soltini_avatar_size', pct.toString());
     setAvatarScale(pct / 100);
-    window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+    emitCrossWindow('soltini-settings-changed');
   };
 
   const handleLockAvatar = () => {
@@ -461,26 +463,26 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
       s.setLockedPosition(null);
     }
     localStorage.setItem('soltini_avatar_locked', String(val));
+    emitCrossWindow('soltini-settings-changed');
     onClose();
   };
 
   const handleMicToggle = async () => {
-    const { emit } = await import('@tauri-apps/api/event');
-    emit('soltini-toggle-mic');
+    emitCrossWindow('soltini-toggle-mic');
   };
 
   const openChat = () => {
-    window.dispatchEvent(new CustomEvent('soltini-open-chat'));
+    emitCrossWindow('soltini-open-chat');
     onClose();
   };
 
   const openSettings = () => {
-    window.dispatchEvent(new CustomEvent('soltini-open-settings'));
+    emitCrossWindow('soltini-open-settings');
     onClose();
   };
 
   const openLogs = () => {
-    window.dispatchEvent(new CustomEvent('soltini-open-logs'));
+    emitCrossWindow('soltini-open-logs');
     onClose();
   };
 
@@ -495,12 +497,12 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
     };
     fetchTasks();
     const handleUpdate = () => fetchTasks();
-    window.addEventListener('soltini-tasks-changed', handleUpdate);
-    return () => window.removeEventListener('soltini-tasks-changed', handleUpdate);
+    const unsub = listenCrossWindow('soltini-tasks-changed', handleUpdate);
+    return () => unsub();
   }, [showTasksPopup]);
 
   const openTasks = () => {
-    window.dispatchEvent(new CustomEvent('soltini-open-tasks', { detail: { x, y } }));
+    emitCrossWindow('soltini-open-tasks', { x, y });
     onClose();
   };
 
@@ -512,7 +514,7 @@ function ContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => v
   const sleepApp = async () => {
     try {
       useAvatarState.getState().setIsSleepMode(true);
-      window.dispatchEvent(new CustomEvent('soltini-sleep'));
+      emitCrossWindow('soltini-sleep');
     } catch (e) {
       console.warn("Error entering sleep mode:", e);
     }

@@ -11,6 +11,7 @@ import { chatHistory } from '../lib/store/chatHistory';
 import { useEngineStore } from '../lib/store/engineStore';
 import { listen } from '@tauri-apps/api/event';
 import { checkAppUpdate, markUpdateNotified } from '../lib/system/updateChecker';
+import { listenCrossWindow } from '../lib/events/crossWindowEventBus';
 
 export function useCoreEngine() {
   const [initialized, setInitialized] = useState(false);
@@ -418,8 +419,8 @@ export function useCoreEngine() {
         setTimeout(() => initSystem(), 800);
       }
     };
-    window.addEventListener('soltini-core-settings-changed', handleSettingsChanged);
-    return () => window.removeEventListener('soltini-core-settings-changed', handleSettingsChanged);
+    const unsub = listenCrossWindow('soltini-core-settings-changed', handleSettingsChanged);
+    return () => unsub();
   }, [initialized, initSystem, setListening, setIsMicOn, setSpeaking, setThinking]);
 
   useEffect(() => {

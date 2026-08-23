@@ -6,6 +6,7 @@ import { executeTool } from './toolExecutor';
 import { setGlobalScheduleCallback, startScheduler, getScheduledTasks, cancelScheduledTaskById, ScheduledTask } from './scheduler';
 import { rateLimiter, RATE_LIMITS } from '../utils/rateLimiter';
 import { userAuth } from '../auth/userAuth';
+import { emitCrossWindow, listenCrossWindow } from '../events/crossWindowEventBus';
 
 export { getScheduledTasks, cancelScheduledTaskById };
 export type { ScheduledTask };
@@ -266,7 +267,7 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                 const isSleepMode = useAvatarState.getState().isSleepMode;
                 if (isSleepMode && /\b(wake\s*up|soltini|saltini|sultini|sholtini|sortini|sol\s*ti\s*ni|hey\s+soltini|hello\s+soltini)\b/i.test(inputText)) {
                   logger.add('success', 'Wake Word', 'Detected wake word! Waking up system...');
-                  window.dispatchEvent(new CustomEvent('soltini-wake-up'));
+                  emitCrossWindow('soltini-wake-up');
                 }
               }
 
@@ -488,17 +489,17 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
     }
   }
 
-  private _animationAddedListener: ((e: Event) => void) | null = null;
+  private _unsubAnimationAdded: (() => void) | null = null;
   private _bindAnimationAddedListener() {
     // Remove old listener if any
-    if (this._animationAddedListener) {
-      window.removeEventListener('soltini-animation-added', this._animationAddedListener);
+    if (this._unsubAnimationAdded) {
+      this._unsubAnimationAdded();
+      this._unsubAnimationAdded = null;
     }
-    this._animationAddedListener = (e: Event) => {
-      const slug = (e as CustomEvent).detail?.slug;
+    this._unsubAnimationAdded = listenCrossWindow<{ slug?: string }>('soltini-animation-added', (payload) => {
+      const slug = payload?.slug;
       if (slug) this.notifyNewAnimation(slug);
-    };
-    window.addEventListener('soltini-animation-added', this._animationAddedListener);
+    });
   }
 
   /** Tell the live AI session about a new custom animation slug immediately. */

@@ -7,6 +7,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { DraggableWindow } from '../layout/DraggableWindow';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
 
+import { emitCrossWindow } from '../../lib/events/crossWindowEventBus';
+
 const cleanMessageText = (text: string) => {
   let cleaned = text.replace(/^\[.*?\]\s*/, '');
   cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
@@ -35,7 +37,7 @@ export function Chat({ isVisible, onCloseChat, isSecondaryWindow = false }: { is
   const handleSendText = () => {
     if (!input.trim()) return;
     if (isSecondaryWindow) {
-      import('@tauri-apps/api/event').then(({ emit }) => emit('soltini-chat-send', input.trim()));
+      emitCrossWindow('soltini-chat-send', input.trim());
     } else {
       sendText(input.trim());
     }
@@ -44,7 +46,7 @@ export function Chat({ isVisible, onCloseChat, isSecondaryWindow = false }: { is
 
   const handleToggleMic = () => {
     if (isSecondaryWindow) {
-      import('@tauri-apps/api/event').then(({ emit }) => emit('soltini-toggle-mic'));
+      emitCrossWindow('soltini-toggle-mic');
     } else {
       toggleMic();
     }

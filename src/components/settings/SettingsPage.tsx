@@ -7,6 +7,7 @@ import { vectorMemory, MemoryFact } from '../../lib/store/vectorMemory';
 import { userAuth } from '../../lib/auth/userAuth';
 import { checkAppUpdate, downloadUpdate, AppUpdateInfo } from '../../lib/system/updateChecker';
 import { openExternalUrl } from '../../lib/system/tauriBridge';
+import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'api' | 'shortcuts' | 'assets' | 'personalized'>('general');
@@ -67,29 +68,29 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     
     const loadMemories = () => setMemories(vectorMemory.getMemories());
     loadMemories();
-    window.addEventListener('soltini-memory-updated', loadMemories);
-    return () => window.removeEventListener('soltini-memory-updated', loadMemories);
+    const unsubMemory = listenCrossWindow('soltini-memory-updated', loadMemories);
+    return () => unsubMemory();
   }, []);
 
   const handleMicChange = (val: string) => {
     setMicId(val);
     localStorage.setItem('soltini_mic_id', val);
     logger.add('success', 'Settings', 'Microphone changed');
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
+    emitCrossWindow('soltini-core-settings-changed');
   };
 
   const handleCamChange = (val: string) => {
     setCamId(val);
     localStorage.setItem('soltini_camera_id', val);
     logger.add('success', 'Settings', 'Camera changed');
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
+    emitCrossWindow('soltini-core-settings-changed');
   };
 
   const handleVoiceChange = (val: string) => {
     setVoice(val);
     localStorage.setItem('soltini_voice', val);
     logger.add('success', 'Settings', 'Voice changed');
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
+    emitCrossWindow('soltini-core-settings-changed');
   };
 
   const handleAvatarSizeChange = (val: number) => {
@@ -97,44 +98,46 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     localStorage.setItem('soltini_avatar_size', val.toString());
     useAvatarState.getState().setAvatarScale(val / 100);
     logger.add('success', 'Settings', 'Avatar size changed');
-    window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+    emitCrossWindow('soltini-settings-changed');
   };
 
   const handleAutoMicChange = (val: boolean) => {
     setAutoMic(val);
     localStorage.setItem('soltini_auto_mic', String(val));
     logger.add('info', 'Settings', `Auto-Start Mic set to ${val}`);
+    emitCrossWindow('soltini-core-settings-changed');
   };
 
   const handleAvatarLockedChange = (val: boolean) => {
     setAvatarLocked(val);
     localStorage.setItem('soltini_avatar_locked', String(val));
     useAvatarState.getState().setIsAvatarLocked(val);
+    emitCrossWindow('soltini-settings-changed');
   };
 
   const handleInstructionChange = (val: string) => {
     setSystemInstruction(val);
     localStorage.setItem('soltini_system_instruction', val);
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
+    emitCrossWindow('soltini-core-settings-changed');
   };
 
   const handleMainApiKeyChange = (val: string) => {
     setMainApiKey(val);
     localStorage.setItem('soltini_main_api_key', val);
-    window.dispatchEvent(new CustomEvent('soltini-api-key-saved'));
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
+    emitCrossWindow('soltini-api-key-saved');
+    emitCrossWindow('soltini-core-settings-changed');
   };
 
   const handleAltApiKeyChange = (val: string) => {
     setAltApiKey(val);
     localStorage.setItem('soltini_alt_api_key', val);
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
+    emitCrossWindow('soltini-core-settings-changed');
   };
 
   const handleTavilyApiKeyChange = (val: string) => {
     setTavilyApiKey(val);
     localStorage.setItem('soltini_tavily_api_key', val);
-    window.dispatchEvent(new CustomEvent('soltini-core-settings-changed'));
+    emitCrossWindow('soltini-core-settings-changed');
   };
 
   return (
@@ -301,8 +304,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                 <div className="flex flex-col gap-3 items-end">
                   <button
                     onClick={() => {
-                      window.dispatchEvent(new CustomEvent('soltini-open-settings')); // Hack to close settings or redirect if they somehow got here
-                      // But they shouldn't even be able to open settings if not signed in now.
+                      emitCrossWindow('soltini-open-settings');
                     }}
                     className="px-5 py-2.5 bg-white text-black hover:bg-white/90 text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-2"
                   >

@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { logger } from './logger';
 import { userAuth } from '../auth/userAuth';
+import { emitCrossWindow } from '../events/crossWindowEventBus';
 
 export interface MemoryFact {
   id: string;
@@ -32,7 +33,7 @@ export class VectorMemoryManager {
   private saveToStorage() {
     try {
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.memories));
-      window.dispatchEvent(new CustomEvent('soltini-memory-updated'));
+      emitCrossWindow('soltini-memory-updated');
     } catch (e) {
       console.error('Failed to save vector memory:', e);
       // In case localStorage is full due to embeddings, we might want to log a warning

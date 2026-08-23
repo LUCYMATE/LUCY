@@ -9,6 +9,7 @@ import { addScheduledTask, cancelScheduledTaskById, startScheduler } from './sch
 import { rateLimiter, RATE_LIMITS } from '../utils/rateLimiter';
 import { userAuth } from '../auth/userAuth';
 import { Command } from '@tauri-apps/plugin-shell';
+import { emitCrossWindow } from '../events/crossWindowEventBus';
 
 let lastScreenScaleFactor = 1.0;
 let autoScrollProcess: any = null;
@@ -414,7 +415,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     }
   } else if (name === 'go_to_sleep') {
     try {
-      window.dispatchEvent(new CustomEvent('soltini-sleep'));
+      emitCrossWindow('soltini-sleep');
       result = { success: true, message: 'System is going to sleep.' };
     } catch (e) {
       result = { error: 'Failed to go to sleep: ' + String(e) };
