@@ -145,6 +145,7 @@ export function useCoreEngine() {
   }, []);
 
   const isMicPendingRef = useRef(false);
+  const lastToggleTimeRef = useRef<number>(0);
 
   const { setSpeaking, setThinking, setListening, setEmotion, setIsMicOn, setConnectionState } = useAvatarState(useShallow(s => ({
     setSpeaking: s.setSpeaking,
@@ -184,8 +185,19 @@ export function useCoreEngine() {
     }, additionalDelaySecs * 1000 + 500); 
   }, [setSpeaking]);
 
+  const setMicEnabled = async (targetOn: boolean) => {
+    const currentMicOn = useAvatarState.getState().isMicOn;
+    if (currentMicOn === targetOn) return;
+    await toggleMic();
+  };
+
   const toggleMic = async () => {
-    if (isMicPendingRef.current) return; 
+    const now = Date.now();
+    if (now - lastToggleTimeRef.current < 400) {
+      return;
+    }
+    if (isMicPendingRef.current) return;
+    lastToggleTimeRef.current = now;
 
     const currentMicOn = useAvatarState.getState().isMicOn;
 
@@ -239,6 +251,35 @@ export function useCoreEngine() {
       try {
         try { recorderRef.current?.stop(); } catch (e) {}
         try { geminiRef.current?.endTurn(); } catch (e) {}
+
+        // Stop any dummy mic tracks so Windows OS microphone indicator disappears immediately
+        if (dummyMicStreamRef.current) {
+          try {
+            dummyMicStreamRef.current.getTracks().forEach(track => {
+              track.enabled = false;
+              track.stop();
+            });
+          } catch (e) {}
+          dummyMicStreamRef.current = null;
+        }
+
+        // Descending tone for clear mute feedback
+        try {
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(900, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(450, ctx.currentTime + 0.1);
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.1);
+          setTimeout(() => ctx.close(), 200);
+        } catch(e) {}
+
         setListening(false);
         setIsMicOn(false);
       } finally {
@@ -249,6 +290,9 @@ export function useCoreEngine() {
 
   const toggleMicRef = useRef(toggleMic);
   toggleMicRef.current = toggleMic;
+
+  const setMicEnabledRef = useRef(setMicEnabled);
+  setMicEnabledRef.current = setMicEnabled;
 
   const initSystem = useCallback((isWakeUp = false, autoMic = false) => {
     logger.add('info', 'System Boot', `Initializing ${BOT_NAME}OS and Gemini connection...`);
@@ -379,8 +423,8 @@ export function useCoreEngine() {
   };
 
   useEffect(() => {
-    setEngineMethods({ initSystem, toggleMic, sendText });
-  }, [initSystem, toggleMic, sendText, setEngineMethods]);
+    setEngineMethods({ initSystem, toggleMic, setMicEnabled, sendText });
+  }, [initSystem, toggleMic, setMicEnabled, sendText, setEngineMethods]);
 
   useEffect(() => {
     if (!initialized) {
@@ -425,12 +469,25 @@ export function useCoreEngine() {
 
   useEffect(() => {
     let mounted = true;
-    const fns: (() => void)[] = [];
-    listen('soltini-toggle-mic', () => { if (mounted) toggleMicRef.current(); }).then(fn => { if (mounted) fns.push(fn); else fn(); });
-    listen('soltini-toggle-mute', () => { if (mounted) playerRef.current?.setMuted(!(playerRef.current as any)?.isMuted); }).then(fn => { if (mounted) fns.push(fn); else fn(); });
+    const unsubToggle = listenCrossWindow('soltini-toggle-mic', () => {
+      if (mounted) toggleMicRef.current();
+    });
+    const unsubSet = listenCrossWindow<{ enabled?: boolean }>('soltini-set-mic', (payload) => {
+      if (!mounted) return;
+      if (payload && typeof payload.enabled === 'boolean') {
+        setMicEnabledRef.current(payload.enabled);
+      } else {
+        toggleMicRef.current();
+      }
+    });
+    const unsubMute = listenCrossWindow('soltini-toggle-mute', () => {
+      if (mounted) playerRef.current?.setMuted(!(playerRef.current as any)?.isMuted);
+    });
     return () => {
       mounted = false;
-      fns.forEach(fn => fn());
+      unsubToggle();
+      unsubSet();
+      unsubMute();
     };
   }, []);
 

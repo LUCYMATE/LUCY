@@ -466,6 +466,13 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     } catch (e) {
       result = { error: 'Failed to go to sleep: ' + String(e) };
     }
+  } else if (name === 'mute_mic' || name === 'turn_off_mic') {
+    try {
+      emitCrossWindow('soltini-set-mic', { enabled: false });
+      result = { success: true, message: 'Microphone has been turned off and muted.' };
+    } catch (e) {
+      result = { error: 'Failed to mute microphone: ' + String(e) };
+    }
   }
   return result;
 }

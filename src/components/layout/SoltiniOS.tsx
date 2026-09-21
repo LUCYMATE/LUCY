@@ -58,9 +58,6 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
         useEngineStore.getState().sendText(e.payload as string);
       }).then(unsub => unlistenSend = unsub);
 
-      listen('soltini-toggle-mic', () => {
-        useEngineStore.getState().toggleMic();
-      }).then(unsub => unlistenMic = unsub);
 
       // Force an initial sync when the secondary window asks
       listen('soltini-request-sync', () => {

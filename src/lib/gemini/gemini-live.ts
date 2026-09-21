@@ -119,6 +119,7 @@ You have direct tools for lightning-fast execution (<100ms). ALWAYS use these di
 - auto_scroll_reels → Starts/stops hands-free scrolling for YouTube Shorts, Reels, TikTok.
 - set_pose → Changes avatar pose/animation when requested.
 - go_to_sleep → MUST be called when user says "go to sleep", "sleep", "hide", or "close yourself".
+- mute_mic → MUST be called immediately when the user asks you to mute, turn off your microphone, stop listening, or be quiet (e.g. "mute", "turn off mic", "stop listening"). Give a very brief 1-sentence confirmation as you mute.
 
 ## BACKGROUND AGENT DELEGATION (trigger_automation)
 ONLY use 'trigger_automation' for complex multi-step tasks that require vision, scripting, or deep automation (e.g., "Find the cheapest hotel on this page", "Write a python script to process my photos", "Click the third button on my screen").
@@ -474,6 +475,14 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                 {
                   name: 'go_to_sleep',
                   description: 'Puts the system and avatar into sleep mode (closes the UI). Use this when the user asks you to close yourself, go to sleep, or hide.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {}
+                  }
+                },
+                {
+                  name: 'mute_mic',
+                  description: 'Turns off and mutes your microphone so you stop listening to audio. Use immediately when user asks to mute, turn off mic, stop listening, or be quiet.',
                   parameters: {
                     type: 'OBJECT',
                     properties: {}
