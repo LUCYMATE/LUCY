@@ -1025,7 +1025,7 @@ pub fn run() {
             
             // Manually forward any deep links to the primary instance (using contains to handle Windows quotes)
             for arg in args {
-                if arg.contains("soltini://") {
+                if arg.contains("lucymate://") || arg.contains("soltini://") {
                     let _ = app.emit("soltini-deep-link-manual", arg);
                 }
             }

@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "LUCY",
   "version": "0.1.0",
-  "identifier": "com.codegiz.multiwin",
+  "identifier": "com.lucy.mate",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -42,6 +42,7 @@
     "deep-link": {
       "desktop": {
         "schemes": [
+          "lucymate",
           "soltini"
         ]
       }
