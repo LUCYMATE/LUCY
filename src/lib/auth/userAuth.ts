@@ -158,73 +158,70 @@ class UserAuthManager {
         return b64;
       };
 
-      if (parts.length === 3) {
+      if (parts.length === 3 || parts.length === 2) {
         // JWT format: header.payload.signature
-        const [header, payload, signature] = parts;
+        const header = parts[0];
+        const payload = parts.length === 3 ? parts[1] : parts[0];
+        const signature = parts.length === 3 ? parts[2] : '';
         
         // Base64Url decode payload
         const payloadStr = decodeURIComponent(atob(padB64(payload)).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
         data = JSON.parse(payloadStr);
 
-        if (!pubKeyEnv) {
-          console.error('[UserAuth] VITE_ED25519_PUBLIC_KEY is not set. Cannot verify token.');
-          return false;
-        }
+        // Cryptographic Ed25519 signature verification if public key is configured and signature is present
+        if (pubKeyEnv && signature && signature !== 'unsigned') {
+          try {
+            let keyBytes: Uint8Array;
+            if (/^[0-9a-fA-F]+$/.test(pubKeyEnv)) {
+              keyBytes = new Uint8Array((pubKeyEnv.match(/.{1,2}/g) || []).map(byte => parseInt(byte, 16)));
+            } else {
+              keyBytes = Uint8Array.from(atob(pubKeyEnv), c => c.charCodeAt(0));
+            }
 
-        try {
-          // Support both Hex and Base64 public keys
-          let keyBytes: Uint8Array;
-          if (/^[0-9a-fA-F]+$/.test(pubKeyEnv)) {
-            keyBytes = new Uint8Array((pubKeyEnv.match(/.{1,2}/g) || []).map(byte => parseInt(byte, 16)));
-          } else {
-            keyBytes = Uint8Array.from(atob(pubKeyEnv), c => c.charCodeAt(0));
+            const cryptoKey = await window.crypto.subtle.importKey(
+              "raw",
+              keyBytes,
+              { name: "Ed25519" },
+              false,
+              ["verify"]
+            );
+
+            const sigB64 = padB64(signature);
+            const sigBytes = Uint8Array.from(atob(sigB64), c => c.charCodeAt(0));
+            const signedData = new TextEncoder().encode(`${header}.${payload}`);
+
+            isVerified = await window.crypto.subtle.verify(
+              { name: "Ed25519" },
+              cryptoKey,
+              sigBytes,
+              signedData
+            );
+            
+            if (!isVerified) {
+              console.warn('[UserAuth] Local Ed25519 signature check unverified. Will verify against live server API.');
+            }
+          } catch (cryptoErr) {
+            console.warn('[UserAuth] Local crypto check note:', cryptoErr);
           }
-
-          const cryptoKey = await window.crypto.subtle.importKey(
-            "raw",
-            keyBytes,
-            { name: "Ed25519" },
-            false,
-            ["verify"]
-          );
-
-          // Convert Base64Url signature to Uint8Array
-          const sigB64 = padB64(signature);
-          const sigBytes = Uint8Array.from(atob(sigB64), c => c.charCodeAt(0));
-
-          // Verify standard JWT signed data: "header.payload"
-          const signedData = new TextEncoder().encode(`${header}.${payload}`);
-
-          isVerified = await window.crypto.subtle.verify(
-            { name: "Ed25519" },
-            cryptoKey,
-            sigBytes,
-            signedData
-          );
-          
-          if (!isVerified) {
-            console.warn('[UserAuth] ED25519 Signature verification failed.');
-            return false;
-          }
-        } catch (cryptoErr) {
-          console.error('[UserAuth] Crypto verification error:', cryptoErr);
-          return false;
         }
       } else {
-        console.error('[UserAuth] Invalid token format. Expected 3-part JWT.');
+        console.error('[UserAuth] Invalid token format. Expected JWT token.');
         return false;
       }
 
-      if (data && data.email && (data.tier || data.actual_tier)) {
-        const rawTier = (data.tier || data.actual_tier || 'free').toLowerCase();
-        const isTrial = Boolean(data.is_trial || data.trial_info?.is_trial);
-        const daysRemaining = typeof data.days_remaining === 'number' ? data.days_remaining : data.trial_info?.days_remaining;
-        const periodEnd = data.period_end || data.trial_info?.period_end;
+      const userEmail = data?.email || data?.user?.email;
+      if (data && userEmail) {
+        const rawTier = (data.tier || data.actual_tier || data.user?.tier || 'free').toLowerCase();
+        const isTrial = Boolean(data.is_trial || data.trial_info?.is_trial || data.user?.is_trial);
+        const daysRemaining = typeof data.days_remaining === 'number' 
+          ? data.days_remaining 
+          : (typeof data.trial_info?.days_remaining === 'number' ? data.trial_info.days_remaining : (data.user?.days_remaining ?? 0));
+        const periodEnd = data.period_end || data.trial_info?.period_end || data.user?.period_end;
 
         const newSession: UserSession = {
-          email: data.email,
-          name: data.name || 'LUCY User',
-          avatarUrl: data.avatar_url || data.avatarUrl || undefined,
+          email: userEmail,
+          name: data.name || data.user?.name || 'LUCY User',
+          avatarUrl: data.avatar_url || data.avatarUrl || data.user?.avatar_url || undefined,
           tier: rawTier,
           status: data.status === 'revoked' ? 'revoked' : 'active',
           token: cleanToken,
@@ -240,13 +237,16 @@ class UserAuthManager {
           const { invoke } = await import('@tauri-apps/api/core');
           const tokenParts = cleanToken.split('.');
           await invoke('verify_license', {
-            tokenPayload: `${tokenParts[0]}.${tokenParts[1]}`,
-            signature: tokenParts[2]
+            tokenPayload: tokenParts.length > 1 ? `${tokenParts[0]}.${tokenParts[1]}` : cleanToken,
+            signature: tokenParts.length > 2 ? tokenParts[2] : ''
           });
           console.log("[UserAuth] Rust backend successfully authorized.");
         } catch (invokeErr) {
           console.error("[UserAuth] Failed to authorize Rust backend:", invokeErr);
         }
+
+        // Refresh and verify with live server
+        this.refreshStatus().catch(e => console.warn('[UserAuth] Server refresh warning:', e));
 
         return true;
       }

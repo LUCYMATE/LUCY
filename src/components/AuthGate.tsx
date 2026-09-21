@@ -231,7 +231,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
                 color: authError ? '#E11D48' : '#1E1926',
                 letterSpacing: '-0.02em',
               }}>
-                {authError ? 'Access Revoked' : 'Sign in to LUCY'}
+                {authError ? 'Sign-In Notice' : 'Sign in to LUCY'}
               </h1>
               <p style={{ color: authError ? '#E11D48' : '#6B7280', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
                 {authError || 'Sign in with Google to activate your companion and 10-day trial.'}

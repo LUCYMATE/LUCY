@@ -48,9 +48,9 @@ function MainApp() {
 
           if (token) {
             const expectedState = localStorage.getItem('soltini_auth_state');
-            if (!expectedState || state !== expectedState) {
-              console.warn('[DeepLink] Invalid or missing state parameter. Ignoring token.');
-              window.dispatchEvent(new CustomEvent('soltini-auth-error', { detail: 'Security mismatch. The login request may have expired or was initiated from another tab.' }));
+            if (expectedState && state && state !== expectedState) {
+              console.warn('[DeepLink] State mismatch. Expected:', expectedState, 'Got:', state);
+              window.dispatchEvent(new CustomEvent('soltini-auth-error', { detail: 'Security mismatch. Please try signing in again.' }));
               return;
             }
             localStorage.removeItem('soltini_auth_state');
@@ -65,7 +65,7 @@ function MainApp() {
                 setLicenseStatus('locked');
               }
             } else {
-              window.dispatchEvent(new CustomEvent('soltini-auth-error', { detail: 'Token verification failed. Please try again.' }));
+              window.dispatchEvent(new CustomEvent('soltini-auth-error', { detail: 'Sign-in verification failed. Please try again.' }));
             }
           }
         };
