@@ -216,13 +216,16 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
 
             <div style={{ textAlign: 'center', marginBottom: 28 }}>
               <div style={{
-                width: 60, height: 60, borderRadius: 20,
+                width: 64, height: 64, borderRadius: 22,
                 background: 'linear-gradient(135deg, rgba(244,63,142,0.15), rgba(139,92,246,0.15))',
-                border: '1px solid #FCE7F3',
+                border: '1.5px solid #FCE7F3',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 margin: '0 auto 16px',
-                fontSize: 26,
-              }}>👑</div>
+                overflow: 'hidden',
+                boxShadow: '0 8px 20px rgba(244,63,142,0.15)'
+              }}>
+                <img src="/lucy-logo.png" alt="LUCY Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
               <h1 style={{
                 fontSize: 22, fontWeight: 800, margin: '0 0 8px',
                 color: authError ? '#E11D48' : '#1E1926',

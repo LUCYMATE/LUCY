@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video, Brain, User, ShieldCheck, Download, Sparkles, ExternalLink } from 'lucide-react';
+import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video, Brain, User, ShieldCheck, Download, Sparkles, ExternalLink, Info, RefreshCw } from 'lucide-react';
 import { AssetLibrary } from './AssetLibrary';
 import { logger } from '../../lib/store/logger';
 import { useAvatarState } from '../../lib/store/avatarState';
@@ -10,9 +10,11 @@ import { openExternalUrl } from '../../lib/system/tauriBridge';
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'api' | 'shortcuts' | 'assets' | 'personalized'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'api' | 'shortcuts' | 'assets' | 'personalized' | 'about'>('general');
   const [session, setSession] = useState(userAuth.getSession());
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateStatusMsg, setUpdateStatusMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = userAuth.subscribe(s => setSession(s));
@@ -221,6 +223,15 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             }`}
           >
             <Keyboard className="w-5 h-5" /> Shortcuts
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('about')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'about' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
+            }`}
+          >
+            <Info className="w-5 h-5" /> About & System
           </button>
         </nav>
       </div>
@@ -818,6 +829,132 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'about' && (
+          <div className="flex flex-col gap-6 max-w-2xl w-full">
+            <div>
+              <h3 className="text-2xl font-black mb-1 text-[#1E1926]">About LUCY AI</h3>
+              <p className="text-[#6B7280] text-xs mb-4">Ecosystem specifications, version status, and official project links.</p>
+            </div>
+
+            {/* App Branding Card */}
+            <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-[#FCE7F3] shadow-md shadow-pink-500/10 shrink-0">
+                  <img src="/lucy-logo.png" alt="LUCY Logo" className="w-full h-full object-cover" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-lg font-black text-[#1E1926]">LUCY AI</h4>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-extrabold tracking-wide">
+                      v2.0.0
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#6B7280] mt-0.5">Autonomous Desktop Companion &amp; Multimodal Voice Assistant</p>
+                  <p className="text-[11px] text-[#9CA3AF] mt-1 font-mono">Build: com.lucy.mate (x64 Windows Release)</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-end gap-2">
+                <button
+                  onClick={async () => {
+                    setIsCheckingUpdate(true);
+                    setUpdateStatusMsg('Checking with lucymate.vercel.app…');
+                    const info = await checkAppUpdate();
+                    setIsCheckingUpdate(false);
+                    if (info && info.updateAvailable) {
+                      setUpdateInfo(info);
+                      setUpdateStatusMsg(`Update v${info.version} available!`);
+                    } else {
+                      setUpdateStatusMsg('You are running the latest version (v2.0.0).');
+                    }
+                    setTimeout(() => setUpdateStatusMsg(null), 4000);
+                  }}
+                  disabled={isCheckingUpdate}
+                  className="px-4 py-2 bg-[#FFF5F8] border border-[#FCE7F3] hover:border-[#F43F8E] text-[#F43F8E] text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-xs cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+                  {isCheckingUpdate ? 'Checking…' : 'Check for Updates'}
+                </button>
+                {updateStatusMsg && (
+                  <span className="text-[11px] text-emerald-600 font-semibold">{updateStatusMsg}</span>
+                )}
+              </div>
+            </div>
+
+            {/* Technical Specifications */}
+            <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex flex-col gap-3">
+              <h4 className="text-xs font-bold text-[#1E1926] uppercase tracking-wider mb-1">Architecture &amp; Engine Stack</h4>
+              
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-[#FFF5F8] rounded-xl border border-[#FCE7F3]">
+                  <p className="font-bold text-[#1E1926]">AI Model Engine</p>
+                  <p className="text-[#6B7280] mt-0.5">Google Gemini 3.1 Flash Live (Bi-directional PCM 16kHz WebSocket)</p>
+                </div>
+                <div className="p-3 bg-[#FFF5F8] rounded-xl border border-[#FCE7F3]">
+                  <p className="font-bold text-[#1E1926]">3D Avatar Rendering</p>
+                  <p className="text-[#6B7280] mt-0.5">Three.js VRM Humanoid 2.0 with Real-Time Audio Viseme Morphing</p>
+                </div>
+                <div className="p-3 bg-[#FFF5F8] rounded-xl border border-[#FCE7F3]">
+                  <p className="font-bold text-[#1E1926]">Desktop Architecture</p>
+                  <p className="text-[#6B7280] mt-0.5">Tauri 2.0 (Native Rust Engine + WebView2 Chromium Layer)</p>
+                </div>
+                <div className="p-3 bg-[#FFF5F8] rounded-xl border border-[#FCE7F3]">
+                  <p className="font-bold text-[#1E1926]">Deep Link Protocol</p>
+                  <p className="text-[#6B7280] mt-0.5">lucymate:// (Single-Instance Inter-Process Forwarding)</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Official Project & Support Links */}
+            <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex flex-col gap-3">
+              <h4 className="text-xs font-bold text-[#1E1926] uppercase tracking-wider mb-1">Official Links &amp; Support</h4>
+              
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between py-1 border-b border-[#FCE7F3]">
+                  <span className="text-[#6B7280]">Official Cloud Portal</span>
+                  <button 
+                    onClick={() => openExternalUrl('https://lucymate.vercel.app')}
+                    className="text-[#F43F8E] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    lucymate.vercel.app <ExternalLink className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between py-1 border-b border-[#FCE7F3]">
+                  <span className="text-[#6B7280]">Support &amp; Inquiries</span>
+                  <a href="mailto:mail@satish.com.np" className="text-[#F43F8E] font-bold hover:underline">
+                    mail@satish.com.np
+                  </a>
+                </div>
+                <div className="flex items-center justify-between py-1 border-b border-[#FCE7F3]">
+                  <span className="text-[#6B7280]">Developer</span>
+                  <span className="font-semibold text-[#1E1926]">Satish Acharya</span>
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-[#6B7280]">Terms of Service &amp; Privacy</span>
+                  <button 
+                    onClick={() => openExternalUrl('https://lucymate.vercel.app/terms')}
+                    className="text-[#F43F8E] font-semibold hover:underline cursor-pointer"
+                  >
+                    View Terms &amp; Policies
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* What's New in v2.0.0 */}
+            <div className="bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-indigo-500/10 border border-pink-200 rounded-2xl p-6 shadow-xs">
+              <h4 className="text-xs font-bold text-[#1E1926] uppercase tracking-wider mb-2">What&apos;s New in v2.0.0</h4>
+              <ul className="text-xs text-[#6B7280] space-y-1.5 list-disc pl-4">
+                <li>Complete LUCY luxury rebranding with pearl-pink color palette.</li>
+                <li>Unified <code className="text-[#F43F8E] font-bold">com.lucy.mate</code> package and <code className="text-[#F43F8E] font-bold">lucymate://</code> deep link.</li>
+                <li>Auto-enabled microphone and audio playback with no browser permission pop-ups.</li>
+                <li>Brand new luxury chat interface with avatar badges, prompt chips, and copy support.</li>
+                <li>Official high-resolution Android launcher icon ported to Windows desktop.</li>
+              </ul>
+            </div>
           </div>
         )}
       </div>

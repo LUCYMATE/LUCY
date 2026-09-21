@@ -261,7 +261,7 @@ class UserAuthManager {
    */
   public async refreshStatus(serverUrl = DEFAULT_LICENSE_SERVER): Promise<UserSession | null> {
     if (!this.session?.email) return null;
-    if (this.session.email === 'guest@soltini.local') return this.session;
+    if (this.session.email === 'guest@soltini.local' || this.session.email === 'guest@lucy.local') return this.session;
 
     try {
       const res = await fetch(`${serverUrl}/api/auth/verify`, {

@@ -193,7 +193,7 @@ fn run_python_script(script: String, state: tauri::State<AppState>) -> Result<St
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let file_path = temp_dir.join(format!("soltini_script_{}_{}.py", unique_id, std::process::id()));
+    let file_path = temp_dir.join(format!("lucy_script_{}_{}.py", unique_id, std::process::id()));
     std::fs::write(&file_path, script).map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "windows")]
