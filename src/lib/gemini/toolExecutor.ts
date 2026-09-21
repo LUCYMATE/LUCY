@@ -323,27 +323,73 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       const rawName = String(args.app_name || '').trim().toLowerCase();
       const appName = rawName.replace(/\.exe$/i, '');
       
-      // Known Windows protocol mappings
-      const protocolMap: Record<string, string> = {
-        'settings': 'ms-settings:',
-        'calculator': 'calc:',
-        'calc': 'calc:',
-        'store': 'ms-windows-store:',
-        'mail': 'outlookmail:',
-        'camera': 'microsoft.windows.camera:'
+      // 1. Instant Web Service Mapping (Opens YouTube, Google, etc. in 50ms)
+      const webServiceMap: Record<string, string> = {
+        'youtube': 'https://www.youtube.com',
+        'yt': 'https://www.youtube.com',
+        'google': 'https://www.google.com',
+        'chatgpt': 'https://chatgpt.com',
+        'netflix': 'https://www.netflix.com',
+        'twitter': 'https://x.com',
+        'x': 'https://x.com',
+        'instagram': 'https://www.instagram.com',
+        'facebook': 'https://www.facebook.com',
+        'reddit': 'https://www.reddit.com',
+        'github': 'https://github.com',
+        'gmail': 'https://mail.google.com',
+        'twitch': 'https://www.twitch.tv',
+        'tiktok': 'https://www.tiktok.com',
+        'amazon': 'https://www.amazon.com',
+        'linkedin': 'https://www.linkedin.com'
       };
 
-      if (protocolMap[appName]) {
-        await invoke('run_terminal_command', { command: `start ${protocolMap[appName]}` });
-        result = { success: true, message: `Opened ${appName}` };
+      if (webServiceMap[appName] || appName.startsWith('http://') || appName.startsWith('https://') || appName.includes('.com') || appName.includes('.org') || appName.includes('.io') || appName.includes('.net')) {
+        const targetUrl = webServiceMap[appName] || (appName.startsWith('http') ? appName : `https://${appName}`);
+        await invoke('open_external_url', { url: targetUrl });
+        result = { success: true, message: `Opened ${targetUrl} in browser` };
       } else {
-        // Smart PowerShell App Launcher:
-        // 1. Try launching by command name / PATH
-        // 2. Search Windows Start Menu shortcuts (.lnk) for matching installed apps
-        const psCommand = `powershell -Command "$app = '${appName}'; if (Get-Command $app -ErrorAction SilentlyContinue) { Start-Process $app } else { $lnk = Get-ChildItem -Path '$env:ProgramData\\Microsoft\\Windows\\Start Menu', '$env:APPDATA\\Microsoft\\Windows\\Start Menu' -Recurse -Include *.lnk -ErrorAction SilentlyContinue | Where-Object {$_.Name -like \\"*$app*\\"} | Select-Object -First 1; if ($lnk) { Invoke-Item $lnk.FullName } else { Start-Process $app } }"`;
-        
-        const output = await invoke('run_terminal_command', { command: psCommand });
-        result = { success: true, output };
+        // 2. Direct Windows protocol / command mappings (Instant 10ms launch without Start Menu crawling)
+        const directCommandMap: Record<string, string> = {
+          'settings': 'start ms-settings:',
+          'calculator': 'start calc:',
+          'calc': 'start calc:',
+          'store': 'start ms-windows-store:',
+          'mail': 'start outlookmail:',
+          'camera': 'start microsoft.windows.camera:',
+          'spotify': 'start spotify:',
+          'whatsapp': 'start whatsapp:',
+          'discord': 'start discord:',
+          'telegram': 'start tg:',
+          'chrome': 'start chrome',
+          'google chrome': 'start chrome',
+          'edge': 'start msedge',
+          'msedge': 'start msedge',
+          'firefox': 'start firefox',
+          'brave': 'start brave',
+          'notepad': 'start notepad',
+          'cmd': 'start cmd',
+          'terminal': 'start wt',
+          'explorer': 'start explorer',
+          'file explorer': 'start explorer',
+          'code': 'start code',
+          'vscode': 'start code',
+          'steam': 'start steam:'
+        };
+
+        if (directCommandMap[appName]) {
+          await invoke('run_terminal_command', { command: directCommandMap[appName] });
+          result = { success: true, message: `Opened ${appName}` };
+        } else {
+          // 3. Fast fallback: try cmd start first, then fast PowerShell lookup
+          try {
+            await invoke('run_terminal_command', { command: `start "" "${appName}"` });
+            result = { success: true, message: `Launched ${appName}` };
+          } catch {
+            const psCommand = `powershell -NoProfile -NonInteractive -Command "$app = '${appName}'; if (Get-Command $app -ErrorAction SilentlyContinue) { Start-Process $app } else { $lnk = Get-ChildItem -Path '$env:ProgramData\\Microsoft\\Windows\\Start Menu\\Programs', '$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs' -Filter '*$app*.lnk' -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($lnk) { Invoke-Item $lnk.FullName } else { Start-Process $app } }"`;
+            const output = await invoke('run_terminal_command', { command: psCommand });
+            result = { success: true, output };
+          }
+        }
       }
     } catch (e) {
       result = { error: 'Failed to open app: ' + String(e) };

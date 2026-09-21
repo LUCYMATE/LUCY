@@ -109,20 +109,20 @@ export class GeminiLive {
 - Lead emotionally relevant replies with ONE tag: [happy], [sad], [angry], [surprised], [thinking], [flirty], or [neutral].
 - Context now: ${timeGreeting}.${timeContext}${petNamePrompt}
 
-## AUTOMATION GATE (Read Carefully)
-You have direct tools for simple OS actions (press_key_combo). ALWAYS use these directly if they satisfy the user's request (e.g., locking PC, closing windows, switching tabs) because they execute instantly.
-For ALL other actions (opening apps, taking screenshots, searching the web, python scripts, complex clicking), you MUST use the 'trigger_automation' tool to delegate it to the background agent.
-  ✅ ONLY trigger actions if the user's LAST message is a clear imperative command.
-  ❌ NEVER trigger if the user is merely asking about or discussing an app.
+## AUTOMATION GATE & INSTANT EXECUTION (Read Carefully)
+You have direct tools for lightning-fast execution (<100ms). ALWAYS use these directly without delegating:
+- open_external_url → Use IMMEDIATELY when the user asks to open YouTube, Google, ChatGPT, Netflix, websites, or online links (e.g. "open youtube" -> open_external_url({ url: "https://www.youtube.com" })). This executes in under a second!
+- open_app → Use IMMEDIATELY when the user asks to open desktop applications (e.g. Spotify, Notepad, Chrome, WhatsApp, Calculator, VS Code).
+- close_app → Use IMMEDIATELY when the user asks to close or exit an application.
+- press_key_combo → Use for OS navigation like Win+L (lock PC), Win+D (desktop), Alt+F4 (close), Ctrl+Tab.
+- press_key → If user says "next", "scroll down", "skip", or "scroll up", use press_key({ key: "down" }) or press_key({ key: "up" }).
+- auto_scroll_reels → Starts/stops hands-free scrolling for YouTube Shorts, Reels, TikTok.
+- set_pose → Changes avatar pose/animation when requested.
+- go_to_sleep → MUST be called when user says "go to sleep", "sleep", "hide", or "close yourself".
 
-## TOOL RULES
-- auto_scroll_reels → Starts or stops hands-free auto-scrolling for short videos (like YouTube Shorts or Reels). It uses a reliable universal timer engine to press down/up at specific intervals.
-- go_to_sleep → MUST be called whenever the user says "go to sleep", "sleep", "close yourself", or "hide". This is a FREE feature available to all users!
-- press_key → If the user says "next", "scroll down", "skip", or "scroll up", immediately use press_key({ key: "down" }) or press_key({ key: "up" }) to scroll the video/page! This is a FREE feature available to all users!
-- press_key_combo → use for OS navigation like Win+L (lock PC), Win+D (desktop), Alt+F4 (close), Ctrl+Tab.
-- trigger_automation → use for opening apps (e.g., "open spotify"), web search, typing, etc. Do NOT claim the task is finished when invoking this tool; inform the user you are working on it, and wait for the background agent completion notification before announcing completion!
-- set_pose → call ONLY if user explicitly asks for a specific pose/animation.
-- save_memory / search_memory → silently manage user facts.`;
+## BACKGROUND AGENT DELEGATION (trigger_automation)
+ONLY use 'trigger_automation' for complex multi-step tasks that require vision, scripting, or deep automation (e.g., "Find the cheapest hotel on this page", "Write a python script to process my photos", "Click the third button on my screen").
+❌ NEVER use 'trigger_automation' for simple commands like opening an app, opening YouTube, or opening a website!`;
 
       const userPersonality = localStorage.getItem('soltini_system_instruction') || '';
       const petName = localStorage.getItem('soltini_pet_name') || '';
@@ -375,6 +375,17 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                   }
                 },
                 {
+                  name: 'open_external_url',
+                  description: 'Open a website, URL, or online service directly in the default browser (e.g. YouTube, Google, ChatGPT, Netflix, GitHub). ALWAYS use this immediately when the user asks to open YouTube, a website, or an online link.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      url: { type: 'STRING', description: 'The absolute URL to open (e.g. https://www.youtube.com)' }
+                    },
+                    required: ['url']
+                  }
+                },
+                {
                   name: 'close_app',
                   description: 'Forcefully close or kill a running desktop application or process (e.g., chrome, notepad).',
                   parameters: {
@@ -387,13 +398,13 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                 },
                 {
                   name: 'trigger_automation',
-                  description: 'Delegates system commands (browsing YouTube/websites, clicks, typing, screen capture, python scripts, terminal processes, webcam capturing, web search, opening applications) to the background automation agent.',
+                  description: 'Delegates complex multi-step tasks (vision clicking, complex python scripts, scraping, multi-step browser workflows) to the background automation agent. Do NOT use for opening apps or websites.',
                   parameters: {
                     type: 'OBJECT',
                     properties: {
                       request: {
                         type: 'STRING',
-                        description: 'The exact system automation request description.'
+                        description: 'The exact complex automation request description.'
                       }
                     },
                     required: ['request']
