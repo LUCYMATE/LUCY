@@ -20,8 +20,7 @@
         "resizable": true,
         "decorations": false,
         "transparent": true,
-        "alwaysOnTop": true,
-        "additionalBrowserArgs": "--auto-accept-camera-and-microphone-capture --use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+        "alwaysOnTop": true
       }
     ],
     "security": {
