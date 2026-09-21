@@ -8,7 +8,7 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { userAuth } from './lib/auth/userAuth';
 import { emitCrossWindow, listenCrossWindow } from './lib/events/crossWindowEventBus';
 
-const LICENSE_SERVER_URL = 'https://soltini.vercel.app';
+const LICENSE_SERVER_URL = 'https://lucymate.vercel.app';
 
 const safe = async (p: Promise<any>) => {
   try { await p; } catch (e) { console.warn('Tauri API error:', e); }

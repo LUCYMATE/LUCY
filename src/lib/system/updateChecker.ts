@@ -20,7 +20,7 @@ export const getClientPlatform = (): 'windows' | 'mac' | 'linux' => {
 
 export const checkAppUpdate = async (): Promise<AppUpdateInfo | null> => {
   try {
-    const res = await fetch('https://soltini.vercel.app/api/settings');
+    const res = await fetch('https://lucymate.vercel.app/api/settings');
     if (!res.ok) return null;
     
     const data = await res.json();
@@ -51,7 +51,7 @@ export const checkAppUpdate = async (): Promise<AppUpdateInfo | null> => {
     return {
       updateAvailable: true,
       version: serverVersion,
-      url: platformUpdate.url || data.links?.[platform] || 'https://soltini.vercel.app',
+      url: platformUpdate.url || data.links?.[platform] || 'https://lucymate.vercel.app',
       notes: platformUpdate.notes || 'Performance improvements and bug fixes.',
       updateId,
       platform,

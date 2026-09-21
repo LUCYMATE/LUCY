@@ -132,33 +132,33 @@ export function AssetLibrary() {
   const animations = assets.filter(a => a.type === 'fbx' || a.type === 'bvh');
 
   return (
-    <div className="flex flex-col gap-8 w-full max-w-3xl text-white pb-12">
+    <div className="flex flex-col gap-6 w-full max-w-3xl text-[#1E1926] pb-12">
       <div>
-        <h3 className="text-2xl font-bold mb-2 flex items-center gap-2">
-          <Box className="w-6 h-6 text-pink-400" /> Asset Library
+        <h3 className="text-2xl font-black mb-1 flex items-center gap-2 text-[#1E1926]">
+          <Box className="w-6 h-6 text-[#F43F8E]" /> Asset Library
         </h3>
-        <p className="text-white/60 text-sm">
-          Customize your Soltini experience. Upload your own VRM model or teach the AI new animations (FBX/BVH).
+        <p className="text-[#6B7280] text-xs">
+          Customize your LUCY experience. Upload your own 3D VRM model or teach the AI new animations (FBX/BVH).
         </p>
       </div>
 
       {/* --- AVATAR UPLOAD SECTION --- */}
-      <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-4 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+      <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex flex-col gap-4 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-[#8B5CF6]"></div>
         
         <div className="flex justify-between items-start">
           <div>
-            <h4 className="font-semibold text-lg text-blue-100 flex items-center gap-2">
-              <Box className="w-5 h-5 text-blue-400" /> Custom Avatar Model
+            <h4 className="font-bold text-base text-[#1E1926] flex items-center gap-2">
+              <Box className="w-5 h-5 text-[#8B5CF6]" /> Custom 3D VRM Avatar
             </h4>
-            <p className="text-xs text-white/50 mt-1 max-w-md">
+            <p className="text-xs text-[#6B7280] mt-1 max-w-md">
               Upload a <b>.vrm</b> file to completely change the character. You can only have 1 custom model at a time. Uploading a new one replaces the old one.
             </p>
           </div>
           
           <div className="shrink-0 flex flex-col items-end gap-2">
              <button 
-                className="bg-blue-600/80 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-2 shadow-lg shadow-blue-500/20"
+                className="bg-[#8B5CF6] hover:opacity-90 text-white px-4 py-2 rounded-xl font-bold transition-all text-xs flex items-center gap-2 shadow-sm"
                 onClick={() => vrmInputRef.current?.click()}
               >
                 <Upload className="w-4 h-4" /> {customAvatar ? 'Replace Avatar' : 'Upload VRM'}
@@ -174,21 +174,21 @@ export function AssetLibrary() {
         </div>
 
         {customAvatar && (
-          <div className="mt-2 flex flex-col gap-3 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3">
+          <div className="mt-2 flex flex-col gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
              <div className="flex items-center justify-between">
                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
+                  <div className="p-2 rounded-lg bg-purple-100 text-[#8B5CF6]">
                     <Box className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className="font-bold text-sm text-blue-100">Currently Active: {customAvatar.name}</p>
-                    <p className="text-[10px] text-blue-200/50">Overrides the default system model</p>
+                    <p className="font-bold text-sm text-[#1E1926]">Currently Active: {customAvatar.name}</p>
+                    <p className="text-[10px] text-[#6B7280]">Overrides the default system model</p>
                   </div>
                </div>
                
                <button 
                  onClick={() => handleDelete(customAvatar.id)}
-                 className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+                 className="p-2 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
                  title="Delete Custom Avatar"
                >
                  <Trash2 className="w-4 h-4" />
@@ -196,10 +196,10 @@ export function AssetLibrary() {
              </div>
              
              {/* Flip Toggle */}
-             <div className="flex items-center justify-between pt-3 border-t border-blue-500/20">
+             <div className="flex items-center justify-between pt-3 border-t border-purple-200">
                <div>
-                 <label className="block text-sm font-medium text-blue-100">Flip Custom Model (180°)</label>
-                 <p className="text-xs text-blue-200/50 mt-1">Enable this if your uploaded model faces backwards.</p>
+                 <label className="block text-sm font-bold text-[#1E1926]">Flip Custom Model (180°)</label>
+                 <p className="text-xs text-[#6B7280]">Enable this if your uploaded model faces backwards.</p>
                </div>
                <button
                  onClick={() => {
@@ -208,9 +208,9 @@ export function AssetLibrary() {
                    localStorage.setItem('soltini_flip_vrm', String(next));
                    emitCrossWindow('soltini-vrm-changed');
                  }}
-                 className={`relative w-10 h-5 rounded-full transition-colors ${flipCustomModel ? 'bg-blue-500' : 'bg-black/40 border border-blue-500/20'}`}
+                 className={`relative w-10 h-5 rounded-full transition-colors ${flipCustomModel ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`}
                >
-                 <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${flipCustomModel ? 'translate-x-5' : 'translate-x-0'}`} />
+                 <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${flipCustomModel ? 'translate-x-5' : 'translate-x-0'}`} />
                </button>
              </div>
           </div>
@@ -218,14 +218,14 @@ export function AssetLibrary() {
       </div>
 
       {/* --- ANIMATIONS UPLOAD SECTION --- */}
-      <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-6 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-1 h-full bg-pink-500"></div>
+      <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex flex-col gap-5 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-[#F43F8E]"></div>
 
         <div>
-          <h4 className="font-semibold text-lg text-pink-100 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-pink-400" /> AI Animations
+          <h4 className="font-bold text-base text-[#1E1926] flex items-center gap-2">
+            <Activity className="w-5 h-5 text-[#F43F8E]" /> AI Animations
           </h4>
-          <p className="text-xs text-white/50 mt-1 max-w-md">
+          <p className="text-xs text-[#6B7280] mt-1 max-w-md">
             Upload up to 4 custom <b>.fbx</b> or <b>.bvh</b> animations. Assign a simple slug name (e.g. `backflip`), and the AI will automatically learn how to use it!
           </p>
         </div>

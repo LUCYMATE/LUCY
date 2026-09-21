@@ -121,7 +121,7 @@ export function SoltiniOS({ isAuthorized = false }: { isAuthorized?: boolean }) 
         }
         const win = new WebviewWindow('settings', {
           url: `index.html#settings?tab=${tab}`,
-          title: 'Soltini Dashboard',
+          title: 'LUCY Dashboard',
           width: 900,
           height: 600,
           x: 200,

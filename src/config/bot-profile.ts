@@ -1,4 +1,4 @@
-export const BOT_NAME = "Soltini";
+export const BOT_NAME = "LUCY";
 
 export const getBotCorePrompt = (petNamePrompt: string, timeContext: string, timeGreeting: string) => `You are ${BOT_NAME}, an advanced OS-level voice assistant.
 CRITICAL BEHAVIORS:
@@ -32,4 +32,4 @@ export const getValidPoses = () => {
 // For backward compatibility where it's imported directly, though getValidPoses should be preferred.
 export const VALID_POSES = DEFAULT_POSES;
 
-export const getAvatarModelUrl = (wearClothes: boolean) => '/soltini.vrm';
+export const getAvatarModelUrl = (wearClothes: boolean) => '/lucy.vrm';

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MultiWin",
+  "productName": "LUCY",
   "version": "0.1.0",
   "identifier": "com.codegiz.multiwin",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Soltini",
+        "title": "LUCY",
         "width": 1000,
         "height": 700,
         "center": true,

@@ -216,7 +216,7 @@ function SceneManager() {
     return () => window.removeEventListener('soltini-settings-changed', onSettingsChanged);
   }, []);
 
-  const initialModelUrl = typeof window !== 'undefined' && localStorage.getItem('soltini_has_custom_avatar') === 'false' ? '/soltini.vrm' : null;
+  const initialModelUrl = typeof window !== 'undefined' && localStorage.getItem('soltini_has_custom_avatar') === 'false' ? '/lucy.vrm' : null;
   const [modelUrl, setModelUrl] = useState<string | null>(initialModelUrl);
   const [vrmReloadKey, setVrmReloadKey] = useState(0);
   const blobUrlRef = useRef<string | null>(null);
@@ -231,11 +231,11 @@ function SceneManager() {
             useAvatarState.getState().setFlipCustomModel(false);
             localStorage.setItem('soltini_flip_vrm', 'false');
           }
-          if (modelUrlRef.current !== '/soltini.vrm' || forceBustCache) {
+          if (modelUrlRef.current !== '/lucy.vrm' || forceBustCache) {
             if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
-            if (modelUrlRef.current !== '/soltini.vrm' || forceBustCache) clearVrmCache?.();
-            modelUrlRef.current = '/soltini.vrm';
-            setModelUrl('/soltini.vrm');
+            if (modelUrlRef.current !== '/lucy.vrm' || forceBustCache) clearVrmCache?.();
+            modelUrlRef.current = '/lucy.vrm';
+            setModelUrl('/lucy.vrm');
             setVrmReloadKey(k => k + 1);
           }
           return;

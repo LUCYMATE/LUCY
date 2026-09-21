@@ -3,18 +3,23 @@
  * Connects Desktop App to License Server & Neon DB
  */
 
+export type SubscriptionTier = 'free' | 'pc_pro' | 'bundle_pro' | 'mobile_pro' | 'pro' | string;
+
 export interface UserSession {
   email: string;
   name: string;
   avatarUrl?: string;
-  tier: 'free' | 'pro';
+  tier: SubscriptionTier;
   status: 'active' | 'revoked';
   token: string;
   expiresAt: number;
+  isTrial?: boolean;
+  daysRemaining?: number;
+  periodEnd?: string;
 }
 
 const STORAGE_KEY = 'soltini_user_session';
-const DEFAULT_LICENSE_SERVER = 'https://soltini.vercel.app';
+const DEFAULT_LICENSE_SERVER = 'https://lucymate.vercel.app';
 
 class UserAuthManager {
   private session: UserSession | null = null;
@@ -68,8 +73,40 @@ class UserAuthManager {
     return this.session;
   }
 
+  /**
+   * Evaluates to true if the active session has Pro access on Windows PC.
+   * Entitled PC tiers: 'pc_pro', 'bundle_pro', or legacy 'pro'.
+   */
   public isPro(): boolean {
-    return this.session?.tier === 'pro' && this.session?.status === 'active';
+    if (this.session?.status !== 'active') return false;
+    const t = (this.session?.tier || '').toLowerCase();
+    return t === 'pc_pro' || t === 'bundle_pro' || t === 'pro';
+  }
+
+  /**
+   * Evaluates to true if the account owns Android Mobile Pro, but is running Free on Windows.
+   */
+  public isMobileOnlyPro(): boolean {
+    if (this.session?.status !== 'active') return false;
+    const t = (this.session?.tier || '').toLowerCase();
+    return t === 'mobile_pro';
+  }
+
+  public getPlanDisplayName(): string {
+    const t = (this.session?.tier || '').toLowerCase();
+    const isTrial = this.session?.isTrial;
+    switch (t) {
+      case 'bundle_pro':
+        return isTrial ? 'LUCY Ultimate Bundle (10-Day Trial)' : 'LUCY Ultimate Bundle';
+      case 'pc_pro':
+        return 'LUCY Windows PC Pro';
+      case 'mobile_pro':
+        return 'LUCY Android Mobile Pro (Free on PC)';
+      case 'pro':
+        return 'LUCY Pro (All-Access)';
+      default:
+        return 'LUCY Free Companion';
+    }
   }
 
   public setSession(session: UserSession) {
@@ -85,7 +122,7 @@ class UserAuthManager {
     this.notify();
 
     if (oldSession && oldSession.token) {
-      fetch('https://soltini.vercel.app/api/auth/logout', {
+      fetch('https://lucymate.vercel.app/api/auth/logout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -178,15 +215,23 @@ class UserAuthManager {
         return false;
       }
 
-      if (data && data.email && data.tier) {
+      if (data && data.email && (data.tier || data.actual_tier)) {
+        const rawTier = (data.tier || data.actual_tier || 'free').toLowerCase();
+        const isTrial = Boolean(data.is_trial || data.trial_info?.is_trial);
+        const daysRemaining = typeof data.days_remaining === 'number' ? data.days_remaining : data.trial_info?.days_remaining;
+        const periodEnd = data.period_end || data.trial_info?.period_end;
+
         const newSession: UserSession = {
           email: data.email,
-          name: data.name || 'Soltini User',
+          name: data.name || 'LUCY User',
           avatarUrl: data.avatar_url || data.avatarUrl || undefined,
-          tier: data.tier === 'pro' ? 'pro' : 'free',
+          tier: rawTier,
           status: data.status === 'revoked' ? 'revoked' : 'active',
           token: cleanToken,
-          expiresAt: data.expiresAt || (Date.now() + 30 * 24 * 60 * 60 * 1000)
+          expiresAt: data.expiresAt || (Date.now() + 30 * 24 * 60 * 60 * 1000),
+          isTrial,
+          daysRemaining,
+          periodEnd
         };
         this.setSession(newSession);
 
@@ -212,7 +257,7 @@ class UserAuthManager {
   }
 
   /**
-   * Sync latest user status with server API (e.g. if upgraded to Pro from Admin Panel)
+   * Sync latest user status with server API (e.g. if upgraded to Pro from Admin Panel or Checkout)
    */
   public async refreshStatus(serverUrl = DEFAULT_LICENSE_SERVER): Promise<UserSession | null> {
     if (!this.session?.email) return null;
@@ -223,22 +268,34 @@ class UserAuthManager {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Platform': 'windows'
         },
         body: JSON.stringify({
           email: this.session.email,
-          token: this.session.token
+          token: this.session.token,
+          platform: 'windows'
         })
       });
 
       if (res.ok) {
         const data = await res.json();
         if (data.user) {
+          const rawTier = (data.user.tier || data.user.actual_tier || data.tier || 'free').toLowerCase();
+          const isTrial = Boolean(data.trial_info?.is_trial ?? data.user?.is_trial);
+          const daysRemaining = typeof data.trial_info?.days_remaining === 'number' 
+            ? data.trial_info.days_remaining 
+            : (typeof data.user?.days_remaining === 'number' ? data.user.days_remaining : undefined);
+          const periodEnd = data.trial_info?.period_end || data.user?.period_end;
+
           const updatedSession: UserSession = {
             ...this.session,
             name: data.user.name || this.session.name,
             avatarUrl: data.user.avatar_url || this.session.avatarUrl,
-            tier: data.user.tier === 'pro' ? 'pro' : 'free',
+            tier: rawTier,
             status: data.user.status === 'revoked' ? 'revoked' : 'active',
+            isTrial,
+            daysRemaining,
+            periodEnd
           };
           this.setSession(updatedSession);
           return updatedSession;

@@ -142,7 +142,7 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
   window.navigator.userAgent.includes('Linux') 
     ? 'Linux. IMPORTANT: If mouse/keyboard automation fails on Linux, politely remind the user that Wayland requires them to click "Setup Wayland Automation" in the Settings -> Devices tab.' 
     : window.navigator.userAgent.includes('Mac') 
-      ? 'macOS. IMPORTANT: If automation or screenshots fail on Mac, politely remind the user they must enable Accessibility & Screen Recording for Soltini in macOS System Settings.' 
+      ? 'macOS. IMPORTANT: If automation or screenshots fail on Mac, politely remind the user they must enable Accessibility & Screen Recording for LUCY in macOS System Settings.' 
       : 'Windows (Seamless automation enabled).'
 }`;
 

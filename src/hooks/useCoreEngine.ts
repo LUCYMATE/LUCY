@@ -296,7 +296,7 @@ export function useCoreEngine() {
             sessionStorage.removeItem('soltini_pending_query');
           } else if (updateInfo && updateInfo.isNewNotification) {
             markUpdateNotified(updateInfo.updateId);
-            gemini.sendText(`System instruction: A brand new update for Soltini (version ${updateInfo.version}) is now available for ${updateInfo.platform}! Speak directly to the user in a cheerful, enthusiastic voice to let them know that a new update is ready, and politely tell them to check Settings to download it.`);
+            gemini.sendText(`System instruction: A brand new update for LUCY (version ${updateInfo.version}) is now available for ${updateInfo.platform}! Speak directly to the user in a cheerful, enthusiastic voice to let them know that a new update is ready, and politely tell them to check Settings to download it.`);
           } else if (!isWakeUp) {
             gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
           } else {

@@ -52,7 +52,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   
   const [systemInstruction, setSystemInstruction] = useState(() => {
     const val = localStorage.getItem('soltini_system_instruction') || '';
-    if (val.includes('You are Soltini AI , a playful and bubbly')) return '';
+    if (val.includes('You are Soltini AI , a playful and bubbly') || val.includes('You are LUCY AI , a playful and bubbly')) return '';
     return val;
   });
   const [mainApiKey, setMainApiKey] = useState(localStorage.getItem('soltini_main_api_key') || '');
@@ -141,38 +141,38 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="flex w-full h-full glass rounded-[40px] overflow-hidden text-white animate-in slide-in-from-bottom-10 fade-in duration-500">
+    <div className="flex w-full h-full bg-gradient-to-br from-[#FFF5F8] via-[#FFFFFF] to-[#FFF0F5] border border-[#FCE7F3] shadow-2xl rounded-[32px] overflow-hidden text-[#1E1926] animate-in slide-in-from-bottom-10 fade-in duration-500 font-sans">
       
       {/* Sidebar Navigation */}
-      <div className="w-64 bg-black/40 border-r border-white/5 p-6 flex flex-col gap-6 shrink-0">
+      <div className="w-64 bg-[#FFF5F8]/90 backdrop-blur-md border-r border-[#FCE7F3] p-6 flex flex-col gap-6 shrink-0">
         <button 
           onClick={onClose}
-          className="flex items-center gap-2 text-white/60 hover:text-white transition-colors self-start px-2 py-1 -ml-2 rounded-lg hover:bg-white/5"
+          className="flex items-center gap-2 text-[#6B7280] hover:text-[#1E1926] transition-colors self-start px-2 py-1 -ml-2 rounded-lg hover:bg-white/80"
         >
           <ArrowLeft className="w-4 h-4" /> Back to System
         </button>
 
-        <h2 className="text-2xl font-bold tracking-tight">Settings</h2>
+        <h2 className="text-2xl font-extrabold tracking-tight text-[#1E1926]">Settings</h2>
 
         <nav className="flex flex-col gap-2">
           <button 
             onClick={() => setActiveTab('account')}
-            className={`flex items-center justify-between px-4 py-3 rounded-xl transition-colors text-left font-medium ${
-              activeTab === 'account' ? 'bg-pink-500 text-white' : 'hover:bg-white/10 text-white/70'
+            className={`flex items-center justify-between px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'account' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
             }`}
           >
             <div className="flex items-center gap-3">
-              <User className="w-5 h-5" /> Account & Pro
+              <User className="w-5 h-5" /> Account &amp; Pro
             </div>
-            {session?.tier === 'pro' && (
-              <span className="bg-amber-400/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-400/40">PRO</span>
+            {userAuth.isPro() && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${activeTab === 'account' ? 'bg-white/20 text-white border-white/30' : 'bg-amber-400/20 text-amber-600 border-amber-400/40'}`}>PRO</span>
             )}
           </button>
 
           <button 
             onClick={() => setActiveTab('general')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-medium ${
-              activeTab === 'general' ? 'bg-pink-500 text-white' : 'hover:bg-white/10 text-white/70'
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'general' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
             }`}
           >
             <SettingsIcon className="w-5 h-5" /> General
@@ -180,8 +180,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           
           <button 
             onClick={() => setActiveTab('devices')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-medium ${
-              activeTab === 'devices' ? 'bg-pink-500 text-white' : 'hover:bg-white/10 text-white/70'
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'devices' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
             }`}
           >
             <Volume2 className="w-5 h-5" /> Devices
@@ -189,17 +189,17 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
           <button 
             onClick={() => setActiveTab('api')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-medium ${
-              activeTab === 'api' ? 'bg-pink-500 text-white' : 'hover:bg-white/10 text-white/70'
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'api' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
             }`}
           >
-            <Key className="w-5 h-5" /> AI & API Keys
+            <Key className="w-5 h-5" /> AI &amp; API Keys
           </button>
 
           <button 
             onClick={() => setActiveTab('assets')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-medium ${
-              activeTab === 'assets' ? 'bg-pink-500 text-white' : 'hover:bg-white/10 text-white/70'
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'assets' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
             }`}
           >
             <Box className="w-5 h-5" /> Asset Library
@@ -207,8 +207,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
           <button 
             onClick={() => setActiveTab('personalized')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-medium ${
-              activeTab === 'personalized' ? 'bg-pink-500 text-white' : 'hover:bg-white/10 text-white/70'
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'personalized' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
             }`}
           >
             <Brain className="w-5 h-5" /> Personalized
@@ -216,8 +216,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           
           <button 
             onClick={() => setActiveTab('shortcuts')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-medium ${
-              activeTab === 'shortcuts' ? 'bg-pink-500 text-white' : 'hover:bg-white/10 text-white/70'
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'shortcuts' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
             }`}
           >
             <Keyboard className="w-5 h-5" /> Shortcuts
@@ -256,32 +256,71 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         )}
 
         {activeTab === 'account' && (
-          <div className="flex flex-col gap-8 max-w-2xl w-full">
+          <div className="flex flex-col gap-6 max-w-2xl w-full">
             <div>
-              <h3 className="text-2xl font-bold mb-2">Account & Subscription</h3>
-              <p className="text-white/60 text-sm mb-6">Manage your Google identity and Soltini plan status.</p>
+              <h3 className="text-2xl font-black mb-1 text-[#1E1926]">Account &amp; Subscription</h3>
+              <p className="text-[#6B7280] text-xs mb-4">Manage your Google identity, LUCY subscription, and cross-device licenses.</p>
             </div>
 
+            {/* Trial Active Banner */}
+            {session?.isTrial && (
+              <div className="bg-gradient-to-r from-amber-500/15 via-pink-500/10 to-purple-500/10 border border-amber-400/50 rounded-2xl p-5 flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-amber-400/20 border border-amber-400/30 text-amber-600 flex items-center justify-center text-xl font-bold">
+                    ⏳
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-[#1E1926]">10-Day Ultimate Bundle Trial Active</h4>
+                      <span className="bg-amber-400 text-black text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                        {session?.daysRemaining ?? 10} DAYS LEFT
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#6B7280] mt-0.5">
+                      Full dual-device Pro privileges unlocked on Windows PC &amp; Android Mobile.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => openExternalUrl(`https://lucymate.vercel.app/checkout?plan=bundle_pro&email=${encodeURIComponent(session?.email || '')}`)}
+                  className="px-4 py-2 bg-gradient-to-r from-[#F43F8E] to-[#8B5CF6] text-white text-xs font-bold rounded-xl shadow-md hover:opacity-95 transition-all shrink-0"
+                >
+                  Keep Bundle ($3/mo)
+                </button>
+              </div>
+            )}
+
             {/* Profile Card */}
-            <div className="bg-black/30 border border-white/10 rounded-2xl p-6 flex items-center justify-between">
+            <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center text-xl font-bold text-white shadow-lg overflow-hidden">
+                <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#F43F8E] to-[#8B5CF6] flex items-center justify-center text-xl font-bold text-white shadow-md overflow-hidden border-2 border-[#FCE7F3]">
                   {session?.avatarUrl ? (
                     <img src={session.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (
-                    session?.name?.[0] || 'U'
+                    session?.name?.[0] || 'L'
                   )}
                 </div>
                 <div>
-                  <h4 className="text-lg font-bold text-white flex items-center gap-2">
-                    {session?.name || 'Guest User'}
-                    {session?.tier === 'pro' ? (
-                      <span className="bg-gradient-to-r from-amber-400 to-yellow-500 text-black text-xs font-black px-2.5 py-0.5 rounded-full shadow">PRO</span>
+                  <h4 className="text-lg font-bold text-[#1E1926] flex items-center gap-2">
+                    {session?.name || 'LUCY User'}
+                    {session?.isTrial ? (
+                      <span className="bg-amber-400/20 text-amber-600 border border-amber-400/40 text-[10px] font-black px-2.5 py-0.5 rounded-full">
+                        TRIAL ACTIVE
+                      </span>
+                    ) : userAuth.isPro() ? (
+                      <span className="bg-gradient-to-r from-amber-400 to-yellow-500 text-black text-xs font-black px-2.5 py-0.5 rounded-full shadow-sm">
+                        {session?.tier === 'bundle_pro' ? 'BUNDLE PRO' : session?.tier === 'pc_pro' ? 'PC PRO' : 'PRO'}
+                      </span>
+                    ) : session?.tier === 'mobile_pro' ? (
+                      <span className="bg-purple-500/20 text-purple-600 border border-purple-500/30 text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                        MOBILE PRO (FREE ON PC)
+                      </span>
                     ) : (
-                      <span className="bg-white/10 text-white/60 text-xs font-medium px-2 py-0.5 rounded-full">FREE</span>
+                      <span className="bg-gray-100 text-gray-500 text-xs font-medium px-2 py-0.5 rounded-full">FREE</span>
                     )}
                   </h4>
-                  <p className="text-xs text-white/50">{session?.email || 'Not signed in'}</p>
+                  <p className="text-xs text-[#F43F8E] mt-0.5 font-bold">{userAuth.getPlanDisplayName()}</p>
+                  <p className="text-xs text-[#6B7280]">{session?.email || 'Not signed in'}</p>
                 </div>
               </div>
 
@@ -289,13 +328,13 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => userAuth.refreshStatus()}
-                    className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white/80 text-xs font-semibold rounded-xl transition-colors"
+                    className="px-3.5 py-2 bg-[#FFF5F8] hover:bg-[#FCE7F3] border border-[#FCE7F3] text-[#1E1926] text-xs font-bold rounded-xl transition-colors"
                   >
                     Sync Status
                   </button>
                   <button
                     onClick={() => userAuth.logout()}
-                    className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-semibold rounded-xl transition-colors border border-red-500/30"
+                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition-colors border border-red-200"
                   >
                     Sign Out
                   </button>
@@ -306,55 +345,88 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     onClick={() => {
                       emitCrossWindow('soltini-open-settings');
                     }}
-                    className="px-5 py-2.5 bg-white text-black hover:bg-white/90 text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-2"
+                    className="px-5 py-2.5 bg-[#F43F8E] text-white hover:opacity-90 text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-2"
                   >
-                    Sign in required
+                    Sign in with Google
                   </button>
                 </div>
               )}
             </div>
             
             {/* Upgrade to Pro Banner */}
-            {session?.tier !== 'pro' && (
-              <div className="bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/30 rounded-2xl p-6 flex items-center justify-between shadow-[0_0_15px_rgba(245,158,11,0.1)]">
-                <div>
-                  <h4 className="text-lg font-bold text-amber-400">Unlock Soltini PRO</h4>
-                  <p className="text-sm text-white/70 mt-1 max-w-sm">Get access to custom 3D avatars, OS automation, Python script execution, and more advanced features.</p>
+            {!userAuth.isPro() && (
+              userAuth.isMobileOnlyPro() ? (
+                <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-300 rounded-2xl p-6 flex items-center justify-between shadow-sm">
+                  <div>
+                    <h4 className="text-base font-bold text-purple-700">Upgrade to LUCY Ultimate Bundle</h4>
+                    <p className="text-xs text-[#6B7280] mt-1 max-w-sm">
+                      You have an active Android Mobile Pro license! Upgrade to the Ultimate Bundle (dual PC + Mobile) to unlock Windows custom 3D models and automation.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <button
+                      onClick={() => openExternalUrl(`https://lucymate.vercel.app/checkout?plan=bundle_pro&email=${encodeURIComponent(session?.email || '')}`)}
+                      className="px-4 py-2 bg-gradient-to-r from-[#F43F8E] to-[#8B5CF6] hover:opacity-90 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center gap-2"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Get Ultimate Bundle ($3 / ₹299)
+                    </button>
+                    <button
+                      onClick={() => openExternalUrl(`https://lucymate.vercel.app/checkout?plan=pc_pro&email=${encodeURIComponent(session?.email || '')}`)}
+                      className="px-4 py-1.5 bg-white border border-[#FCE7F3] hover:bg-[#FFF5F8] text-[#1E1926] text-xs font-semibold rounded-xl transition-all text-center"
+                    >
+                      Get Windows PC Pro ($2 / ₹199)
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => openExternalUrl('https://wa.me/?text=I%20would%20like%20to%20upgrade%20my%20Soltini%20account%20to%20PRO.')}
-                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-xl transition-colors shadow-lg shadow-amber-500/25 flex items-center gap-2"
-                >
-                  <Sparkles className="w-4 h-4" /> Upgrade to PRO
-                </button>
-              </div>
+              ) : (
+                <div className="bg-gradient-to-r from-amber-500/10 to-yellow-500/10 border border-amber-300 rounded-2xl p-6 flex items-center justify-between shadow-sm">
+                  <div>
+                    <h4 className="text-base font-bold text-amber-700">Unlock LUCY PRO</h4>
+                    <p className="text-xs text-[#6B7280] mt-1 max-w-sm">Get access to custom 3D avatars, OS automation, Python script execution, and dual-screen companion features.</p>
+                  </div>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <button
+                      onClick={() => openExternalUrl(`https://lucymate.vercel.app/checkout?plan=pc_pro&email=${encodeURIComponent(session?.email || '')}`)}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center gap-2"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Get Windows PC Pro ($2 / ₹199)
+                    </button>
+                    <button
+                      onClick={() => openExternalUrl(`https://lucymate.vercel.app/checkout?plan=bundle_pro&email=${encodeURIComponent(session?.email || '')}`)}
+                      className="px-4 py-1.5 bg-white border border-[#FCE7F3] hover:bg-[#FFF5F8] text-[#1E1926] text-xs font-semibold rounded-xl transition-colors text-center"
+                    >
+                      Get Ultimate Bundle ($3 / ₹299)
+                    </button>
+                  </div>
+                </div>
+              )
             )}
 
             {/* Feature Access Matrix */}
-            <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-4">
-              <h4 className="text-sm font-semibold text-white/80">Plan Capability Comparison</h4>
+            <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex flex-col gap-4">
+              <h4 className="text-xs font-bold text-[#1E1926] uppercase tracking-wider">Plan Capability Comparison</h4>
               
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                  <div className="font-bold text-white mb-1 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Free Tier Includes
+                <div className="p-3.5 bg-[#FFF5F8] rounded-xl border border-[#FCE7F3]">
+                  <div className="font-bold text-[#1E1926] mb-1.5 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Free Tier Includes
                   </div>
-                  <ul className="text-white/60 space-y-1 pl-3 list-disc">
-                    <li>3D Avatar Model rendering & lip-sync speech</li>
+                  <ul className="text-[#6B7280] space-y-1 pl-3 list-disc">
+                    <li>3D Avatar Model rendering &amp; lip-sync speech</li>
                     <li>Full natural conversational AI voice chat</li>
-                    <li>Basic system statistics & settings customization</li>
+                    <li>Basic system statistics &amp; settings customization</li>
                   </ul>
                 </div>
 
-                <div className="p-3 bg-amber-400/10 rounded-xl border border-amber-400/20">
-                  <div className="font-bold text-amber-300 mb-1 flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Pro Tier Unlocks
+                <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200">
+                  <div className="font-bold text-amber-800 mb-1.5 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-600" /> Pro Tier Unlocks
                   </div>
-                  <ul className="text-white/80 space-y-1 pl-3 list-disc">
-                    <li>Custom 3D VRM & FBX asset uploads</li>
+                  <ul className="text-amber-900/80 space-y-1 pl-3 list-disc">
+                    <li>Custom 3D VRM &amp; FBX asset uploads</li>
                     <li>Special pose animations (kissing, dancing)</li>
-                    <li>OS Automation, clicking & keyboard shortcuts</li>
-                    <li>Python script & terminal command execution</li>
+                    <li>OS Automation, clicking &amp; keyboard shortcuts</li>
+                    <li>Python script &amp; terminal command execution</li>
                   </ul>
                 </div>
               </div>
@@ -363,47 +435,47 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         )}
 
         {activeTab === 'general' && (
-          <div className="flex flex-col gap-8 max-w-2xl w-full">
+          <div className="flex flex-col gap-6 max-w-2xl w-full">
             <div>
-              <h3 className="text-2xl font-bold mb-2">General Configuration</h3>
-              <p className="text-white/60 text-sm mb-6">Customize display sizes and window behavior.</p>
+              <h3 className="text-2xl font-black mb-1 text-[#1E1926]">General Configuration</h3>
+              <p className="text-[#6B7280] text-xs mb-4">Customize display sizes, avatar anchors, and window behavior.</p>
             </div>
 
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-4">
               
               {/* Auto-Start Microphone Toggle */}
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex items-center justify-between hover:bg-black/30 transition-colors">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex items-center justify-between transition-colors">
                 <div>
-                  <label className="block text-sm font-medium text-white">Auto-Start Microphone</label>
-                  <p className="text-xs text-white/40 mt-1">If enabled, Soltini will automatically start listening the moment you open the app.</p>
+                  <label className="block text-sm font-bold text-[#1E1926]">Auto-Start Microphone</label>
+                  <p className="text-xs text-[#6B7280] mt-0.5">If enabled, LUCY will automatically start listening the moment you open the app.</p>
                 </div>
                 <button
                   onClick={() => handleAutoMicChange(!autoMic)}
-                  className={`relative w-12 h-6 rounded-full transition-colors ${autoMic ? 'bg-pink-500' : 'bg-white/20'}`}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${autoMic ? 'bg-[#F43F8E]' : 'bg-gray-200'}`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${autoMic ? 'translate-x-6' : 'translate-x-0'}`} />
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${autoMic ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
               </div>
 
               {/* Avatar Lock Toggle */}
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex items-center justify-between hover:bg-black/30 transition-colors">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex items-center justify-between transition-colors">
                 <div>
-                  <label className="block text-sm font-medium text-white">Lock Avatar Position</label>
-                  <p className="text-xs text-white/40 mt-1">Keep the avatar in its current spot. It won't wander around but will still pose and peek.</p>
+                  <label className="block text-sm font-bold text-[#1E1926]">Lock Avatar Position</label>
+                  <p className="text-xs text-[#6B7280] mt-0.5">Keep the avatar in its current spot. It won't wander around but will still pose and peek.</p>
                 </div>
                 <button
                   onClick={() => handleAvatarLockedChange(!avatarLocked)}
-                  className={`relative w-12 h-6 rounded-full transition-colors ${avatarLocked ? 'bg-pink-500' : 'bg-white/20'}`}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${avatarLocked ? 'bg-[#F43F8E]' : 'bg-gray-200'}`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${avatarLocked ? 'translate-x-6' : 'translate-x-0'}`} />
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${avatarLocked ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
               </div>
 
               {/* Avatar Size Slider */}
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6 hover:bg-black/30 transition-colors">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 transition-colors">
                 <div className="flex justify-between items-center mb-2">
-                  <label className="block text-sm font-medium text-white">Avatar Size</label>
-                  <span className="text-sm font-mono text-pink-400">{avatarSize}%</span>
+                  <label className="block text-sm font-bold text-[#1E1926]">Avatar Size</label>
+                  <span className="text-sm font-mono font-bold text-[#F43F8E]">{avatarSize}%</span>
                 </div>
                 <input
                   type="range"
@@ -411,9 +483,9 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   max="200"
                   value={avatarSize}
                   onChange={(e) => handleAvatarSizeChange(parseInt(e.target.value))}
-                  className="w-full h-2 bg-black/40 rounded-lg appearance-none cursor-pointer accent-pink-500 mt-2"
+                  className="w-full h-2 bg-pink-100 rounded-lg appearance-none cursor-pointer accent-[#F43F8E] mt-2"
                 />
-                <div className="flex justify-between text-xs text-white/40 mt-2">
+                <div className="flex justify-between text-xs text-[#6B7280] mt-2">
                   <span>50%</span>
                   <span>100% (Default)</span>
                   <span>200%</span>
@@ -421,10 +493,10 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
               </div>
 
               {/* Dynamic Talking Mode Toggle */}
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex items-center justify-between hover:bg-black/30 transition-colors">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex items-center justify-between transition-colors">
                 <div>
-                  <label className="block text-sm font-medium text-white">Dynamic Talking Mode (Desktop Mate Style)</label>
-                  <p className="text-xs text-white/40 mt-1">When speaking, Soltini dynamically anchors to the taskbar with a large face and highly flexible talking poses.</p>
+                  <label className="block text-sm font-bold text-[#1E1926]">Dynamic Talking Mode (Desktop Mate Style)</label>
+                  <p className="text-xs text-[#6B7280] mt-0.5">When speaking, LUCY dynamically anchors to the taskbar with a large face and highly flexible talking poses.</p>
                 </div>
                 <button
                   onClick={() => {
@@ -433,9 +505,9 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     localStorage.setItem('soltini_dynamic_talking', String(val));
                     logger.add('info', 'Settings', `Dynamic Talking Mode set to ${val}`);
                   }}
-                  className={`relative w-12 h-6 rounded-full transition-colors ${useAvatarState.getState().isDynamicTalkingEnabled ? 'bg-pink-500' : 'bg-white/20'}`}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${useAvatarState.getState().isDynamicTalkingEnabled ? 'bg-[#F43F8E]' : 'bg-gray-200'}`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${useAvatarState.getState().isDynamicTalkingEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${useAvatarState.getState().isDynamicTalkingEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
                 </button>
               </div>
 
@@ -444,28 +516,28 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         )}
 
         {activeTab === 'devices' && (
-          <div className="flex flex-col gap-8 max-w-2xl w-full">
+          <div className="flex flex-col gap-6 max-w-2xl w-full">
             <div>
-              <h3 className="text-2xl font-bold mb-2">Hardware Devices</h3>
-              <p className="text-white/60 text-sm mb-6">Select your preferred audio and video inputs.</p>
+              <h3 className="text-2xl font-black mb-1 text-[#1E1926]">Hardware Devices</h3>
+              <p className="text-[#6B7280] text-xs mb-4">Select your preferred audio and video inputs for LUCY.</p>
             </div>
 
             <div className="flex flex-col gap-4">
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-4">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-pink-500/20 text-pink-400">
+                  <div className="p-3 rounded-xl bg-pink-50 text-[#F43F8E]">
                     <Mic className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="text-lg font-medium text-white">Microphone Input</h4>
-                    <p className="text-sm text-white/50">Select your preferred audio input device</p>
+                    <h4 className="text-base font-bold text-[#1E1926]">Microphone Input</h4>
+                    <p className="text-xs text-[#6B7280]">Select your preferred audio input device</p>
                   </div>
                 </div>
                 
                 <select 
                   value={micId}
                   onChange={(e) => handleMicChange(e.target.value)}
-                  className="bg-black/40 border border-white/10 rounded-lg p-3 text-sm focus:outline-none focus:border-pink-500 transition-colors w-full"
+                  className="bg-[#FFF5F8] border border-[#FCE7F3] text-[#1E1926] rounded-xl p-3 text-sm focus:outline-none focus:border-[#F43F8E] transition-colors w-full"
                 >
                   <option value="default">System Default</option>
                   {devices.filter(d => d.kind === 'audioinput').map(d => (
@@ -474,21 +546,21 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                 </select>
               </div>
 
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-4">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-purple-500/20 text-purple-400">
+                  <div className="p-3 rounded-xl bg-purple-50 text-[#8B5CF6]">
                     <Video className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="text-lg font-medium text-white">Camera Input</h4>
-                    <p className="text-sm text-white/50">Select your preferred camera device</p>
+                    <h4 className="text-base font-bold text-[#1E1926]">Camera Input</h4>
+                    <p className="text-xs text-[#6B7280]">Select your preferred camera device</p>
                   </div>
                 </div>
                 
                 <select 
                   value={camId}
                   onChange={(e) => handleCamChange(e.target.value)}
-                  className="bg-black/40 border border-white/10 rounded-lg p-3 text-sm focus:outline-none focus:border-purple-500 transition-colors w-full"
+                  className="bg-[#FFF5F8] border border-[#FCE7F3] text-[#1E1926] rounded-xl p-3 text-sm focus:outline-none focus:border-[#8B5CF6] transition-colors w-full"
                 >
                   <option value="default">System Default</option>
                   {devices.filter(d => d.kind === 'videoinput').map(d => (
@@ -499,57 +571,57 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
               {/* Permissions & Automation Guide */}
               {(isMac || isLinux) && (
-                <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-4 mt-4">
+                <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4 mt-2">
                   <div className="flex items-center gap-4">
-                    <div className="p-3 rounded-xl bg-blue-500/20 text-blue-400">
+                    <div className="p-3 rounded-xl bg-blue-50 text-blue-600">
                       <SettingsIcon className="w-6 h-6" />
                     </div>
                     <div>
-                      <h4 className="text-lg font-medium text-white">System Permissions & Automation</h4>
-                      <p className="text-sm text-white/50">Required for seamless background AI actions</p>
+                      <h4 className="text-base font-bold text-[#1E1926]">System Permissions &amp; Automation</h4>
+                      <p className="text-xs text-[#6B7280]">Required for seamless background AI actions</p>
                     </div>
                   </div>
 
                   {isMac && (
-                    <div className="bg-black/40 rounded-xl p-4 mt-2">
-                      <h5 className="font-medium text-pink-400 mb-2">macOS Setup Required:</h5>
-                      <p className="text-sm text-white/70 mb-2">To allow the AI to automate tasks, take screenshots, and use the camera, you must grant permissions:</p>
-                      <ol className="text-sm text-white/60 list-decimal pl-5 space-y-1">
-                        <li>Open <strong className="text-white">System Settings</strong> {'>'} <strong className="text-white">Privacy & Security</strong></li>
-                        <li>Under <strong className="text-white">Accessibility</strong>, enable Soltini (for mouse/keyboard control).</li>
-                        <li>Under <strong className="text-white">Screen Recording</strong>, enable Soltini.</li>
-                        <li>Under <strong className="text-white">Camera & Microphone</strong>, enable Soltini when prompted.</li>
+                    <div className="bg-[#FFF5F8] rounded-xl p-4 mt-2 border border-[#FCE7F3]">
+                      <h5 className="font-bold text-[#F43F8E] mb-2 text-sm">macOS Setup Required:</h5>
+                      <p className="text-xs text-[#6B7280] mb-2">To allow the AI to automate tasks, take screenshots, and use the camera, you must grant permissions:</p>
+                      <ol className="text-xs text-[#6B7280] list-decimal pl-5 space-y-1">
+                        <li>Open <strong className="text-[#1E1926]">System Settings</strong> {'>'} <strong className="text-[#1E1926]">Privacy &amp; Security</strong></li>
+                        <li>Under <strong className="text-[#1E1926]">Accessibility</strong>, enable LUCY (for mouse/keyboard control).</li>
+                        <li>Under <strong className="text-[#1E1926]">Screen Recording</strong>, enable LUCY.</li>
+                        <li>Under <strong className="text-[#1E1926]">Camera &amp; Microphone</strong>, enable LUCY when prompted.</li>
                       </ol>
                     </div>
                   )}
 
                   {isLinux && (
-                    <div className="bg-black/40 rounded-xl p-4 mt-2">
-                      <h5 className="font-medium text-pink-400 mb-2">Linux Wayland Support:</h5>
-                      <p className="text-sm text-white/70 mb-4">If you are using Wayland, standard automation may fail. Soltini can use <code className="bg-black/50 px-1 rounded text-white">ydotool</code> as a fallback.</p>
+                    <div className="bg-[#FFF5F8] rounded-xl p-4 mt-2 border border-[#FCE7F3]">
+                      <h5 className="font-bold text-[#F43F8E] mb-2 text-sm">Linux Wayland Support:</h5>
+                      <p className="text-xs text-[#6B7280] mb-4">If you are using Wayland, standard automation may fail. LUCY can use <code className="bg-white px-1 py-0.5 rounded border border-[#FCE7F3] text-[#1E1926]">ydotool</code> as a fallback.</p>
                       <button 
                         onClick={handleSetupWayland}
-                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm transition-colors font-medium"
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs transition-colors font-bold shadow-sm"
                       >
                         Setup Wayland Automation (Requires Sudo)
                       </button>
-                      <p className="text-xs text-white/40 mt-3">This will prompt for your password to run `pkexec ydotoold` to start the background automation daemon.</p>
+                      <p className="text-xs text-[#6B7280] mt-3">This will prompt for your password to run `pkexec ydotoold` to start the background automation daemon.</p>
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6">
-                 <div className="flex items-center gap-4 mb-4">
-                   <div className="p-3 rounded-xl bg-blue-500/20 text-blue-400">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5">
+                 <div className="flex items-center gap-4 mb-3">
+                   <div className="p-3 rounded-xl bg-blue-50 text-blue-600">
                      <Volume2 className="w-6 h-6" />
                    </div>
                    <div>
-                     <h4 className="text-lg font-medium text-white">Audio Output</h4>
-                     <p className="text-sm text-white/50">Playback device configuration</p>
+                     <h4 className="text-base font-bold text-[#1E1926]">Audio Output</h4>
+                     <p className="text-xs text-[#6B7280]">Playback device configuration</p>
                    </div>
                  </div>
-                 <p className="text-sm text-white/60 bg-black/40 p-4 rounded-xl border border-white/5">
+                 <p className="text-xs text-[#6B7280] bg-[#FFF5F8] p-4 rounded-xl border border-[#FCE7F3]">
                    Output currently uses your system's default audio device. Volume can be controlled via the Windows Volume Mixer.
                  </p>
               </div>
@@ -558,24 +630,23 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         )}
 
         {activeTab === 'api' && (
-          <div className="flex flex-col gap-8 max-w-2xl w-full">
+          <div className="flex flex-col gap-6 max-w-2xl w-full">
             <div>
-              <h3 className="text-2xl font-bold mb-2">AI & API Keys</h3>
-              <p className="text-white/60 text-sm mb-6">Configure AI models, behavior, and provider keys.</p>
+              <h3 className="text-2xl font-black mb-1 text-[#1E1926]">AI &amp; API Keys</h3>
+              <p className="text-[#6B7280] text-xs mb-4">Configure AI models, voice characters, and provider keys for LUCY.</p>
             </div>
 
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-4">
               {/* Models */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-black/20 border border-white/5 rounded-2xl p-6">
-
-                <div className="flex flex-col gap-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-white/80 flex items-center gap-2">
-                    <Volume2 className="w-4 h-4 text-pink-400" /> Assistant Voice
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-bold text-[#1E1926] flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-[#F43F8E]" /> Assistant Voice
                   </label>
                   <select 
                     value={voice}
                     onChange={(e) => handleVoiceChange(e.target.value)}
-                    className="bg-black/40 border border-white/10 rounded-lg p-2.5 text-sm focus:outline-none focus:border-pink-500 transition-colors"
+                    className="bg-[#FFF5F8] border border-[#FCE7F3] text-[#1E1926] rounded-xl p-3 text-sm focus:outline-none focus:border-[#F43F8E] transition-colors"
                   >
                     <option value="Aoede">Aoede</option>
                     <option value="Puck">Puck</option>
@@ -587,27 +658,27 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
               </div>
 
               {/* Personality Textarea */}
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6">
-                <label className="block text-sm font-medium text-white mb-2">Personality &amp; Custom Preferences</label>
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5">
+                <label className="block text-sm font-bold text-[#1E1926] mb-2">Personality &amp; Custom Preferences</label>
                 <textarea
                   value={systemInstruction}
                   onChange={(e) => handleInstructionChange(e.target.value)}
                   rows={4}
-                  className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans resize-none"
-                  placeholder="E.g., You love making sarcastic jokes..."
+                  className="w-full bg-[#FFF5F8] text-[#1E1926] text-sm border border-[#FCE7F3] rounded-xl p-3 outline-none focus:border-[#F43F8E] font-sans resize-none"
+                  placeholder="E.g., You love making sarcastic jokes and speaking sweetly..."
                 />
-                <p className="text-xs text-white/40 mt-2">These instructions add custom personality quirks and preferences on top of Soltini's core automation system.</p>
+                <p className="text-xs text-[#6B7280] mt-2">These instructions add custom personality quirks and preferences on top of LUCY's core automation system.</p>
               </div>
 
               {/* Keys */}
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-5">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-5">
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-sm font-medium text-white">Main Gemini API Key</label>
+                    <label className="block text-sm font-bold text-[#1E1926]">Main Gemini API Key</label>
                     <button
                       type="button"
                       onClick={() => openExternalUrl('https://aistudio.google.com/app/apikey')}
-                      className="text-xs text-pink-400 hover:text-pink-300 font-semibold flex items-center gap-1 hover:underline cursor-pointer bg-pink-500/10 hover:bg-pink-500/20 px-2.5 py-1 rounded-md border border-pink-500/30 transition-all"
+                      className="text-xs text-[#F43F8E] hover:text-[#E11D48] font-bold flex items-center gap-1 hover:underline cursor-pointer bg-pink-50 px-2.5 py-1 rounded-lg border border-pink-200 transition-all"
                     >
                       Get Gemini API Key <ExternalLink className="w-3 h-3" />
                     </button>
@@ -616,18 +687,18 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     type="password"
                     value={mainApiKey}
                     onChange={(e) => handleMainApiKeyChange(e.target.value)}
-                    className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
+                    className="w-full bg-[#FFF5F8] text-[#1E1926] text-sm border border-[#FCE7F3] rounded-xl p-3 outline-none focus:border-[#F43F8E] font-sans"
                     placeholder="AIzaSy..."
                   />
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-sm font-medium text-white">Alternative Gemini API Key</label>
+                    <label className="block text-sm font-bold text-[#1E1926]">Alternative Gemini API Key</label>
                     <button
                       type="button"
                       onClick={() => openExternalUrl('https://aistudio.google.com/app/apikey')}
-                      className="text-xs text-pink-400 hover:text-pink-300 font-semibold flex items-center gap-1 hover:underline cursor-pointer bg-pink-500/10 hover:bg-pink-500/20 px-2.5 py-1 rounded-md border border-pink-500/30 transition-all"
+                      className="text-xs text-[#F43F8E] hover:text-[#E11D48] font-bold flex items-center gap-1 hover:underline cursor-pointer bg-pink-50 px-2.5 py-1 rounded-lg border border-pink-200 transition-all"
                     >
                       Get Gemini API Key <ExternalLink className="w-3 h-3" />
                     </button>
@@ -636,19 +707,19 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     type="password"
                     value={altApiKey}
                     onChange={(e) => handleAltApiKeyChange(e.target.value)}
-                    className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
+                    className="w-full bg-[#FFF5F8] text-[#1E1926] text-sm border border-[#FCE7F3] rounded-xl p-3 outline-none focus:border-[#F43F8E] font-sans"
                     placeholder="AIzaSy..."
                   />
-                  <p className="text-xs text-white/40 mt-1">Fallback API key if the main key hits a rate limit.</p>
+                  <p className="text-xs text-[#6B7280] mt-1">Fallback API key if the main key hits a rate limit.</p>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-sm font-medium text-white">Tavily Search API Key</label>
+                    <label className="block text-sm font-bold text-[#1E1926]">Tavily Search API Key</label>
                     <button
                       type="button"
                       onClick={() => openExternalUrl('https://tavily.com')}
-                      className="text-xs text-pink-400 hover:text-pink-300 font-semibold flex items-center gap-1 hover:underline cursor-pointer bg-pink-500/10 hover:bg-pink-500/20 px-2.5 py-1 rounded-md border border-pink-500/30 transition-all"
+                      className="text-xs text-[#F43F8E] hover:text-[#E11D48] font-bold flex items-center gap-1 hover:underline cursor-pointer bg-pink-50 px-2.5 py-1 rounded-lg border border-pink-200 transition-all"
                     >
                       Get Tavily API Key <ExternalLink className="w-3 h-3" />
                     </button>
@@ -657,7 +728,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     type="password"
                     value={tavilyApiKey}
                     onChange={(e) => handleTavilyApiKeyChange(e.target.value)}
-                    className="w-full bg-black/40 text-white text-sm border border-white/10 rounded-lg p-3 outline-none focus:border-pink-500 font-sans"
+                    className="w-full bg-[#FFF5F8] text-[#1E1926] text-sm border border-[#FCE7F3] rounded-xl p-3 outline-none focus:border-[#F43F8E] font-sans"
                     placeholder="tvly-dev-..."
                   />
                 </div>
@@ -668,27 +739,27 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         )}
 
         {activeTab === 'shortcuts' && (
-          <div className="flex flex-col gap-8 max-w-2xl w-full">
+          <div className="flex flex-col gap-6 max-w-2xl w-full">
             <div>
-              <h3 className="text-2xl font-bold mb-2">Global Shortcuts</h3>
-              <p className="text-white/60 text-sm mb-6">These shortcuts work globally across your OS.</p>
+              <h3 className="text-2xl font-black mb-1 text-[#1E1926]">Global Shortcuts</h3>
+              <p className="text-[#6B7280] text-xs mb-4">These shortcuts work globally across your operating system.</p>
             </div>
             
-            <div className="bg-black/20 border border-white/5 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/5">
+            <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4">
+              <div className="flex items-center justify-between pb-4 border-b border-[#FCE7F3]">
                 <div>
-                  <h4 className="text-lg font-medium text-white">Toggle Speaker</h4>
-                  <p className="text-sm text-white/50">Mute or unmute Soltini's spoken responses</p>
+                  <h4 className="text-base font-bold text-[#1E1926]">Toggle Speaker</h4>
+                  <p className="text-xs text-[#6B7280]">Mute or unmute LUCY's spoken responses</p>
                 </div>
-                <kbd className="bg-black/40 border border-white/10 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + S</kbd>
+                <kbd className="bg-[#FFF5F8] border border-[#FCE7F3] rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-[#F43F8E] shadow-sm">Ctrl + Alt + S</kbd>
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-lg font-medium text-white">Toggle Microphone</h4>
-                  <p className="text-sm text-white/50">Turn the microphone on or off</p>
+                  <h4 className="text-base font-bold text-[#1E1926]">Toggle Microphone</h4>
+                  <p className="text-xs text-[#6B7280]">Turn the microphone on or off</p>
                 </div>
-                <kbd className="bg-black/40 border border-white/10 rounded-md px-3 py-1 text-sm font-mono text-pink-400">Ctrl + Alt + M</kbd>
+                <kbd className="bg-[#FFF5F8] border border-[#FCE7F3] rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-[#F43F8E] shadow-sm">Ctrl + Alt + M</kbd>
               </div>
             </div>
           </div>
@@ -699,45 +770,45 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         )}
 
         {activeTab === 'personalized' && (
-          <div className="flex flex-col gap-8 max-w-2xl w-full">
+          <div className="flex flex-col gap-6 max-w-2xl w-full">
             <div>
-              <h3 className="text-2xl font-bold mb-2">Personalized Memory</h3>
-              <p className="text-white/60 text-sm mb-6">Soltini's "invisible brain". The AI will silently extract and save important facts about you (e.g. your hobbies, preferences) from your conversations to personalize future interactions.</p>
+              <h3 className="text-2xl font-black mb-1 text-[#1E1926]">Personalized Memory</h3>
+              <p className="text-[#6B7280] text-xs mb-4">LUCY's invisible brain. The AI silently extracts and saves important facts about you from your conversations to personalize future interactions.</p>
             </div>
             
             {!userAuth.isPro() ? (
-              <div className="bg-black/30 border border-pink-500/20 rounded-2xl p-8 text-center flex flex-col items-center justify-center gap-4 relative overflow-hidden backdrop-blur-md">
-                <div className="w-14 h-14 rounded-full bg-pink-500/10 border border-pink-500/30 flex items-center justify-center text-pink-400 text-2xl shadow-lg shadow-pink-500/10">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-8 text-center flex flex-col items-center justify-center gap-4 relative overflow-hidden">
+                <div className="w-14 h-14 rounded-2xl bg-pink-50 border border-[#FCE7F3] flex items-center justify-center text-[#F43F8E] text-2xl shadow-sm">
                   🔒
                 </div>
                 <div>
-                  <h4 className="text-xl font-bold text-white mb-2">Personalized Memory is a Pro Feature</h4>
-                  <p className="text-white/60 text-sm max-w-md leading-relaxed">
-                    Soltini silently collects and saves your preferences for free in the background. Upgrade to Pro to view your memory bank, edit facts, and allow Soltini to recall them in real-time conversations!
+                  <h4 className="text-lg font-bold text-[#1E1926] mb-1">Personalized Memory is a Pro Feature</h4>
+                  <p className="text-[#6B7280] text-xs max-w-md leading-relaxed">
+                    LUCY silently collects and saves your preferences for free in the background. Upgrade to Pro to view your memory bank, edit facts, and allow LUCY to recall them in real-time conversations!
                   </p>
                 </div>
                 <button 
-                  onClick={() => window.open('https://soltini.vercel.app/pricing', '_blank')}
-                  className="mt-2 px-6 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-medium rounded-full shadow-lg shadow-pink-500/20 transition-all text-sm cursor-pointer"
+                  onClick={() => openExternalUrl('https://lucymate.vercel.app/pricing')}
+                  className="mt-2 px-6 py-2.5 bg-gradient-to-r from-[#F43F8E] to-[#8B5CF6] hover:opacity-95 text-white font-bold rounded-xl shadow-md transition-all text-xs cursor-pointer"
                 >
-                  Upgrade to Pro ($3 / ₹199)
+                  Upgrade to Pro ($2 / ₹199)
                 </button>
               </div>
             ) : (
-              <div className="bg-black/20 border border-white/5 rounded-2xl p-6">
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6">
                 {memories.length === 0 ? (
-                  <p className="text-white/40 text-sm italic">No memories saved yet. Talk to Soltini naturally, and she will silently remember important details about you!</p>
+                  <p className="text-[#6B7280] text-sm italic">No memories saved yet. Talk to LUCY naturally, and she will silently remember important details about you!</p>
                 ) : (
                   <div className="space-y-3">
                     {memories.map(m => (
-                      <div key={m.id} className="flex items-start justify-between bg-black/40 p-4 rounded-xl border border-white/5 gap-4">
+                      <div key={m.id} className="flex items-start justify-between bg-[#FFF5F8] p-4 rounded-xl border border-[#FCE7F3] gap-4">
                         <div className="flex flex-col gap-1">
-                          <p className="text-white/90 text-sm leading-relaxed">{m.text}</p>
-                          <p className="text-white/30 text-xs">{new Date(m.createdAt).toLocaleString()}</p>
+                          <p className="text-[#1E1926] text-sm font-medium leading-relaxed">{m.text}</p>
+                          <p className="text-[#6B7280] text-xs">{new Date(m.createdAt).toLocaleString()}</p>
                         </div>
                         <button 
                           onClick={() => vectorMemory.deleteMemory(m.id)} 
-                          className="text-pink-500 hover:text-pink-400 text-sm px-3 py-1.5 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 shrink-0 transition-colors"
+                          className="text-[#F43F8E] hover:text-[#E11D48] text-xs font-bold px-3 py-1.5 rounded-lg bg-white border border-[#FCE7F3] hover:bg-[#FCE7F3] shrink-0 transition-colors"
                         >
                           Delete
                         </button>

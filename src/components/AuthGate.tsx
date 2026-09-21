@@ -114,7 +114,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     
     const poll = async () => {
       try {
-        const res = await fetch(`https://soltini.vercel.app/api/auth/session?id=${sessionId}&code_verifier=${codeVerifier}`);
+        const res = await fetch(`https://lucymate.vercel.app/api/auth/session?id=${sessionId}&code_verifier=${codeVerifier}`);
         const data = await res.json();
         if (data.success && data.status === 'authenticated' && data.token) {
           const success = await userAuth.parseAndSetToken(data.token);
@@ -142,30 +142,26 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     poll();
 
     // Open the authentication portal with the session ID and PKCE challenge
-    openExternalUrl(`https://soltini.vercel.app/auth/google?session_id=${sessionId}&code_challenge=${codeChallenge}&state=${stateParam}`);
+    openExternalUrl(`https://lucymate.vercel.app/auth/google?session_id=${sessionId}&code_challenge=${codeChallenge}&state=${stateParam}`);
   };
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
         @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulse-glow {
-          0%, 100% { box-shadow: 0 0 20px rgba(129,140,248,0.15), 0 0 60px rgba(129,140,248,0.05); }
-          50% { box-shadow: 0 0 30px rgba(129,140,248,0.25), 0 0 80px rgba(129,140,248,0.1); }
-        }
-        .activate-btn:hover:not(:disabled) { background: linear-gradient(135deg, #6366f1, #7c3aed) !important; transform: translateY(-1px); box-shadow: 0 8px 25px rgba(99,102,241,0.35); }
+        .activate-btn:hover:not(:disabled) { background: linear-gradient(135deg, #f43f8e, #e11d48) !important; transform: translateY(-1px); box-shadow: 0 10px 25px rgba(244,63,142,0.35); }
         .activate-btn:active:not(:disabled) { transform: translateY(0); }
-        .guest-btn:hover:not(:disabled) { background: rgba(99,102,241,0.1) !important; border-color: rgba(99,102,241,0.5) !important; }
+        .guest-btn:hover:not(:disabled) { background: #fff0f5 !important; border-color: #f43f8e !important; color: #f43f8e !important; }
       `}</style>
 
       {/* Full-screen overlay */}
       <div style={{
         position: 'fixed', inset: 0, zIndex: 99999,
-        background: stage === 'locked' ? 'rgba(2,6,23,0.97)' : 'transparent',
+        background: stage === 'locked' ? 'rgba(255,245,248,0.96)' : 'transparent',
         backdropFilter: stage === 'locked' ? 'blur(20px)' : 'none',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: "'Inter', -apple-system, sans-serif",
+        fontFamily: "'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif",
         userSelect: 'none' as const,
         pointerEvents: stage === 'locked' ? 'auto' : 'none',
       }}>
@@ -174,14 +170,14 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         {stage === 'locked' && (
           <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
             <div style={{
-              position: 'absolute', top: '-20%', left: '20%',
-              width: 600, height: 600, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)',
+              position: 'absolute', top: '-15%', left: '15%',
+              width: 500, height: 500, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(244,63,142,0.12) 0%, transparent 70%)',
             }} />
             <div style={{
-              position: 'absolute', bottom: '-10%', right: '15%',
+              position: 'absolute', bottom: '-15%', right: '15%',
               width: 500, height: 500, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)',
+              background: 'radial-gradient(circle, rgba(139,92,246,0.10) 0%, transparent 70%)',
             }} />
           </div>
         )}
@@ -190,53 +186,52 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         {stage === 'locked' && (
           <div className="pointer-events-auto" style={{
             position: 'relative',
-            width: '100%', maxWidth: 460,
+            width: '100%', maxWidth: 440,
             margin: '0 20px',
-            background: 'rgba(13,17,40,0.9)',
-            border: '1px solid rgba(99,102,241,0.2)',
-            borderRadius: 24,
-            padding: '40px 40px',
-            boxShadow: '0 0 25px rgba(129,140,248,0.15)',
+            background: '#FFFFFF',
+            border: '1.5px solid #FCE7F3',
+            borderRadius: 28,
+            padding: '36px 36px',
+            boxShadow: '0 20px 45px -10px rgba(244,63,142,0.15), 0 0 0 1px #FCE7F3',
             animation: 'fadeIn 0.4s ease',
             pointerEvents: 'auto',
           }}>
           
-            <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 8, zIndex: 10 }}>
+            <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 6, zIndex: 10 }}>
               <button 
                 onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().minimize())} 
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 }}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
                 title="Minimize"
               >
                 <Minus size={18} />
               </button>
               <button 
                 onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().close())} 
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 }}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
                 title="Close"
               >
                 <XIcon size={18} />
               </button>
             </div>
 
-            <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
               <div style={{
-                width: 56, height: 56, borderRadius: 16,
-                background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.2))',
-                border: '1px solid rgba(99,102,241,0.3)',
+                width: 60, height: 60, borderRadius: 20,
+                background: 'linear-gradient(135deg, rgba(244,63,142,0.15), rgba(139,92,246,0.15))',
+                border: '1px solid #FCE7F3',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 margin: '0 auto 16px',
-                fontSize: 24,
-              }}>🔒</div>
+                fontSize: 26,
+              }}>👑</div>
               <h1 style={{
-                fontSize: 22, fontWeight: 700, margin: '0 0 8px',
-                background: authError ? 'linear-gradient(90deg, #ef4444, #f87171)' : 'linear-gradient(90deg, #818cf8, #c084fc)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
+                fontSize: 22, fontWeight: 800, margin: '0 0 8px',
+                color: authError ? '#E11D48' : '#1E1926',
+                letterSpacing: '-0.02em',
               }}>
-                {authError ? 'Access Revoked' : 'Sign in to Soltini'}
+                {authError ? 'Access Revoked' : 'Sign in to LUCY'}
               </h1>
-              <p style={{ color: authError ? '#fca5a5' : '#475569', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
-                {authError || 'You must sign in with Google to use Soltini on this device.'}
+              <p style={{ color: authError ? '#E11D48' : '#6B7280', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+                {authError || 'Sign in with Google to activate your companion and 10-day trial.'}
               </p>
             </div>
 
@@ -245,13 +240,14 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
               onClick={handleSignIn}
               style={{
                 width: '100%', padding: '13px',
-                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                border: 'none', borderRadius: 12,
+                background: 'linear-gradient(135deg, #F43F8E, #8B5CF6)',
+                border: 'none', borderRadius: 14,
                 color: '#fff',
-                fontSize: 14, fontWeight: 600,
+                fontSize: 14, fontWeight: 700,
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                boxShadow: '0 4px 15px rgba(244,63,142,0.25)'
               }}
             >
               Sign In with Google
@@ -260,7 +256,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
               className="guest-btn"
               onClick={() => {
                 userAuth.setSession({
-                  email: 'guest@soltini.local',
+                  email: 'guest@lucy.local',
                   name: 'Guest User',
                   tier: 'free',
                   status: 'active',
@@ -270,15 +266,15 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
                 userAuth.authorizeRust();
               }}
               style={{
-                width: '100%', padding: '13px',
-                background: 'transparent',
-                border: '1px solid rgba(99,102,241,0.3)', borderRadius: 12,
-                color: '#818cf8',
-                fontSize: 14, fontWeight: 600,
+                width: '100%', padding: '12px',
+                background: '#FFF5F8',
+                border: '1px solid #FCE7F3', borderRadius: 14,
+                color: '#8B5CF6',
+                fontSize: 13, fontWeight: 700,
                 cursor: 'pointer',
                 transition: 'all 0.2s',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                marginTop: '12px'
+                marginTop: '10px'
               }}
             >
               Continue as Guest
