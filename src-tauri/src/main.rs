@@ -6,10 +6,10 @@ fn main() {
     {
         // Auto-enable and allow microphone by default without annoying browser pop-ups
         let existing = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
-        let flags = "--use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required";
+        let flags = "--auto-accept-camera-and-microphone-capture --use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
         let new_args = if existing.is_empty() {
             flags.to_string()
-        } else if !existing.contains("--use-fake-ui-for-media-stream") {
+        } else if !existing.contains("--auto-accept-camera-and-microphone-capture") {
             format!("{} {}", existing, flags)
         } else {
             existing

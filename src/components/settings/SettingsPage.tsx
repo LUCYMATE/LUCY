@@ -62,10 +62,11 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [tavilyApiKey, setTavilyApiKey] = useState(localStorage.getItem('soltini_tavily_api_key') || '');
 
   useEffect(() => {
-    navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(() => {
+    navigator.mediaDevices?.getUserMedia?.({ audio: true }).then((stream) => {
+      stream.getTracks().forEach(t => t.stop());
       navigator.mediaDevices.enumerateDevices().then(d => setDevices(d));
-    }).catch(e => {
-      logger.add('error', 'Settings', 'Failed to enumerate devices');
+    }).catch(() => {
+      navigator.mediaDevices?.enumerateDevices?.().then(d => setDevices(d)).catch(() => {});
     });
     
     const loadMemories = () => setMemories(vectorMemory.getMemories());
