@@ -153,28 +153,15 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     }
     result = { success: true };
   } else if (name === 'capture_screen') {
-    const screenData = await invoke<{ base64: string, width: number, height: number, scale_factor?: number }>('capture_screen');
-    lastScreenScaleFactor = screenData.scale_factor || 1.0;
     try {
-      const resizedBase64 = await new Promise<string>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, img.width, img.height);
-          resolve(canvas.toDataURL('image/jpeg', 0.9).split(',')[1]);
-        };
-        img.onerror = reject;
-        img.src = 'data:image/jpeg;base64,' + screenData.base64;
-      });
-      if (deferredMedia) {
-        deferredMedia.push(resizedBase64);
+      const screenData = await invoke<{ base64: string, width: number, height: number, scale_factor?: number }>('capture_screen');
+      lastScreenScaleFactor = screenData.scale_factor || 1.0;
+      if (deferredMedia && screenData.base64) {
+        deferredMedia.push(screenData.base64);
       }
       result = { success: true, message: `Screenshot captured. SCREEN RESOLUTION is Width: ${screenData.width}px, Height: ${screenData.height}px. Use these dimensions to accurately calculate the X, Y coordinates for move_and_click_mouse.` };
     } catch (e) {
-      result = { error: 'Failed to inject screenshot: ' + String(e) };
+      result = { error: 'Failed to capture screenshot: ' + String(e) };
     }
   } else if (name === 'capture_camera') {
     try {

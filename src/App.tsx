@@ -118,16 +118,14 @@ function MainApp() {
     bootCheck();
   }, []);
 
-  const setupMainWindow = useCallback(async (isHidden = false) => {
+  const setupMainWindow = useCallback(async (isAutostart = false) => {
     try {
       const win = getCurrentWindow();
       
-      if (!isHidden) {
-        await safe(win.setAlwaysOnTop(true)); // Force restore alwaysOnTop
-        await safe(win.maximize());
-        await safe(win.show());
-        await safe(win.setIgnoreCursorEvents(true)); // Force click-through mode on login restore
-      }
+      await safe(win.setAlwaysOnTop(true)); // Force restore alwaysOnTop
+      await safe(win.maximize());
+      await safe(win.setIgnoreCursorEvents(true)); // Force click-through mode on desktop
+      await safe(win.show());
       
       // Hide from taskbar now that authentication is complete. 
       // This MUST be called after maximize(), because Windows restores the taskbar icon when a window is maximized!
@@ -149,24 +147,21 @@ function MainApp() {
           isAutostart = await invoke<boolean>('is_autostart');
         } catch(e) {}
         
-        await setupMainWindow(isAutostart);
-        const win = getCurrentWindow();
         try {
-          const { invoke } = await import('@tauri-apps/api/core');
           const autostartPlugin = await import('@tauri-apps/plugin-autostart');
           const autostartEnabled = await autostartPlugin.isEnabled();
           if (!autostartEnabled) {
             await autostartPlugin.enable();
           }
-          isAutostart = await invoke<boolean>('is_autostart');
-          if (isAutostart) {
-            useAvatarState.getState().setIsSleepMode(true);
-            // We don't need to dispatch soltini-sleep here because useCoreEngine hasn't mounted yet.
-            // It will check the store when it mounts.
-          }
         } catch (e) {
           console.warn('autostart check failed', e);
         }
+
+        if (isAutostart) {
+          useAvatarState.getState().setIsSleepMode(true);
+        }
+
+        await setupMainWindow(isAutostart);
 
         setIsInitializing(false);
 

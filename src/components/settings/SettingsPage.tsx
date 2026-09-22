@@ -241,26 +241,26 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto p-12">
         {/* App Update Banner */}
         {updateInfo && (
-          <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-pink-600/30 via-purple-600/30 to-indigo-600/30 border border-pink-500/40 backdrop-blur-md shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="mb-8 p-6 rounded-2xl bg-gradient-to-r from-[#9D174D] via-[#6D28D9] to-[#3730A3] border border-purple-400/30 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-white">
             <div className="flex items-start gap-4">
-              <div className="p-3 bg-pink-500/20 rounded-xl border border-pink-400/30 text-pink-300 shrink-0">
+              <div className="p-3 bg-white/15 rounded-xl border border-white/20 text-pink-200 shrink-0">
                 <Sparkles className="w-6 h-6 animate-pulse" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-bold text-white">New Update Available: v{updateInfo.version}</h3>
-                  <span className="bg-pink-500/30 text-pink-300 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-pink-400/40 uppercase tracking-wide">
+                  <span className="bg-white/20 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-white/30 uppercase tracking-wide">
                     {updateInfo.platform}
                   </span>
                 </div>
-                <p className="text-xs text-white/80 mt-1 max-w-xl line-clamp-2">
+                <p className="text-xs text-pink-100 mt-1 max-w-xl line-clamp-2">
                   {updateInfo.notes}
                 </p>
               </div>
             </div>
             <button
               onClick={() => downloadUpdate(updateInfo.url)}
-              className="px-5 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold rounded-xl shadow-lg hover:shadow-pink-500/25 transition-all flex items-center gap-2 text-sm shrink-0"
+              className="px-5 py-2.5 bg-white hover:bg-pink-50 text-[#6D28D9] hover:text-[#5B21B6] font-extrabold rounded-xl shadow-lg transition-all flex items-center gap-2 text-sm shrink-0 cursor-pointer"
             >
               <Download className="w-4 h-4" /> Download Update
             </button>

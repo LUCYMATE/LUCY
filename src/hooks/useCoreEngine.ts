@@ -331,17 +331,20 @@ export function useCoreEngine() {
 
       if (state === 'connected' && !hasSentGreetingRef.current) {
         hasSentGreetingRef.current = true;
-        setTimeout(async () => {
+        setTimeout(() => {
           const pendingQuery = sessionStorage.getItem('soltini_pending_query');
-          const updateInfo = await checkAppUpdate();
 
           if (pendingQuery) {
-            gemini.sendText("System instruction: The user just woke you up and said this immediately: \"" + pendingQuery + "\". Respond naturally to this query directly instead of just saying hello.");
             sessionStorage.removeItem('soltini_pending_query');
-          } else if (updateInfo && updateInfo.isNewNotification) {
-            markUpdateNotified(updateInfo.updateId);
-            gemini.sendText(`System instruction: A brand new update for LUCY (version ${updateInfo.version}) is now available for ${updateInfo.platform}! Speak directly to the user in a cheerful, enthusiastic voice to let them know that a new update is ready, and politely tell them to check Settings to download it.`);
+            gemini.sendText("System instruction: The user just woke you up and said this immediately: \"" + pendingQuery + "\". Respond naturally to this query directly instead of just saying hello.");
           } else if (!isWakeUp) {
+            // Check update in background without blocking initial welcome greeting
+            checkAppUpdate().then(updateInfo => {
+              if (updateInfo && updateInfo.isNewNotification) {
+                markUpdateNotified(updateInfo.updateId);
+                gemini.sendText(`System instruction: A brand new update for LUCY (version ${updateInfo.version}) is now available for ${updateInfo.platform}! Speak directly to the user in a cheerful, enthusiastic voice to let them know that a new update is ready, and politely tell them to check Settings to download it.`);
+              }
+            }).catch(() => {});
             gemini.sendText("System instruction: The user has just booted up the application. Greet the user with a fun, casual, or slightly flirty welcome message. Keep it to one short sentence. Do not say you are an AI or acknowledge this prompt.");
           } else {
             gemini.sendText("System instruction: The user just woke you up from sleep mode. Give a fun, casual, or slightly flirty 1-sentence greeting acknowledging you are back awake and ready to help. Do not say you are an AI.");
@@ -351,9 +354,9 @@ export function useCoreEngine() {
           const shouldAutoMic = autoMicStr === null ? true : autoMicStr === 'true';
           
           if (shouldAutoMic) {
-            setTimeout(() => toggleMicRef.current(), 500);
+            setTimeout(() => toggleMicRef.current(), 100);
           }
-        }, 1000);
+        }, 100);
       }
 
       if (state === 'error' && detail) {
@@ -536,7 +539,7 @@ export function useCoreEngine() {
         dummyMicStreamRef.current = null;
       }
       
-      wakeUpTimeout = setTimeout(() => initSystem(true), 500);
+      wakeUpTimeout = setTimeout(() => initSystem(true), 100);
     };
 
     window.addEventListener('soltini-sleep', handleSleep);

@@ -231,13 +231,13 @@ export function AssetLibrary() {
         </div>
 
         {/* Add Animation Form */}
-        <div className="flex gap-4 items-end flex-wrap bg-white/5 p-4 rounded-xl border border-white/5">
+        <div className="flex gap-4 items-end flex-wrap bg-[#FFF5F8] p-4 rounded-xl border border-[#FCE7F3]">
           <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-            <label className="text-[10px] font-bold text-pink-300/80 uppercase tracking-wider">Animation Slug</label>
+            <label className="text-[10px] font-bold text-[#9D174D] uppercase tracking-wider">Animation Slug</label>
             <input 
               type="text" 
               placeholder="e.g. salsa-dance, backflip"
-              className="bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-pink-500 transition-colors"
+              className="bg-white border border-[#FCE7F3] rounded-lg px-4 py-2 text-sm text-[#1E1926] placeholder-[#9CA3AF] focus:outline-none focus:border-[#F43F8E] focus:ring-1 focus:ring-[#F43F8E] transition-colors shadow-xs"
               value={animSlug}
               onChange={e => setAnimSlug(e.target.value.toLowerCase())}
               disabled={animations.length >= 4}
@@ -246,7 +246,7 @@ export function AssetLibrary() {
           
           <div className="flex flex-col gap-1 shrink-0">
             <button 
-              className="bg-pink-600/80 hover:bg-pink-500 text-white px-5 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-pink-500/20"
+              className="bg-[#F43F8E] hover:opacity-90 text-white px-5 py-2 rounded-lg font-bold transition-all text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm cursor-pointer"
               onClick={() => animInputRef.current?.click()}
               disabled={!animSlug.trim() || animations.length >= 4}
             >
@@ -263,37 +263,37 @@ export function AssetLibrary() {
         </div>
 
         {!animSlug.trim() && animations.length < 4 && (
-          <p className="text-[10px] text-yellow-400/80 flex items-center gap-1 -mt-3">
-            <AlertCircle className="w-3 h-3" /> Type a simple slug name first (e.g. `dance2`)
+          <p className="text-xs text-amber-700 font-medium flex items-center gap-1 -mt-2">
+            <AlertCircle className="w-3.5 h-3.5" /> Type a simple slug name first (e.g. `dance2`)
           </p>
         )}
 
         {/* List of Animations */}
         <div className="flex flex-col gap-2 mt-2">
           <div className="flex justify-between items-center mb-1">
-             <h5 className="text-sm font-semibold text-white/80">Stored Animations</h5>
-             <span className="text-xs font-mono bg-black/40 px-2 py-0.5 rounded text-white/50">{animations.length} / 4 Slots</span>
+             <h5 className="text-sm font-bold text-[#1E1926]">Stored Animations</h5>
+             <span className="text-xs font-mono bg-pink-50 border border-pink-200 px-2.5 py-0.5 rounded-full text-[#9D174D] font-bold">{animations.length} / 4 Slots</span>
           </div>
           
           {animations.length === 0 ? (
-            <div className="text-center py-6 text-white/30 italic bg-black/20 rounded-xl border border-white/5 text-sm">
+            <div className="text-center py-6 text-[#6B7280] italic bg-[#FFF5F8] rounded-xl border border-[#FCE7F3] text-sm">
               No custom animations learned yet.
             </div>
           ) : (
             animations.map(a => (
-              <div key={a.id} className="flex items-center justify-between bg-pink-500/5 border border-pink-500/10 hover:bg-pink-500/10 transition-colors rounded-xl px-4 py-3">
+              <div key={a.id} className="flex items-center justify-between bg-[#FFF5F8] border border-[#FCE7F3] hover:border-pink-300 transition-colors rounded-xl px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-pink-500/20 text-pink-400">
+                  <div className="p-2 rounded-lg bg-pink-100 text-[#F43F8E]">
                     <Activity className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className="font-bold text-sm text-pink-100">{a.id}</p>
-                    <p className="text-[10px] text-white/40">{a.name}</p>
+                    <p className="font-bold text-sm text-[#1E1926]">{a.id}</p>
+                    <p className="text-xs text-[#6B7280]">{a.name}</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => handleDelete(a.id)}
-                  className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+                  className="p-2 hover:bg-red-100 text-red-500 rounded-lg transition-colors cursor-pointer"
                   title="Delete Animation"
                 >
                   <Trash2 className="w-4 h-4" />

@@ -122,8 +122,8 @@ You have direct tools for lightning-fast execution (<100ms). ALWAYS use these di
 - mute_mic → MUST be called immediately when the user asks you to mute, turn off your microphone, stop listening, or be quiet (e.g. "mute", "turn off mic", "stop listening"). Give a very brief 1-sentence confirmation as you mute.
 
 ## BACKGROUND AGENT DELEGATION (trigger_automation)
-ONLY use 'trigger_automation' for complex multi-step tasks that require vision, scripting, or deep automation (e.g., "Find the cheapest hotel on this page", "Write a python script to process my photos", "Click the third button on my screen").
-❌ NEVER use 'trigger_automation' for simple commands like opening an app, opening YouTube, or opening a website!`;
+ONLY use 'trigger_automation' for complex multi-step tasks that require vision-based clicking loops, scripting, or deep automation (e.g., "Find the cheapest hotel on this page", "Write a python script to process my photos", "Click the third button on my screen").
+❌ NEVER use 'trigger_automation' for simple commands like looking at the screen, clicking, typing, pressing keys, scrolling, opening apps, opening YouTube, or opening a website! Use 'capture_screen', 'move_and_click_mouse', 'type_string', 'press_key', 'scroll_mouse', 'open_app', and 'open_external_url' directly for instant, responsive execution!`;
 
       const userPersonality = localStorage.getItem('soltini_system_instruction') || '';
       const petName = localStorage.getItem('soltini_pet_name') || '';
@@ -226,10 +226,12 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                 if (functionResponses.length > 0) {
                   if (deferredMedia.length > 0) {
                     for (const base64 of deferredMedia) {
-                      this.session.sendRealtimeInput([{
-                        mimeType: "image/jpeg",
-                        data: base64
-                      }]);
+                      this.session.sendRealtimeInput({
+                        media: {
+                          mimeType: 'image/jpeg',
+                          data: base64
+                        }
+                      });
                     }
                   }
                   this.session.sendToolResponse({ functionResponses });
@@ -487,6 +489,59 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                     type: 'OBJECT',
                     properties: {}
                   }
+                },
+                {
+                  name: 'capture_screen',
+                  description: 'Captures a screenshot of the user\'s screen and injects it into your visual field. Use immediately whenever the user asks you to look at their screen, see what they are doing, read screen text, or analyze something on screen.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {}
+                  }
+                },
+                {
+                  name: 'press_key',
+                  description: 'Press a single key on the keyboard (e.g., enter, space, escape, tab, up, down, left, right, backspace).',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      key: { type: 'STRING', description: 'The key name to press (e.g. enter, space, escape, backspace)' }
+                    },
+                    required: ['key']
+                  }
+                },
+                {
+                  name: 'type_string',
+                  description: 'Types a string of text into the active window.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      text: { type: 'STRING', description: 'The text to type' }
+                    },
+                    required: ['text']
+                  }
+                },
+                {
+                  name: 'scroll_mouse',
+                  description: 'Scrolls the screen up or down. Negative for down (e.g. -20), positive for up (e.g. 20).',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      amount: { type: 'INTEGER', description: 'Scroll amount: negative for down (-20), positive for up (20)' }
+                    },
+                    required: ['amount']
+                  }
+                },
+                {
+                  name: 'move_and_click_mouse',
+                  description: 'Moves the mouse to specific X, Y coordinates and clicks. Use after capturing the screen to interact with buttons, fields, or links.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      x: { type: 'INTEGER', description: 'X coordinate in pixels' },
+                      y: { type: 'INTEGER', description: 'Y coordinate in pixels' }
+                    },
+                    required: ['x', 'y']
+                  }
                 }
               ]
             }
@@ -608,6 +663,190 @@ ${userPersonality}` : ''}`;
       // DO NOT REPLACE: Using latest Gemini 3 model suite as requested
       let toolAgentModel = 'gemini-3-flash-preview';
 
+      const toolAgentTools = [{
+        functionDeclarations: [
+          {
+            name: 'get_system_stats',
+            description: 'Read the current system resource statistics, including CPU usage percentage, total memory, and used memory.',
+            parameters: { type: Type.OBJECT, properties: {} }
+          },
+          {
+            name: 'open_external_url',
+            description: 'Open a URL or website in the default browser.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { url: { type: Type.STRING, description: 'The absolute URL' } },
+              required: ['url']
+            }
+          },
+          {
+            name: 'move_and_click_mouse',
+            description: 'Move the mouse to X, Y coordinates and click.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { x: { type: Type.INTEGER }, y: { type: Type.INTEGER } },
+              required: ['x', 'y']
+            }
+          },
+          {
+            name: 'scroll_mouse',
+            description: 'Scroll the mouse. Use LARGE numbers. Negative=down (e.g. -20), positive=up (e.g. 20).',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { amount: { type: Type.INTEGER } },
+              required: ['amount']
+            }
+          },
+          {
+            name: 'type_string',
+            description: 'Type a string of text on the keyboard.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { text: { type: Type.STRING } },
+              required: ['text']
+            }
+          },
+          {
+            name: 'press_key',
+            description: 'Press a single key (e.g. enter, space, tab, backspace, escape, up, down, left, right).',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { key: { type: Type.STRING } },
+              required: ['key']
+            }
+          },
+          {
+            name: 'press_key_combo',
+            description: 'Press key combinations using modifier keys (e.g. ["ctrl","c"], ["win","l"], ["alt","f4"], ["ctrl","tab"]).',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { keys: { type: Type.ARRAY, items: { type: Type.STRING } } },
+              required: ['keys']
+            }
+          },
+          {
+            name: 'run_terminal_command',
+            description: 'Run a shell/terminal command natively on the OS.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { command: { type: Type.STRING } },
+              required: ['command']
+            }
+          },
+          {
+            name: 'run_python_script',
+            description: 'Execute a python script in the environment.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { script: { type: Type.STRING } },
+              required: ['script']
+            }
+          },
+          {
+            name: 'capture_screen',
+            description: 'Capture screenshot of the screen. Injects an image frame into your visual cortex.',
+            parameters: { type: Type.OBJECT, properties: {} }
+          },
+          {
+            name: 'open_app',
+            description: 'Open a local desktop application or executable (e.g. spotify, notepad, calc, chrome, whatsapp).',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { app_name: { type: Type.STRING, description: 'The name of the app to launch' } },
+              required: ['app_name']
+            }
+          },
+          {
+            name: 'close_app',
+            description: 'Close/kill a desktop application by name.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { app_name: { type: Type.STRING, description: 'The name of the app to terminate' } },
+              required: ['app_name']
+            }
+          },
+          {
+            name: 'capture_camera',
+            description: 'Take a photo using the user\'s webcam to see them or their physical environment.',
+            parameters: { type: Type.OBJECT, properties: {} }
+          },
+          {
+            name: 'search_web',
+            description: 'Search the web using search API. Useful for finding information, recipes, prices, and facts.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { query: { type: Type.STRING } },
+              required: ['query']
+            }
+          },
+          {
+            name: 'remember_fact',
+            description: 'Remember a personal fact about the user (name, preferences, important details). Stored permanently.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                key: { type: Type.STRING, description: 'The fact category' },
+                value: { type: Type.STRING, description: 'The fact value' }
+              },
+              required: ['key', 'value']
+            }
+          },
+          {
+            name: 'search_memory',
+            description: 'Search the vector-style memory database for known facts about the user using keywords.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { query: { type: Type.STRING, description: 'Space-separated keywords to search for' } },
+              required: ['query']
+            }
+          },
+          {
+            name: 'schedule_task',
+            description: 'Schedule a proactive background task or reminder. The AI will wake up and execute the instruction at the EXACT target time.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                target_time: { type: Type.STRING, description: 'Absolute target time in DD/MM/YYYY HH:MM:SS format' },
+                instruction: { type: Type.STRING, description: 'The exact instruction to execute at that time' }
+              },
+              required: ['target_time', 'instruction']
+            }
+          },
+          {
+            name: 'forget_fact',
+            description: 'Delete a previously remembered fact about the user.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { key: { type: Type.STRING, description: 'The fact key to forget' } },
+              required: ['key']
+            }
+          },
+          {
+            name: 'set_pet_name',
+            description: 'Set a cute pet name the user wants you to call them. Persists across sessions.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { name: { type: Type.STRING, description: 'The pet name to call the user' } },
+              required: ['name']
+            }
+          },
+          {
+            name: 'set_pose',
+            description: `Change your avatar pose. Valid Free tier options: sit, stand, peek-left, peek-right, stretch, lean, sleep, point, dynamic-talk. (Note: dance, flirty, kiss, and custom animations are Pro features). All Valid options: ${getValidPoses().join(', ')}`,
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                pose: {
+                  type: Type.STRING,
+                  description: 'The pose to assume.'
+                }
+              },
+              required: ['pose']
+            }
+          }
+        ]
+      }];
+
       for (let i = 0; i < loopLimit; i++) {
         let response;
         try {
@@ -616,189 +855,8 @@ ${userPersonality}` : ''}`;
             contents: contents,
             config: {
               systemInstruction: systemPrompt,
-              tools: [{
-                functionDeclarations: [
-                  {
-                    name: 'get_system_stats',
-                    description: 'Read the current system resource statistics, including CPU usage percentage, total memory, and used memory.',
-                    parameters: { type: Type.OBJECT, properties: {} }
-                  },
-                  {
-                    name: 'open_external_url',
-                    description: 'Open a URL or website in the default browser.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { url: { type: Type.STRING, description: 'The absolute URL' } },
-                      required: ['url']
-                    }
-                  },
-                  {
-                    name: 'move_and_click_mouse',
-                    description: 'Move the mouse to X, Y coordinates and click.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { x: { type: Type.INTEGER }, y: { type: Type.INTEGER } },
-                      required: ['x', 'y']
-                    }
-                  },
-                  {
-                    name: 'scroll_mouse',
-                    description: 'Scroll the mouse. Use LARGE numbers. Negative=down (e.g. -20), positive=up (e.g. 20).',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { amount: { type: Type.INTEGER } },
-                      required: ['amount']
-                    }
-                  },
-                  {
-                    name: 'type_string',
-                    description: 'Type a string of text on the keyboard.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { text: { type: Type.STRING } },
-                      required: ['text']
-                    }
-                  },
-                  {
-                    name: 'run_python_script',
-                    description: 'Write and execute a Python script.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { script: { type: Type.STRING } },
-                      required: ['script']
-                    }
-                  },
-                  {
-                    name: 'run_terminal_command',
-                    description: 'Execute a command in the terminal. Do NOT use this to open websites.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { command: { type: Type.STRING } },
-                      required: ['command']
-                    }
-                  },
-                  {
-                    name: 'press_key',
-                    description: 'Simulate a keypress (e.g., enter, tab, space, /, escape, shift).',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { key: { type: Type.STRING } },
-                      required: ['key']
-                    }
-                  },
-                  {
-                    name: 'press_key_combo',
-                    description: 'Press a key combination using modifier keys. For closing browser tabs use ["ctrl","w"], for closing windows use ["alt","f4"], for switching tabs use ["ctrl","tab"]. The first key(s) are held down while the last key is pressed.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { keys: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Array of key names to press in order, e.g. ["ctrl","w"]' } },
-                      required: ['keys']
-                    }
-                  },
-                  {
-                    name: 'capture_screen',
-                    description: 'Take a screenshot of primary display.',
-                    parameters: { type: Type.OBJECT, properties: {} }
-                  },
-                  {
-                    name: 'capture_camera',
-                    description: 'Take a photo using the user\'s webcam to see them or their physical environment.',
-                    parameters: { type: Type.OBJECT, properties: {} }
-                  },
-                  {
-                    name: 'search_web',
-                    description: 'Search the web for real-time information (news, weather, facts). Returns snippets from search results.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { query: { type: Type.STRING } },
-                      required: ['query']
-                    }
-                  },
-                  {
-                    name: 'open_app',
-                    description: 'Open a local desktop application or program (e.g., notepad, spotify, chrome, whatsapp). For Windows Store apps, just provide the name.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { app_name: { type: Type.STRING, description: 'The name or executable of the app to open' } },
-                      required: ['app_name']
-                    }
-                  },
-                  {
-                    name: 'close_app',
-                    description: 'Forcefully close or kill a running desktop application or process (e.g., chrome, notepad). Use this instead of alt+f4 to reliably terminate tasks.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { app_name: { type: Type.STRING, description: 'The name of the app to kill (e.g., chrome, notepad)' } },
-                      required: ['app_name']
-                    }
-                  },
-                  {
-                    name: 'remember_fact',
-                    description: 'Remember a personal fact about the user (name, preferences, important details). Stored permanently.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: {
-                        key: { type: Type.STRING, description: 'The fact category' },
-                        value: { type: Type.STRING, description: 'The fact value' }
-                      },
-                      required: ['key', 'value']
-                    }
-                  },
-                  {
-                    name: 'search_memory',
-                    description: 'Search the vector-style memory database for known facts about the user using keywords. Call this whenever you need to recall past preferences, names, or events.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { query: { type: Type.STRING, description: 'Space-separated keywords to search for' } },
-                      required: ['query']
-                    }
-                  },
-                  {
-                    name: 'schedule_task',
-                    description: 'Schedule a proactive background task or reminder. The AI will wake up and execute the instruction at the EXACT target time. ALWAYS use the current Date/Time context to calculate the target time.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: {
-                        target_time: { type: Type.STRING, description: 'Absolute target time in DD/MM/YYYY HH:MM:SS format (e.g. 10/07/2026 21:00:00)' },
-                        instruction: { type: Type.STRING, description: 'The exact instruction to execute at that time' }
-                      },
-                      required: ['target_time', 'instruction']
-                    }
-                  },
-                  {
-                    name: 'forget_fact',
-                    description: 'Delete a previously remembered fact about the user.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { key: { type: Type.STRING, description: 'The fact key to forget' } },
-                      required: ['key']
-                    }
-                  },
-                  {
-                    name: 'set_pet_name',
-                    description: 'Set a cute pet name the user wants you to call them. Persists across sessions.',
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: { name: { type: Type.STRING, description: 'The pet name to call the user' } },
-                      required: ['name']
-                    }
-                  },
-                  {
-                    name: 'set_pose',
-                    description: `Change your avatar pose. Valid Free tier options: sit, stand, peek-left, peek-right, stretch, lean, sleep, point, dynamic-talk. (Note: dance, flirty, kiss, and custom animations are Pro features). All Valid options: ${getValidPoses().join(', ')}`,
-                    parameters: {
-                      type: Type.OBJECT,
-                      properties: {
-                        pose: {
-                          type: Type.STRING,
-                          description: 'The pose to assume.'
-                        }
-                      },
-                      required: ['pose']
-                    }
-                  }
-                ]
-              }]
+              temperature: 0.1,
+              tools: toolAgentTools
             }
           });
         } catch (err: any) {
@@ -860,6 +918,17 @@ ${userPersonality}` : ''}`;
 
           // Inject deferred screenshot/video frames on next user turn
           if (deferredMedia.length > 0) {
+            // Prune older screenshots from previous turns to keep payloads fast and compact without creating empty parts: []
+            for (const c of contents) {
+              if (c.parts && Array.isArray(c.parts)) {
+                c.parts = c.parts.map((p: any) => {
+                  if (p.inlineData) {
+                    return { text: '[previous screen state analyzed]' };
+                  }
+                  return p;
+                });
+              }
+            }
             for (const base64 of deferredMedia) {
               contents.push({
                 role: 'user',
@@ -991,12 +1060,10 @@ ${userPersonality}` : ''}`;
   // ---------------------------------------------------------------
   private _toBase64(bytes: Uint8Array): string {
     let binary = '';
-    const chunk = 8192;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      const sub = bytes.subarray(i, i + chunk);
-      for (let j = 0; j < sub.length; j++) {
-        binary += String.fromCharCode(sub[j]);
-      }
+    const chunkSize = 4096;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const sub = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...sub);
     }
     return btoa(binary);
   }
