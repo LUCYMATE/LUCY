@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 // @ts-ignore
 import { createPortal } from 'react-dom';
 import { Avatar3D } from './Avatar3D';
+import { Live2DViewer } from './Live2DViewer';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
 import { BasePose } from './animations/core';
@@ -22,7 +23,8 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
     targetPosition,
     setTargetPosition,
     isDragging,
-    isAvatarLocked
+    isAvatarLocked,
+    avatarEngine,
   } = useAvatarState(useShallow(s => ({
     isSpeaking: s.isSpeaking,
     isThinking: s.isThinking,
@@ -33,7 +35,8 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
     targetPosition: s.targetPosition,
     setTargetPosition: s.setTargetPosition,
     isDragging: s.isDragging,
-    isAvatarLocked: s.isAvatarLocked
+    isAvatarLocked: s.isAvatarLocked,
+    avatarEngine: s.avatarEngine,
   })));
 
   // Desktop Rectangles Polling
@@ -244,7 +247,7 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
   return createPortal(
     <>
       <div className="fixed inset-0 pointer-events-none z-[50]">
-        <Avatar3D />
+        {avatarEngine === 'live2d' ? <Live2DViewer /> : <Avatar3D />}
       </div>
     </>,
     document.body

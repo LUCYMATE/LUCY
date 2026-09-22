@@ -51,6 +51,12 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     return val === null ? true : val === 'true';
   });
   const [avatarLocked, setAvatarLocked] = useState(localStorage.getItem('soltini_avatar_locked') === 'true');
+  const {
+    avatarEngine,
+    setAvatarEngine,
+    selectedLive2dModel,
+    setSelectedLive2dModel,
+  } = useAvatarState();
   
   const [systemInstruction, setSystemInstruction] = useState(() => {
     const val = localStorage.getItem('soltini_system_instruction') || '';
@@ -455,6 +461,86 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
             <div className="flex flex-col gap-4">
               
+              {/* Avatar Engine & Model Selector */}
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4 transition-colors">
+                <div>
+                  <label className="block text-sm font-bold text-[#1E1926]">Avatar Engine & Companion Model</label>
+                  <p className="text-xs text-[#6B7280] mt-0.5">Switch between 3D VRM models and 2D Live2D companions.</p>
+                </div>
+
+                {/* Engine Mode Tabs */}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAvatarEngine('vrm');
+                      emitCrossWindow('soltini-settings-changed');
+                    }}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      avatarEngine === 'vrm'
+                        ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white border-pink-500 shadow-md'
+                        : 'bg-[#FFF5F8] text-[#1E1926] border-[#FCE7F3] hover:bg-pink-50'
+                    }`}
+                  >
+                    <span>🌸</span> 3D VRM (LUCY 3D)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAvatarEngine('live2d');
+                      emitCrossWindow('soltini-settings-changed');
+                    }}
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      avatarEngine === 'live2d'
+                        ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white border-pink-500 shadow-md'
+                        : 'bg-[#FFF5F8] text-[#1E1926] border-[#FCE7F3] hover:bg-pink-50'
+                    }`}
+                  >
+                    <span>✨</span> Live2D Engine
+                  </button>
+                </div>
+
+                {/* Live2D Model Selection Grid */}
+                {avatarEngine === 'live2d' && (
+                  <div className="flex flex-col gap-2 pt-2 border-t border-[#FCE7F3]">
+                    <span className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider">Select Live2D Companion</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      {[
+                        { id: 'rozen', name: 'Rozen', icon: '🌹', desc: 'Maiden Doll' },
+                        { id: 'shiroko', name: 'Shiroko', icon: '🐺', desc: 'Blue Archive' },
+                        { id: 'maya', name: 'Maya', icon: '🐱', desc: 'Catgirl Maid' },
+                        { id: 'friday', name: 'Friday', icon: '🎀', desc: 'Haru Assistant' },
+                        { id: 'venom', name: 'Venom', icon: '🖤', desc: 'Natori Companion' },
+                      ].map((m) => {
+                        const isSelected = selectedLive2dModel === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedLive2dModel(m.id);
+                              emitCrossWindow('soltini-settings-changed');
+                            }}
+                            className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-pink-50 border-pink-500 text-pink-700 shadow-sm ring-2 ring-pink-400/30'
+                                : 'bg-white border-[#FCE7F3] hover:border-pink-300 text-[#1E1926]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xl">{m.icon}</span>
+                              <span className="font-bold text-xs">{m.name}</span>
+                            </div>
+                            <span className="text-[10px] text-[#6B7280]">{m.desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Auto-Start Microphone Toggle */}
               <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex items-center justify-between transition-colors">
                 <div>

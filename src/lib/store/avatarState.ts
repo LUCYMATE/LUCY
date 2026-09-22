@@ -38,6 +38,8 @@ interface AvatarState {
   isSleepMode: boolean;
   desktopRectangles: DesktopRect[];
   anchor: { type: 'window' | 'taskbar', rect: DesktopRect } | null;
+  avatarEngine: 'vrm' | 'live2d';
+  selectedLive2dModel: string;
 
   setSpeaking: (val: boolean) => void;
   setThinking: (val: boolean) => void;
@@ -65,6 +67,8 @@ interface AvatarState {
   setIsSleepMode: (val: boolean) => void;
   setDesktopRectangles: (val: DesktopRect[]) => void;
   setAnchor: (val: { type: 'window' | 'taskbar', rect: DesktopRect } | null) => void;
+  setAvatarEngine: (engine: 'vrm' | 'live2d') => void;
+  setSelectedLive2dModel: (model: string) => void;
 }
 
 export const useAvatarState = create<AvatarState>((set) => ({
@@ -94,6 +98,8 @@ export const useAvatarState = create<AvatarState>((set) => ({
   isSleepMode: false,
   desktopRectangles: [],
   anchor: null,
+  avatarEngine: (localStorage.getItem('soltini_avatar_engine') as 'vrm' | 'live2d') || 'vrm',
+  selectedLive2dModel: localStorage.getItem('soltini_live2d_model') || 'rozen',
 
   setSpeaking: (val) => set({ isSpeaking: val }),
   setThinking: (val) => set({ isThinking: val }),
@@ -121,4 +127,12 @@ export const useAvatarState = create<AvatarState>((set) => ({
   setIsSleepMode: (val) => set({ isSleepMode: val }),
   setDesktopRectangles: (val) => set({ desktopRectangles: val }),
   setAnchor: (val) => set({ anchor: val }),
+  setAvatarEngine: (engine) => {
+    localStorage.setItem('soltini_avatar_engine', engine);
+    set({ avatarEngine: engine });
+  },
+  setSelectedLive2dModel: (model) => {
+    localStorage.setItem('soltini_live2d_model', model);
+    set({ selectedLive2dModel: model });
+  },
 }));
