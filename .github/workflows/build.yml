@@ -31,7 +31,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          cache: 'npm' # Use 'yarn', 'pnpm', or 'npm' depending on your package manager
+          cache: 'npm' # Use 'yarn', 'npm', or 'npm' depending on your package manager
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable

@@ -28,7 +28,7 @@ export function AssetLibrary() {
       
       // Update local storage so the AI prompt builder can read it immediately
       const fbxSlugs = all.filter(a => a.type === 'fbx' || a.type === 'bvh').map(a => a.id);
-      localStorage.setItem('soltini_custom_animations', JSON.stringify(fbxSlugs));
+      localStorage.setItem('lucy_custom_animations', JSON.stringify(fbxSlugs));
     } catch (e) {
       logger.add('error', 'Asset DB', 'Failed to load assets');
     }
@@ -59,7 +59,7 @@ export function AssetLibrary() {
       loadAssets();
 
       // Notify the live avatar scene to reload with the new model immediately
-      emitCrossWindow('soltini-vrm-changed');
+      emitCrossWindow('lucy-vrm-changed');
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to upload avatar: ${error}`);
     }
@@ -100,8 +100,8 @@ export function AssetLibrary() {
       await loadAssets();
 
       // Notify the live AI session about the new animation so it can use it immediately
-      emitCrossWindow('soltini-animation-added', { slug });
-      emitCrossWindow('soltini-settings-changed');
+      emitCrossWindow('lucy-animation-added', { slug });
+      emitCrossWindow('lucy-settings-changed');
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to save animation: ${error}`);
     }
@@ -117,12 +117,12 @@ export function AssetLibrary() {
       if (id === 'custom-avatar') {
         logger.add('info', 'Asset DB', 'Restored default compiled model');
         setFlipCustomModel(false);
-        localStorage.setItem('soltini_flip_vrm', 'false');
+        localStorage.setItem('lucy_flip_vrm', 'false');
       }
       
       await loadAssets();
       // Notify live scene: if we deleted the avatar, reload the model; otherwise just refresh
-      emitCrossWindow(id === 'custom-avatar' ? 'soltini-vrm-changed' : 'soltini-settings-changed');
+      emitCrossWindow(id === 'custom-avatar' ? 'lucy-vrm-changed' : 'lucy-settings-changed');
     } catch (e) {
       logger.add('error', 'Asset DB', `Failed to delete asset`);
     }
@@ -205,8 +205,8 @@ export function AssetLibrary() {
                  onClick={() => {
                    const next = !flipCustomModel;
                    setFlipCustomModel(next);
-                   localStorage.setItem('soltini_flip_vrm', String(next));
-                   emitCrossWindow('soltini-vrm-changed');
+                   localStorage.setItem('lucy_flip_vrm', String(next));
+                   emitCrossWindow('lucy-vrm-changed');
                  }}
                  className={`relative w-10 h-5 rounded-full transition-colors ${flipCustomModel ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`}
                >

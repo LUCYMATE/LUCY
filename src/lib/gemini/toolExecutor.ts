@@ -79,6 +79,17 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   let result: any = null;
   if (name === 'get_system_stats') {
     result = await invoke('get_system_stats');
+  } else if (name === 'delegate_to_phone') {
+    try {
+      logger.add('info', 'LucyLink', `Delegating task to phone: "${args.prompt}"`);
+      const summary = await invoke<string>('send_prompt_to_phone', { prompt: args.prompt });
+      logger.add('success', 'LucyLink', `Phone task completed: ${summary}`);
+      result = { success: true, summary, message: `Completed on phone: ${summary}` };
+    } catch (err: any) {
+      const errMsg = err?.toString() || 'Phone is not currently connected via LucyLink';
+      logger.add('error', 'LucyLink', `Phone task failed: ${errMsg}`);
+      result = { success: false, error: errMsg, message: `Failed on phone: ${errMsg}` };
+    }
   } else if (name === 'open_external_url') {
     await invoke('open_external_url', { url: args.url });
     result = { success: true };
@@ -101,12 +112,12 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     const output = await invoke('run_terminal_command', { command: args.command });
     result = { success: true, output };
   } else if (name === 'save_memory') {
-    const key = localStorage.getItem('soltini_main_api_key');
+    const key = localStorage.getItem('lucy_main_api_key');
     if (!key) throw new Error('API key required for memory embeddings');
     const success = await vectorMemory.saveFact(args.fact, key);
     result = { success, message: success ? 'Memory saved.' : 'Failed to save.' };
   } else if (name === 'search_memory') {
-    const key = localStorage.getItem('soltini_main_api_key');
+    const key = localStorage.getItem('lucy_main_api_key');
     const query = String(args.query || '').toLowerCase();
     const queryWords = query.split(/\s+/).filter(w => w.length > 2);
     const allFacts = memoryStore.getAllUserFacts();
@@ -165,7 +176,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     }
   } else if (name === 'capture_camera') {
     try {
-      const savedCameraId = localStorage.getItem('soltini_camera_id');
+      const savedCameraId = localStorage.getItem('lucy_camera_id');
       const videoConstraints = savedCameraId ? { deviceId: { exact: savedCameraId } } : true;
       const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
       const video = document.createElement('video');
@@ -225,7 +236,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   } else if (name === 'search_web') {
     try {
       const query = args.query || '';
-      const tavilyKey = localStorage.getItem('soltini_tavily_api_key') || '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';
+      const tavilyKey = localStorage.getItem('lucy_tavily_api_key') || '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';
       const response = await fetch('https://api.tavily.com/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -300,7 +311,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   } else if (name === 'set_pet_name') {
     const petName2 = String(args.name || '').trim();
     if (petName2) {
-      localStorage.setItem('soltini_pet_name', petName2);
+      localStorage.setItem('lucy_pet_name', petName2);
       result = { success: true, petName: petName2 };
     } else {
       result = { error: 'name is required' };
@@ -425,18 +436,8 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
 
       const valid = getValidPoses();
       if (valid.includes(pose)) {
-        const currentPose = useAvatarState.getState().basePose;
         useAvatarState.getState().setBasePose(pose as any);
         useAvatarState.getState().setLastPoseOverrideTime(Date.now());
-        if (!pose.startsWith('peek')) {
-          if (currentPose.startsWith('peek')) {
-            const currentY = useAvatarState.getState().worldPosition.y;
-            useAvatarState.getState().setTargetPosition({ x: 0, y: currentY, z: 0 });
-            useAvatarState.getState().setIsWalking(true);
-          } else {
-            useAvatarState.getState().setIsWalking(false);
-          }
-        }
         logger.add('success', 'Tool Call', `set_pose(${pose}) executed successfully`);
         result = { success: true, active_pose: pose };
       } else {
@@ -448,17 +449,26 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     }
   } else if (name === 'go_to_sleep') {
     try {
-      emitCrossWindow('soltini-sleep');
+      emitCrossWindow('lucy-sleep');
       result = { success: true, message: 'System is going to sleep.' };
     } catch (e) {
       result = { error: 'Failed to go to sleep: ' + String(e) };
     }
   } else if (name === 'mute_mic' || name === 'turn_off_mic') {
     try {
-      emitCrossWindow('soltini-set-mic', { enabled: false });
+      emitCrossWindow('lucy-set-mic', { enabled: false });
       result = { success: true, message: 'Microphone has been turned off and muted.' };
     } catch (e) {
       result = { error: 'Failed to mute microphone: ' + String(e) };
+    }
+  } else if (name === 'trigger_automation') {
+    try {
+      const { backgroundAgent } = await import('./backgroundAgent');
+      const req = String(args.request || args.prompt || args.details || '').trim();
+      backgroundAgent.executeTask(req);
+      result = { success: true, message: `Automation triggered for: "${req}". Briefly acknowledge to the user that you are working on it now.` };
+    } catch (e) {
+      result = { error: 'Failed to trigger automation: ' + String(e) };
     }
   }
   return result;

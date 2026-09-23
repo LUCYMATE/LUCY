@@ -1,4 +1,4 @@
-import { SoltiniOS } from './components/layout/SoltiniOS';
+import { LucyOS } from './components/layout/LucyOS';
 import { AuthGate } from './components/AuthGate';
 import { SecondaryWindow } from './components/layout/SecondaryWindow';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -18,7 +18,7 @@ function MainApp() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [licenseStatus, setLicenseStatus] = useState<'checking' | 'locked' | 'authorized'>('checking');
   const [hasApiKey, setHasApiKey] = useState(() =>
-    !!localStorage.getItem('soltini_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY
+    !!localStorage.getItem('lucy_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY
   );
 
   const windowReadyRef = useRef(false);
@@ -29,7 +29,6 @@ function MainApp() {
     const setupDeepLink = async () => {
       try {
         const handleLink = async (url: string) => {
-          // Handle multiple deep link formats
           // Handle multiple deep link formats
           let token: string | null = null;
           let state: string | null = null;
@@ -47,13 +46,13 @@ function MainApp() {
           }
 
           if (token) {
-            const expectedState = localStorage.getItem('soltini_auth_state');
+            const expectedState = localStorage.getItem('lucy_auth_state');
             if (expectedState && state && state !== expectedState) {
               console.warn('[DeepLink] State mismatch. Expected:', expectedState, 'Got:', state);
-              window.dispatchEvent(new CustomEvent('soltini-auth-error', { detail: 'Security mismatch. Please try signing in again.' }));
+              window.dispatchEvent(new CustomEvent('lucy-auth-error', { detail: 'Security mismatch. Please try signing in again.' }));
               return;
             }
-            localStorage.removeItem('soltini_auth_state');
+            localStorage.removeItem('lucy_auth_state');
             console.log('[DeepLink] Received token, parsing...');
             const success = await userAuth.parseAndSetToken(token);
             if (success) {
@@ -65,7 +64,7 @@ function MainApp() {
                 setLicenseStatus('locked');
               }
             } else {
-              window.dispatchEvent(new CustomEvent('soltini-auth-error', { detail: 'Sign-in verification failed. Please try again.' }));
+              window.dispatchEvent(new CustomEvent('lucy-auth-error', { detail: 'Sign-in verification failed. Please try again.' }));
             }
           }
         };
@@ -77,7 +76,7 @@ function MainApp() {
 
         // Listen for the manual event emitted by the single-instance plugin (works when a second instance was spawned)
         const { listen } = await import('@tauri-apps/api/event');
-        const unlistenEvent = await listen<string>('soltini-deep-link-manual', (e) => {
+        const unlistenEvent = await listen<string>('lucy-deep-link-manual', (e) => {
           handleLink(e.payload);
         });
         
@@ -132,7 +131,7 @@ function MainApp() {
       await safe(win.setSkipTaskbar(true));
       
       windowReadyRef.current = true;
-      window.dispatchEvent(new CustomEvent('soltini-force-init'));
+      window.dispatchEvent(new CustomEvent('lucy-force-init'));
     } catch (e) {
       console.warn('setupMainWindow failed', e);
     }
@@ -167,7 +166,7 @@ function MainApp() {
 
         if (!isAutostart) {
           if (!hasApiKey && !useAvatarState.getState().isSleepMode) {
-            setTimeout(() => emitCrossWindow('soltini-open-settings'), 800);
+            setTimeout(() => emitCrossWindow('lucy-open-settings'), 800);
           }
         }
       };
@@ -213,9 +212,9 @@ function MainApp() {
   // ─── API key listener ─────────────────────────────────────────────────────
   useEffect(() => {
     const checkKey = () =>
-      setHasApiKey(!!localStorage.getItem('soltini_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY);
+      setHasApiKey(!!localStorage.getItem('lucy_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY);
     window.addEventListener('storage', checkKey);
-    const unsubKey = listenCrossWindow('soltini-api-key-saved', checkKey);
+    const unsubKey = listenCrossWindow('lucy-api-key-saved', checkKey);
     return () => {
       window.removeEventListener('storage', checkKey);
       unsubKey();
@@ -245,7 +244,7 @@ function MainApp() {
       try {
         // Sleep mode: the window is fully transparent / no avatar UI is shown, so cursor
         // passthrough is irrelevant. We STOP the loop entirely (previously it woke every 1s
-        // just to re-check the flag). It is restarted by the soltini-wake-up handler below.
+        // just to re-check the flag). It is restarted by the lucy-wake-up handler below.
         if (useAvatarState.getState().isSleepMode) return;
 
         const isVisible = await win.isVisible();
@@ -341,8 +340,8 @@ function MainApp() {
       useAvatarState.getState().setIsSleepMode(true);
     };
 
-    const unsubSleep = listenCrossWindow('soltini-sleep', handleSleepEvent);
-    const unsubWake = listenCrossWindow('soltini-wake-up', handleWakeUpEvent);
+    const unsubSleep = listenCrossWindow('lucy-sleep', handleSleepEvent);
+    const unsubWake = listenCrossWindow('lucy-wake-up', handleWakeUpEvent);
 
     // Don't even start the loop if we boot directly into sleep mode.
     if (!useAvatarState.getState().isSleepMode) {
@@ -373,7 +372,7 @@ function MainApp() {
 
       <div className="flex-1 relative flex min-h-0">
         {!isInitializing && licenseStatus !== 'locked' && licenseStatus !== 'checking' && (
-          <SoltiniOS isAuthorized={true} />
+          <LucyOS isAuthorized={true} />
         )}
       </div>
     </div>

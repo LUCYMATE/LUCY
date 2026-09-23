@@ -1,5 +1,5 @@
 /**
- * Rate Limiter Engine for Soltini
+ * Rate Limiter Engine for Lucy
  * Prevents rapid API spam, infinite loop execution, and runaway quota usage.
  */
 
@@ -62,7 +62,7 @@ class RateLimiter {
 
 export const rateLimiter = new RateLimiter();
 
-// Pre-defined rate limit configurations for Soltini modules
+// Pre-defined rate limit configurations for Lucy modules
 export const RATE_LIMITS = {
   // Max 10 Live connection attempts per 30 seconds
   GEMINI_CONNECT: { maxCalls: 10, windowMs: 30_000, minIntervalMs: 1_000 },

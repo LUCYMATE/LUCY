@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video, Brain, User, ShieldCheck, Download, Sparkles, ExternalLink, Info, RefreshCw } from 'lucide-react';
+import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video, Brain, User, ShieldCheck, Download, Sparkles, ExternalLink, Info, RefreshCw, Smartphone } from 'lucide-react';
 import { AssetLibrary } from './AssetLibrary';
+import { PhoneLinkTab } from './PhoneLinkTab';
 import { logger } from '../../lib/store/logger';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { vectorMemory, MemoryFact } from '../../lib/store/vectorMemory';
@@ -8,9 +9,10 @@ import { userAuth } from '../../lib/auth/userAuth';
 import { checkAppUpdate, downloadUpdate, AppUpdateInfo } from '../../lib/system/updateChecker';
 import { openExternalUrl } from '../../lib/system/tauriBridge';
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
+import { LIVE2D_MODELS } from '../avatar/AvatarContextMenu';
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'api' | 'shortcuts' | 'assets' | 'personalized' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'link' | 'api' | 'shortcuts' | 'assets' | 'personalized' | 'about'>('general');
   const [session, setSession] = useState(userAuth.getSession());
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -28,10 +30,10 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [memories, setMemories] = useState<MemoryFact[]>([]);
   
-  const [micId, setMicId] = useState(localStorage.getItem('soltini_mic_id') || '');
-  const [camId, setCamId] = useState(localStorage.getItem('soltini_camera_id') || '');
-  const [voice, setVoice] = useState(localStorage.getItem('soltini_voice') || 'Aoede');
-  const [avatarSize, setAvatarSize] = useState(parseInt(localStorage.getItem('soltini_avatar_size') || '100'));
+  const [micId, setMicId] = useState(localStorage.getItem('lucy_mic_id') || '');
+  const [camId, setCamId] = useState(localStorage.getItem('lucy_camera_id') || '');
+  const [voice, setVoice] = useState(localStorage.getItem('lucy_voice') || 'Aoede');
+  const [avatarSize, setAvatarSize] = useState(parseInt(localStorage.getItem('lucy_avatar_size') || '100'));
   
   const isMac = window.navigator.userAgent.includes('Mac');
   const isLinux = window.navigator.userAgent.includes('Linux');
@@ -47,10 +49,10 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   };
   
   const [autoMic, setAutoMic] = useState(() => {
-    const val = localStorage.getItem('soltini_auto_mic');
+    const val = localStorage.getItem('lucy_auto_mic');
     return val === null ? true : val === 'true';
   });
-  const [avatarLocked, setAvatarLocked] = useState(localStorage.getItem('soltini_avatar_locked') === 'true');
+  const [avatarLocked, setAvatarLocked] = useState(localStorage.getItem('lucy_avatar_locked') === 'true');
   const {
     avatarEngine,
     setAvatarEngine,
@@ -59,13 +61,13 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   } = useAvatarState();
   
   const [systemInstruction, setSystemInstruction] = useState(() => {
-    const val = localStorage.getItem('soltini_system_instruction') || '';
-    if (val.includes('You are Soltini AI , a playful and bubbly') || val.includes('You are LUCY AI , a playful and bubbly')) return '';
+    const val = localStorage.getItem('lucy_system_instruction') || '';
+    if (val.includes('You are LUCY') || val.includes('Satish Acharya') || val.includes('a playful and bubbly')) return '';
     return val;
   });
-  const [mainApiKey, setMainApiKey] = useState(localStorage.getItem('soltini_main_api_key') || '');
-  const [altApiKey, setAltApiKey] = useState(localStorage.getItem('soltini_alt_api_key') || '');
-  const [tavilyApiKey, setTavilyApiKey] = useState(localStorage.getItem('soltini_tavily_api_key') || '');
+  const [mainApiKey, setMainApiKey] = useState(localStorage.getItem('lucy_main_api_key') || '');
+  const [altApiKey, setAltApiKey] = useState(localStorage.getItem('lucy_alt_api_key') || '');
+  const [tavilyApiKey, setTavilyApiKey] = useState(localStorage.getItem('lucy_tavily_api_key') || '');
 
   useEffect(() => {
     navigator.mediaDevices?.getUserMedia?.({ audio: true }).then((stream) => {
@@ -77,93 +79,93 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     
     const loadMemories = () => setMemories(vectorMemory.getMemories());
     loadMemories();
-    const unsubMemory = listenCrossWindow('soltini-memory-updated', loadMemories);
+    const unsubMemory = listenCrossWindow('lucy-memory-updated', loadMemories);
     return () => unsubMemory();
   }, []);
 
   const handleMicChange = (val: string) => {
     setMicId(val);
-    localStorage.setItem('soltini_mic_id', val);
+    localStorage.setItem('lucy_mic_id', val);
     logger.add('success', 'Settings', 'Microphone changed');
-    emitCrossWindow('soltini-core-settings-changed');
+    emitCrossWindow('lucy-core-settings-changed');
   };
 
   const handleCamChange = (val: string) => {
     setCamId(val);
-    localStorage.setItem('soltini_camera_id', val);
+    localStorage.setItem('lucy_camera_id', val);
     logger.add('success', 'Settings', 'Camera changed');
-    emitCrossWindow('soltini-core-settings-changed');
+    emitCrossWindow('lucy-core-settings-changed');
   };
 
   const handleVoiceChange = (val: string) => {
     setVoice(val);
-    localStorage.setItem('soltini_voice', val);
+    localStorage.setItem('lucy_voice', val);
     logger.add('success', 'Settings', 'Voice changed');
-    emitCrossWindow('soltini-core-settings-changed');
+    emitCrossWindow('lucy-core-settings-changed');
   };
 
   const handleAvatarSizeChange = (val: number) => {
     setAvatarSize(val);
-    localStorage.setItem('soltini_avatar_size', val.toString());
+    localStorage.setItem('lucy_avatar_size', val.toString());
     useAvatarState.getState().setAvatarScale(val / 100);
     logger.add('success', 'Settings', 'Avatar size changed');
-    emitCrossWindow('soltini-settings-changed');
+    emitCrossWindow('lucy-settings-changed');
   };
 
   const handleAutoMicChange = (val: boolean) => {
     setAutoMic(val);
-    localStorage.setItem('soltini_auto_mic', String(val));
+    localStorage.setItem('lucy_auto_mic', String(val));
     logger.add('info', 'Settings', `Auto-Start Mic set to ${val}`);
-    emitCrossWindow('soltini-core-settings-changed');
+    emitCrossWindow('lucy-core-settings-changed');
   };
 
   const handleAvatarLockedChange = (val: boolean) => {
     setAvatarLocked(val);
-    localStorage.setItem('soltini_avatar_locked', String(val));
+    localStorage.setItem('lucy_avatar_locked', String(val));
     useAvatarState.getState().setIsAvatarLocked(val);
-    emitCrossWindow('soltini-settings-changed');
+    emitCrossWindow('lucy-settings-changed');
   };
 
   const handleInstructionChange = (val: string) => {
     setSystemInstruction(val);
-    localStorage.setItem('soltini_system_instruction', val);
-    emitCrossWindow('soltini-core-settings-changed');
+    localStorage.setItem('lucy_system_instruction', val);
+    emitCrossWindow('lucy-core-settings-changed');
   };
 
   const handleMainApiKeyChange = (val: string) => {
     setMainApiKey(val);
-    localStorage.setItem('soltini_main_api_key', val);
-    emitCrossWindow('soltini-api-key-saved');
-    emitCrossWindow('soltini-core-settings-changed');
+    localStorage.setItem('lucy_main_api_key', val);
+    emitCrossWindow('lucy-api-key-saved');
+    emitCrossWindow('lucy-core-settings-changed');
   };
 
   const handleAltApiKeyChange = (val: string) => {
     setAltApiKey(val);
-    localStorage.setItem('soltini_alt_api_key', val);
-    emitCrossWindow('soltini-core-settings-changed');
+    localStorage.setItem('lucy_alt_api_key', val);
+    emitCrossWindow('lucy-core-settings-changed');
   };
 
   const handleTavilyApiKeyChange = (val: string) => {
     setTavilyApiKey(val);
-    localStorage.setItem('soltini_tavily_api_key', val);
-    emitCrossWindow('soltini-core-settings-changed');
+    localStorage.setItem('lucy_tavily_api_key', val);
+    emitCrossWindow('lucy-core-settings-changed');
   };
 
   return (
     <div className="flex w-full h-full bg-gradient-to-br from-[#FFF5F8] via-[#FFFFFF] to-[#FFF0F5] border border-[#FCE7F3] shadow-2xl rounded-[32px] overflow-hidden text-[#1E1926] animate-in slide-in-from-bottom-10 fade-in duration-500 font-sans">
       
       {/* Sidebar Navigation */}
-      <div className="w-64 bg-[#FFF5F8]/90 backdrop-blur-md border-r border-[#FCE7F3] p-6 flex flex-col gap-6 shrink-0">
+      <div className="w-64 bg-[#FFF5F8]/90 backdrop-blur-md border-r border-[#FCE7F3] p-6 flex flex-col gap-5 shrink-0 h-full min-h-0 overflow-hidden">
         <button 
           onClick={onClose}
-          className="flex items-center gap-2 text-[#6B7280] hover:text-[#1E1926] transition-colors self-start px-2 py-1 -ml-2 rounded-lg hover:bg-white/80"
+          className="flex items-center gap-2 text-[#6B7280] hover:text-[#1E1926] transition-colors self-start px-2 py-1 -ml-2 rounded-lg hover:bg-white/80 shrink-0 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" /> Back to System
         </button>
 
-        <h2 className="text-2xl font-extrabold tracking-tight text-[#1E1926]">Settings</h2>
+        <h2 className="text-2xl font-extrabold tracking-tight text-[#1E1926] shrink-0">Settings</h2>
 
-        <nav className="flex flex-col gap-2">
+        <nav className="flex flex-col gap-1.5 overflow-y-auto flex-1 min-h-0 pr-1 settings-scrollbar">
           <button 
             onClick={() => setActiveTab('account')}
             className={`flex items-center justify-between px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
@@ -194,6 +196,15 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             }`}
           >
             <Volume2 className="w-5 h-5" /> Devices
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('link')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'link' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
+            }`}
+          >
+            <Smartphone className="w-5 h-5" /> Phone Link
           </button>
 
           <button 
@@ -361,7 +372,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                 <div className="flex flex-col gap-3 items-end">
                   <button
                     onClick={() => {
-                      emitCrossWindow('soltini-open-settings');
+                      emitCrossWindow('lucy-open-settings');
                     }}
                     className="px-5 py-2.5 bg-[#F43F8E] text-white hover:opacity-90 text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-2"
                   >
@@ -474,7 +485,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     type="button"
                     onClick={() => {
                       setAvatarEngine('vrm');
-                      emitCrossWindow('soltini-settings-changed');
+                      emitCrossWindow('lucy-settings-changed');
                     }}
                     className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       avatarEngine === 'vrm'
@@ -489,7 +500,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     type="button"
                     onClick={() => {
                       setAvatarEngine('live2d');
-                      emitCrossWindow('soltini-settings-changed');
+                      emitCrossWindow('lucy-settings-changed');
                     }}
                     className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       avatarEngine === 'live2d'
@@ -506,13 +517,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <div className="flex flex-col gap-2 pt-2 border-t border-[#FCE7F3]">
                     <span className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider">Select Live2D Companion</span>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                      {[
-                        { id: 'rozen', name: 'Rozen', icon: '🌹', desc: 'Maiden Doll' },
-                        { id: 'shiroko', name: 'Shiroko', icon: '🐺', desc: 'Blue Archive' },
-                        { id: 'maya', name: 'Maya', icon: '🐱', desc: 'Catgirl Maid' },
-                        { id: 'friday', name: 'Friday', icon: '🎀', desc: 'Haru Assistant' },
-                        { id: 'venom', name: 'Venom', icon: '🖤', desc: 'Natori Companion' },
-                      ].map((m) => {
+                      {LIVE2D_MODELS.map((m) => {
                         const isSelected = selectedLive2dModel === m.id;
                         return (
                           <button
@@ -520,7 +525,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                             type="button"
                             onClick={() => {
                               setSelectedLive2dModel(m.id);
-                              emitCrossWindow('soltini-settings-changed');
+                              emitCrossWindow('lucy-settings-changed');
                             }}
                             className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all cursor-pointer ${
                               isSelected
@@ -600,7 +605,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   onClick={() => {
                     const val = !useAvatarState.getState().isDynamicTalkingEnabled;
                     useAvatarState.getState().setDynamicTalkingEnabled(val);
-                    localStorage.setItem('soltini_dynamic_talking', String(val));
+                    localStorage.setItem('lucy_dynamic_talking', String(val));
                     logger.add('info', 'Settings', `Dynamic Talking Mode set to ${val}`);
                   }}
                   className={`relative w-12 h-6 rounded-full transition-colors ${useAvatarState.getState().isDynamicTalkingEnabled ? 'bg-[#F43F8E]' : 'bg-gray-200'}`}
@@ -726,6 +731,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         )}
+
+        {activeTab === 'link' && <PhoneLinkTab />}
 
         {activeTab === 'api' && (
           <div className="flex flex-col gap-6 max-w-2xl w-full">

@@ -137,35 +137,40 @@ export function VrmModel({
         } catch(e) { console.warn("VRM optimization pass failed", e); }
 
         // Aggressive Texture Downscaler (Limits RAM/VRAM usage)
-        const downscaleTexture = (texture: any, maxSize: number = 1024) => {
-          if (!texture || !texture.image) return texture;
-          const img = texture.image;
-          const width = img.width || img.videoWidth;
-          const height = img.height || img.videoHeight;
-          if (!width || !height || (width <= maxSize && height <= maxSize)) return texture;
-          
-          const scale = Math.min(maxSize / width, maxSize / height);
-          const newWidth = Math.floor(width * scale);
-          const newHeight = Math.floor(height * scale);
-          
-          const canvas = document.createElement('canvas');
-          canvas.width = newWidth;
-          canvas.height = newHeight;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, newWidth, newHeight);
-            const newTexture = new THREE.CanvasTexture(canvas);
-            newTexture.colorSpace = texture.colorSpace;
-            newTexture.flipY = texture.flipY;
-            newTexture.wrapS = texture.wrapS;
-            newTexture.wrapT = texture.wrapT;
-            newTexture.minFilter = texture.minFilter;
-            newTexture.magFilter = texture.magFilter;
-            newTexture.generateMipmaps = texture.generateMipmaps;
-            texture.dispose(); // Free original high-res texture from RAM
-            return newTexture;
+        // Aggressive Texture Downscaler & VRAM Saver (Limits RAM/VRAM usage)
+        const optimizeTexture = (texture: any, maxSize: number = 1024) => {
+          if (!texture) return texture;
+          let target = texture;
+          if (texture.image) {
+            const img = texture.image;
+            const width = img.width || img.videoWidth;
+            const height = img.height || img.videoHeight;
+            if (width && height && (width > maxSize || height > maxSize)) {
+              const scale = Math.min(maxSize / width, maxSize / height);
+              const newWidth = Math.floor(width * scale);
+              const newHeight = Math.floor(height * scale);
+              
+              const canvas = document.createElement('canvas');
+              canvas.width = newWidth;
+              canvas.height = newHeight;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0, newWidth, newHeight);
+                const newTexture = new THREE.CanvasTexture(canvas);
+                newTexture.colorSpace = texture.colorSpace;
+                newTexture.flipY = texture.flipY;
+                newTexture.wrapS = texture.wrapS;
+                newTexture.wrapT = texture.wrapT;
+                texture.dispose(); // Free original high-res texture from RAM
+                target = newTexture;
+              }
+            }
           }
-          return texture;
+          // Enforce LinearFilter with no mipmaps to save 33% VRAM per texture
+          target.generateMipmaps = false;
+          target.minFilter = THREE.LinearFilter;
+          target.magFilter = THREE.LinearFilter;
+          return target;
         };
 
         loadedVrm.scene.traverse((obj: any) => { 
@@ -173,9 +178,11 @@ export function VrmModel({
           if (obj.isMesh && obj.material) {
             const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
             materials.forEach((mat: any) => {
-              if (mat.map) mat.map = downscaleTexture(mat.map);
-              if (mat.normalMap) mat.normalMap = downscaleTexture(mat.normalMap);
-              if (mat.emissiveMap) mat.emissiveMap = downscaleTexture(mat.emissiveMap);
+              if (mat.map) mat.map = optimizeTexture(mat.map);
+              if (mat.normalMap) mat.normalMap = optimizeTexture(mat.normalMap);
+              if (mat.emissiveMap) mat.emissiveMap = optimizeTexture(mat.emissiveMap);
+              if (mat.roughnessMap) mat.roughnessMap = optimizeTexture(mat.roughnessMap);
+              if (mat.metalnessMap) mat.metalnessMap = optimizeTexture(mat.metalnessMap);
             });
           }
         });

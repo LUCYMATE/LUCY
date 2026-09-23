@@ -10,6 +10,8 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 
+pub mod lucy_link;
+
 // Ed25519 public key (hex string) compiled from environment
 const ED25519_PUBLIC_KEY: &str = match option_env!("VITE_ED25519_PUBLIC_KEY") {
     Some(val) => val,
@@ -83,10 +85,143 @@ fn get_system_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, 
 
 #[tauri::command]
 fn open_external_url(app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() || trimmed == "\\" || trimmed == "/" || trimmed == "\\\\" || trimmed == "//" {
+        return Err("Invalid URL: empty or path separator".to_string());
+    }
+
+    // Windows ShellExecute error prevention: never pass bare backslashes or invalid UNC path
+    if trimmed.starts_with('\\') {
+        return Err(format!("Invalid URL format: cannot start with backslash: {}", trimmed));
+    }
+
+    let sanitized = if trimmed.starts_with("http://") || trimmed.starts_with("https://") || trimmed.starts_with("mailto:") {
+        trimmed.to_string()
+    } else if trimmed.starts_with("www.") || trimmed.contains(".com") || trimmed.contains(".org") || trimmed.contains(".net") || trimmed.contains(".io") {
+        format!("https://{}", trimmed)
+    } else {
+        match trimmed.to_lowercase().as_str() {
+            "youtube" | "yt" => "https://www.youtube.com".to_string(),
+            "google" => "https://www.google.com".to_string(),
+            "spotify" => "https://open.spotify.com".to_string(),
+            "github" => "https://github.com".to_string(),
+            _ => format!("https://www.google.com/search?q={}", trimmed.replace(' ', "+")),
+        }
+    };
+
     app_handle
         .opener()
-        .open_url(url, None::<&str>)
+        .open_url(sanitized, None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn open_app(app_name: String) -> Result<String, String> {
+    let name = app_name.trim();
+    if name.is_empty() {
+        return Err("App name cannot be empty".to_string());
+    }
+
+    let lower = name.to_lowercase();
+    let clean = lower.trim_end_matches(".exe");
+
+    // Fast mappings for web-based services
+    match clean {
+        "youtube" | "yt" => {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", "", "https://www.youtube.com"])
+                    .spawn();
+                return Ok("Opened YouTube in browser".to_string());
+            }
+        }
+        "spotify" => {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", "spotify:"])
+                    .spawn();
+                return Ok("Opened Spotify".to_string());
+            }
+        }
+        "whatsapp" => {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", "whatsapp:"])
+                    .spawn();
+                return Ok("Opened WhatsApp".to_string());
+            }
+        }
+        "calculator" | "calc" => {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", "calc:"])
+                    .spawn();
+                return Ok("Opened Calculator".to_string());
+            }
+        }
+        "settings" => {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", "ms-settings:"])
+                    .spawn();
+                return Ok("Opened Windows Settings".to_string());
+            }
+        }
+        "notepad" => {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("notepad").spawn();
+                return Ok("Opened Notepad".to_string());
+            }
+        }
+        "chrome" | "google chrome" => {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", "chrome"])
+                    .spawn();
+                return Ok("Opened Google Chrome".to_string());
+            }
+        }
+        "edge" | "msedge" => {
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/c", "start", "msedge"])
+                    .spawn();
+                return Ok("Opened Microsoft Edge".to_string());
+            }
+        }
+        _ => {}
+    }
+
+    // Generic desktop app launch via Windows shell without creating error modals
+    #[cfg(target_os = "windows")]
+    {
+        let ps_script = format!(
+            "$app = '{}'; if (Get-Command $app -ErrorAction SilentlyContinue) {{ Start-Process $app }} else {{ $lnk = Get-ChildItem -Path '$env:ProgramData\\Microsoft\\Windows\\Start Menu\\Programs', '$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs' -Filter \"*$app*.lnk\" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($lnk) {{ Invoke-Item $lnk.FullName }} else {{ Start-Process $app -ErrorAction SilentlyContinue }} }}",
+            clean.replace('\'', "''")
+        );
+
+        let res = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+            .spawn();
+
+        match res {
+            Ok(_) => Ok(format!("Launched {}", name)),
+            Err(e) => Err(format!("Failed to launch {}: {}", name, e)),
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(format!("Launched {}", name))
+    }
 }
 
 #[tauri::command]
@@ -861,30 +996,24 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
 }
 
 fn do_wake_up_main(app_handle: &tauri::AppHandle) {
-    let mut was_sleeping = false;
     if let Some(state) = app_handle.try_state::<AppState>() {
-        let mut is_sleeping = state.is_sleeping.lock().unwrap();
-        if *is_sleeping {
-            was_sleeping = true;
-            *is_sleeping = false;
-        }
+        *state.is_sleeping.lock().unwrap() = false;
     }
+    
+    // Broadcast native Tauri event to all windows/listeners
+    let _ = app_handle.emit("lucy-wake-up", ());
     
     if let Some(win) = app_handle.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();
+        let _ = win.set_ignore_cursor_events(false);
         
-        if was_sleeping {
-            // Delay interacting with the WebView2 API to ensure it has fully resumed 
-            // from OS-level suspension (caused by trim_memory), otherwise it throws 0x8007139F.
-            // We give it 300ms to safely resume before hitting it with eval.
-            let win_clone = win.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(300));
-                let _ = win_clone.set_ignore_cursor_events(true);
-                let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
-            });
-        }
+        let win_clone = win.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let _ = win_clone.set_ignore_cursor_events(false);
+            let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('lucy-wake-up'));");
+        });
     }
 }
 
@@ -898,14 +1027,9 @@ fn enter_sleep_mode(_app_handle: tauri::AppHandle, state: tauri::State<AppState>
     //     let _ = win.hide();
     // }
     
-    #[cfg(target_os = "windows")]
-    {
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(1500));
-            trim_memory_internal();
-        });
-    }
-
+    // NOTE: We deliberately do NOT call trim_memory_internal() here because
+    // SetProcessWorkingSetSizeEx causes Windows to suspend WebView2 background
+    // threads, which kills the audio worklet and wake word listener.
     Ok(())
 }
 
@@ -1021,12 +1145,12 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             do_wake_up_main(app);
-            let _ = app.emit("soltini-exit-pet-mode", ());
+            let _ = app.emit("lucy-exit-pet-mode", ());
             
             // Manually forward any deep links to the primary instance (using contains to handle Windows quotes)
             for arg in args {
-                if arg.contains("lucymate://") || arg.contains("soltini://") {
-                    let _ = app.emit("soltini-deep-link-manual", arg);
+                if arg.contains("lucymate://") {
+                    let _ = app.emit("lucy-deep-link-manual", arg);
                 }
             }
         }))
@@ -1038,6 +1162,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_system_stats,
             open_external_url,
+            open_app,
             move_and_click_mouse,
             scroll_mouse,
             type_string,
@@ -1064,8 +1189,18 @@ pub fn run() {
             setup_wayland_automation,
             exit_app,
             get_desktop_rectangles,
+            // LucyLink Cross-Device P2P commands
+            lucy_link::get_lucy_link_pairing_data,
+            lucy_link::send_prompt_to_phone,
+            lucy_link::resolve_mobile_prompt,
+            lucy_link::get_lucy_link_status,
         ])
         .setup(|app| {
+            // Initialize LucyLink state and background server
+            let lucy_link_state = std::sync::Arc::new(tokio::sync::Mutex::new(lucy_link::LucyLinkState::new()));
+            app.manage(lucy_link_state.clone());
+            lucy_link::start_lucy_link_server(app.handle().clone(), lucy_link_state);
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -1085,13 +1220,13 @@ pub fn run() {
                         if event.state == ShortcutState::Pressed {
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyX) {
                                 do_wake_up_main(app);
-                                let _ = app.emit("soltini-exit-pet-mode", ());
+                                let _ = app.emit("lucy-exit-pet-mode", ());
                             }
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyS) {
-                                let _ = app.emit("soltini-toggle-mute", ());
+                                let _ = app.emit("lucy-toggle-mute", ());
                             }
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyM) || shortcut.matches(Modifiers::empty(), Code::F9) {
-                                let _ = app.emit("soltini-toggle-mic", ());
+                                let _ = app.emit("lucy-toggle-mic", ());
                             }
                         }
                     })
@@ -1144,7 +1279,7 @@ pub fn run() {
                     }
                     "hide" => {
                         if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-sleep'));");
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-sleep'));");
                             // We intentionally do not call win.hide() here. The frontend will 
                             // become transparent and ignore mouse events. Hiding the window 
                             // causes WebView2 to suspend, which kills the SpeechRecognition wake word.
@@ -1159,7 +1294,7 @@ pub fn run() {
                         if let Some(win) = app.get_webview_window("main") {
                             win.show().unwrap();
                             win.set_focus().unwrap();
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-open-settings'));");
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-open-settings'));");
                         }
                     }
                     _ => {}
@@ -1178,7 +1313,7 @@ pub fn run() {
                             do_wake_up_main(app);
                         } else {
                             if let Some(win) = app.get_webview_window("main") {
-                                let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-sleep'));");
+                                let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-sleep'));");
                             }
                         }
                     }

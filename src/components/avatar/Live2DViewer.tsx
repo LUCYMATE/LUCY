@@ -5,6 +5,7 @@ import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism4';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
 import { AvatarContextMenu } from './AvatarContextMenu';
+import { animationBridge } from './animations/avatarAnimationBridge';
 
 const ZOOM = 250;
 
@@ -16,44 +17,106 @@ if (typeof window !== 'undefined') {
   } catch {
     // Already registered
   }
+  // Global RAM Saving: aggressive texture GC mode
+  try {
+    PIXI.settings.GC_MODE = PIXI.GC_MODES.AUTO;
+    PIXI.settings.GC_MAX_IDLE = 300; // GC unused textures every 5-10 seconds
+  } catch (_) {}
 }
 
 export function Live2DViewer() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const modelRef = useRef<InstanceType<typeof Live2DModel> | null>(null);
-  const isSpeakingRef = useRef(false);
+  const hitboxRef = useRef<HTMLDivElement>(null);
   const baseScaleRef = useRef(1);
 
+  const [isAppReady, setIsAppReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [hitbox, setHitbox] = useState<{ left: number; top: number; width: number; height: number }>({
-    left: 0,
-    top: 0,
-    width: 200,
-    height: 350,
+
+  // Smoothed animation parameter values for natural transitions across bridge
+  const animValuesRef = useRef<Record<string, number>>({
+    angleX: 0,
+    angleY: 0,
+    angleZ: 0,
+    bodyAngleX: 0,
+    bodyAngleZ: 0,
+    eyeL: 1.0,
+    eyeR: 1.0,
+    eyeBallX: 0,
+    eyeBallY: 0,
+    mouthForm: 0,
+    browLY: 0,
+    browRY: 0,
+    armLShoulder: 0,
+    armLElbow: 0,
+    armLWrist: 0,
+    handL: 0,
+    armRShoulder: 0,
+    armRElbow: 0,
+    armRWrist: 0,
+    handR: 0,
   });
 
   const {
-    isSpeaking,
     selectedLive2dModel,
     avatarScale,
-    worldPosition,
+    basePose,
   } = useAvatarState(
     useShallow((s) => ({
-      isSpeaking: s.isSpeaking,
       selectedLive2dModel: s.selectedLive2dModel,
       avatarScale: s.avatarScale,
-      worldPosition: s.worldPosition,
+      basePose: s.basePose,
     }))
   );
 
+  // Dynamic FPS Limiter (Throttles PIXI ticker to 20-30 FPS on idle, 15 FPS on sleep, 60 FPS when active)
   useEffect(() => {
-    isSpeakingRef.current = isSpeaking;
-  }, [isSpeaking]);
+    const updateFps = () => {
+      const app = appRef.current;
+      if (!app) return;
+      const lowFpsSetting = localStorage.getItem('lucy_low_fps') === 'true';
+      const s = useAvatarState.getState();
+      const isActive = s.isSpeaking || s.isThinking || s.isDragging;
+      const targetFps = isActive
+        ? (lowFpsSetting ? 30 : 60)
+        : (s.basePose === 'sleep' ? 15 : (lowFpsSetting ? 20 : 30));
 
-  // Handle pointer down / drag / tap
+      app.ticker.maxFPS = targetFps;
+      try {
+        PIXI.Ticker.shared.maxFPS = targetFps;
+      } catch (_) {}
+    };
+
+    updateFps();
+    const unsub = useAvatarState.subscribe(updateFps);
+    window.addEventListener('lucy-settings-changed', updateFps);
+    return () => {
+      unsub();
+      window.removeEventListener('lucy-settings-changed', updateFps);
+    };
+  }, [isAppReady]);
+
+  // Stop conflicting canned motions when procedural poses run so mathematical bridge drives model cleanly
+  const prevPoseRef = useRef(basePose);
+  useEffect(() => {
+    if (prevPoseRef.current !== basePose) {
+      prevPoseRef.current = basePose;
+      const model = modelRef.current;
+      if (model) {
+        try {
+          const isProcedural = /dance|kiss|point|stretch|lean|caress|lie-down|edge-lean|dynamic-talk|sit|sleep/i.test(basePose);
+          if (isProcedural) {
+            model.stopMotions();
+          }
+        } catch (_) {}
+      }
+    }
+  }, [basePose]);
+
+  // Pointer & Drag handling
   const dragInfoRef = useRef<{
     startX: number;
     startY: number;
@@ -113,41 +176,31 @@ export function Live2DViewer() {
     const s = useAvatarState.getState();
 
     if (info && !info.hasMoved) {
-      // Tap detected! Trigger hit test / motion / expression
       const model = modelRef.current;
       if (model) {
         try {
           model.tap(e.clientX, e.clientY);
         } catch (_) {}
 
-        try {
-          const internal = model.internalModel as any;
-          const motions = internal?.settings?.motions;
-          if (motions) {
-            const groups = Object.keys(motions);
-            if (groups.length > 0) {
-              const group = groups[Math.floor(Math.random() * groups.length)];
-              model.motion(group);
-            }
-          } else {
-            const expressions = internal?.settings?.expressions;
-            if (expressions && expressions.length > 0) {
-              model.expression();
-            }
+        // Sweet procedural tap reaction without disparate canned motion files
+        s.setEmotion('happy');
+        setTimeout(() => {
+          if (useAvatarState.getState().emotion === 'happy') {
+            useAvatarState.getState().setEmotion('neutral');
           }
-        } catch (_) {}
+        }, 2200);
       }
     } else if (info && info.hasMoved) {
       s.setIsDragging(false);
       s.setDragOffset({ x: 0, y: 0 });
 
-      // Check desktop snapping
+      // Grounding & snapping check
       const finalX = s.worldPosition.x;
       const finalY = s.worldPosition.y;
       const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
       const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
       const screenX = finalX * ZOOM + ww / 2;
-      const feetY = finalY - 1.1 * avatarScale;
+      const feetY = finalY - 1.2 * avatarScale;
       const screenFeetY = -feetY * ZOOM + wh / 2;
 
       let snapped = false;
@@ -183,6 +236,11 @@ export function Live2DViewer() {
           s.setLockedPosition({ x: finalX, y: finalY, z: 0 });
         }
       }
+
+      if (s.basePose.startsWith('peek')) {
+        s.setBasePose('stand');
+        s.setPrePeekPosition(null);
+      }
     }
 
     try {
@@ -205,68 +263,177 @@ export function Live2DViewer() {
     return () => window.removeEventListener('pointerdown', handleCloseMenu);
   }, []);
 
-  // Main Live2D Initialization & Lifecycle
+  // 1. Initialize PIXI.Application once per component lifecycle
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    let app: PIXI.Application | null = null;
+    try {
+      app = new PIXI.Application({
+        view: canvas,
+        resizeTo: window,
+        backgroundAlpha: 0,
+        antialias: false, // Disables 4x MSAA renderbuffers, saving ~100MB+ GPU RAM
+        autoDensity: true,
+        powerPreference: 'low-power',
+        resolution: Math.min(window.devicePixelRatio || 1, 1.25), // Caps canvas framebuffer on high-DPI screens
+      });
+      // Set initial maxFPS cap to prevent runaway CPU loops
+      app.ticker.maxFPS = 30;
+      try {
+        PIXI.Ticker.shared.maxFPS = 30;
+      } catch (_) {}
+
+      appRef.current = app;
+      setIsAppReady(true);
+    } catch (e) {
+      console.error('[Live2DViewer] Failed to initialize PIXI Application:', e);
+      setLoadError('Failed to initialize WebGL');
+    }
+
+    // Background Inactivity Throttling: Pause ticker when minimized or tab/window hidden
+    const handleVisibilityChange = () => {
+      if (!appRef.current) return;
+      if (document.hidden) {
+        appRef.current.ticker.stop();
+      } else {
+        appRef.current.ticker.start();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      setIsAppReady(false);
+      if (appRef.current) {
+        try {
+          appRef.current.stop();
+          PIXI.utils.clearTextureCache();
+          appRef.current.destroy(false, { children: true, texture: true, baseTexture: true });
+        } catch (_) {}
+        appRef.current = null;
+      }
+    };
+  }, []);
+
+  // 2. Load & Swap Live2D Models inside the existing PIXI application
+  useEffect(() => {
+    if (!isAppReady || !appRef.current) return;
+    const app = appRef.current;
+
     let isCancelled = false;
     setIsLoading(true);
     setLoadError(null);
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    // Safely tear down previous model from the stage and remove all internal listeners to prevent memory leak
+    if (modelRef.current) {
+      try {
+        const oldModel = modelRef.current;
+        const internal = oldModel.internalModel as any;
+        if (internal) {
+          internal.removeAllListeners?.('beforeModelUpdate');
+          internal.removeAllListeners?.();
+        }
+        app.stage.removeChild(oldModel);
+        oldModel.destroy({ children: true, texture: true, baseTexture: true });
+      } catch (_) {}
+      modelRef.current = null;
 
-    // Create PIXI Application
-    const app = new PIXI.Application({
-      view: canvas,
-      resizeTo: window,
-      backgroundAlpha: 0,
-      antialias: true,
-      autoDensity: true,
-      resolution: window.devicePixelRatio || 1,
-    });
-    appRef.current = app;
+      // Aggressively flush PIXI texture cache & invoke WebGL texture GC
+      try {
+        PIXI.utils.clearTextureCache();
+        if (app.renderer && (app.renderer as any).textureGC) {
+          (app.renderer as any).textureGC.run();
+        }
+      } catch (_) {}
+    }
 
     const modelPath = `/live2d/models/${selectedLive2dModel}/${selectedLive2dModel}.model3.json`;
 
     Live2DModel.from(modelPath, { autoInteract: false })
       .then((model) => {
         if (isCancelled) {
-          model.destroy({ children: true, texture: true, baseTexture: true });
+          try {
+            model.destroy({ children: true, texture: true, baseTexture: true });
+          } catch (_) {}
           return;
         }
 
         modelRef.current = model;
 
-        // Anchor at bottom-center so avatar stands grounded
-        model.anchor.set(0.5, 0.88);
+        // Bottom-center anchor (feet)
+        model.anchor.set(0.5, 1.0);
 
-        // Normalize initial scale
+        // Normalize initial scale to match 3D height (~390px)
         const designHeight = (model.internalModel as any)?.height || model.height || 2048;
-        const targetHeight = 420;
+        const targetHeight = 390;
         const baseScale = targetHeight / designHeight;
         baseScaleRef.current = baseScale;
 
-        model.scale.set(baseScale * (useAvatarState.getState().avatarScale || 1.0));
+        const currentScale = useAvatarState.getState().avatarScale || 1.0;
+        model.scale.set(baseScale * currentScale);
 
-        // Initial position
-        const currentPos = useAvatarState.getState().worldPosition;
-        const screenX = currentPos.x * ZOOM + window.innerWidth / 2;
-        const screenY = -currentPos.y * ZOOM + window.innerHeight / 2;
-        model.position.set(screenX, screenY);
+        // Position model grounded to match 3D feet
+        const s = useAvatarState.getState();
+        const curPos = s.worldPosition;
+        const screenX = curPos.x * ZOOM + window.innerWidth / 2;
+        const feetWorldY = curPos.y - 1.2 * currentScale;
+        const screenFeetY = -feetWorldY * ZOOM + window.innerHeight / 2;
+        const isSitting = s.basePose === 'sit' || s.basePose === 'sitting';
+        const sitOffset = (isSitting ? 0.60 : 0) * currentScale * ZOOM;
+        model.position.set(screenX, screenFeetY + sitOffset);
 
-        // Real-time lip sync via beforeModelUpdate hook
+        // Real-time animation, lip-sync, gestures & poses hook via AnimationBridge
         const internal = model.internalModel as any;
         if (internal) {
-          internal.on('beforeModelUpdate', () => {
-            if (isSpeakingRef.current) {
-              const t = performance.now() / 1000;
-              const aa = Math.min(1.0, Math.max(0, Math.sin(t * 15.0) * 1.4 + Math.sin(t * 8.5) * 0.5));
-              const core = internal.coreModel;
-              if (core) {
-                try { core.setParameterValueById('ParamMouthOpenY', aa); } catch (_) {}
-                try { core.setParameterValueById('ParamA', aa); } catch (_) {}
-                try { core.setParameterValueById('PARAM_MOUTH_OPEN_Y', aa); } catch (_) {}
-              }
+          // Completely deactivate and clear all disparate built-in motions (.motion3.json)
+          // so all models execute identical, synchronized procedural animations
+          try {
+            model.stopMotions();
+            internal.motionManager?.stopAllMotions();
+          } catch (_) {}
+
+          if (internal.motionManager) {
+            internal.motionManager.groups = {};
+            internal.motionManager.definitions = {};
+            internal.motionManager.defaultIdleMotion = '';
+            internal.motionManager.playing = false;
+            if (internal.motionManager.state) {
+              internal.motionManager.state.shouldRequestIdleMotion = () => false;
             }
+          }
+
+          if (internal.settings) {
+            internal.settings.motions = {};
+          }
+
+          model.motion = () => Promise.resolve(false);
+
+          internal.on('beforeModelUpdate', () => {
+            const state = useAvatarState.getState();
+            const core = internal.coreModel;
+            if (!core) return;
+
+            const t = performance.now() / 1000;
+            const gestures = animationBridge.computeGestures({
+              t,
+              isSpeaking: state.isSpeaking,
+              isThinking: state.isThinking,
+              isListening: state.isListening,
+              basePose: state.basePose,
+              emotion: state.emotion,
+              avatarScale: state.avatarScale || 1.0,
+            });
+
+            // Unified parameter application driving head, body, face, and talking hand/arm gestures
+            animationBridge.applyToLive2DModel(
+              model,
+              selectedLive2dModel,
+              gestures,
+              animValuesRef.current,
+              0.16
+            );
           });
         }
 
@@ -280,17 +447,33 @@ export function Live2DViewer() {
         setIsLoading(false);
       });
 
-    // Window mouse tracking for focus
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedLive2dModel, isAppReady]);
+
+  // Window mouse tracking for Live2D focus (throttled to 30Hz to prevent CPU spikes on mouse move)
+  useEffect(() => {
+    let lastFocusTime = 0;
     const handleGlobalPointerMove = (e: PointerEvent) => {
+      const now = performance.now();
+      if (now - lastFocusTime < 33) return;
+      lastFocusTime = now;
       const model = modelRef.current;
       if (model) {
         model.focus(e.clientX, e.clientY);
       }
     };
-    window.addEventListener('pointermove', handleGlobalPointerMove);
+    window.addEventListener('pointermove', handleGlobalPointerMove, { passive: true });
+    return () => window.removeEventListener('pointermove', handleGlobalPointerMove);
+  }, []);
 
-    // Animation & Position Update Loop
+  // Frame update loop for stationary placement, sitting offset, smooth scaling, and direct DOM hitboxes
+  // Zero React re-renders to maintain minimal, stable CPU/RAM usage
+  useEffect(() => {
     let lastFrameTime = performance.now();
+    let animationFrameId = 0;
+
     const updateLoop = () => {
       const now = performance.now();
       const delta = Math.min(0.1, (now - lastFrameTime) / 1000);
@@ -300,91 +483,74 @@ export function Live2DViewer() {
       const model = modelRef.current;
 
       if (model) {
-        // Lerp towards targetPosition if active (autonomous wander / dynamic talk)
-        if (s.targetPosition && !s.isDragging) {
-          const cur = s.worldPosition;
-          const tgt = s.targetPosition;
-          const diffX = tgt.x - cur.x;
-          const diffY = tgt.y - cur.y;
-          const dist = Math.hypot(diffX, diffY);
+        const currentScale = s.avatarScale || 1.0;
+        const curPos = s.worldPosition;
+        let targetScreenX = curPos.x * ZOOM + window.innerWidth / 2;
+        const feetWorldY = curPos.y - 1.2 * currentScale;
+        const screenFeetY = -feetWorldY * ZOOM + window.innerHeight / 2;
+        const isSitting = s.basePose === 'sit' || s.basePose === 'sitting';
+        const sitOffset = (isSitting ? 0.60 : 0) * currentScale * ZOOM;
 
-          if (dist > 0.005) {
-            const nextX = cur.x + diffX * Math.min(1, delta * 3.5);
-            const nextY = cur.y + diffY * Math.min(1, delta * 3.5);
-            s.setWorldPosition({ x: nextX, y: nextY, z: 0 });
-          } else {
-            s.setTargetPosition(null);
-            s.setIsWalking(false);
-          }
+        // Screen-Edge Peeking Positioning & Dance Hip Bounce
+        const isPeekLeft = s.basePose === 'peek-left';
+        const isPeekRight = s.basePose === 'peek-right';
+        const peekBobY = (s.basePose.startsWith('peek') ? Math.sin(now / 350) * 4 : 0) * currentScale;
+        const isDancing = s.basePose === 'dance' || s.basePose === 'dancing';
+        const danceBobY = (isDancing ? Math.sin(now / 150) * 7.5 : 0) * currentScale;
+
+        if (isPeekLeft) {
+          // Dock to left screen edge with avatar peeking inward
+          targetScreenX = 55 * currentScale;
+        } else if (isPeekRight) {
+          // Dock to right screen edge with avatar peeking inward
+          targetScreenX = window.innerWidth - 55 * currentScale;
         }
 
-        // Apply world position to screen coordinates
-        const curPos = s.worldPosition;
-        const sx = curPos.x * ZOOM + window.innerWidth / 2;
-        const sy = -curPos.y * ZOOM + window.innerHeight / 2;
-        model.position.set(sx, sy);
+        // Smoothly lerp model position
+        const curX = model.position.x || targetScreenX;
+        const curY = model.position.y || screenFeetY;
+        const nextX = curX + (targetScreenX - curX) * Math.min(1, delta * 8.0);
+        const nextY = curY + ((screenFeetY + sitOffset + peekBobY + danceBobY) - curY) * Math.min(1, delta * 8.0);
+
+        model.position.set(nextX, nextY);
 
         // Smooth scale
-        const currentFactor = model.scale.x / (baseScaleRef.current || 1);
-        const targetFactor = s.avatarScale || 1;
-        if (Math.abs(currentFactor - targetFactor) > 0.002) {
-          const nextFactor = currentFactor + (targetFactor - currentFactor) * Math.min(1, delta * 6.0);
-          model.scale.set(baseScaleRef.current * nextFactor);
+        const baseScale = baseScaleRef.current || 1;
+        const currentFactor = model.scale.x / baseScale;
+        if (Math.abs(currentFactor - currentScale) > 0.002) {
+          const nextFactor = currentFactor + (currentScale - currentFactor) * Math.min(1, delta * 6.0);
+          model.scale.set(baseScale * nextFactor);
         }
 
-        // Update Hitbox bounds
+        // Direct DOM Hitbox positioning without React state updates (prevents 60Hz component re-renders)
         const dw = Math.max(160, model.width * 0.85);
-        const dh = Math.max(220, model.height * 0.95);
-        setHitbox({
-          left: sx - dw / 2,
-          top: sy - dh * 0.88,
-          width: dw,
-          height: dh,
-        });
+        const dh = Math.max(240, model.height * 0.95);
+        const el = hitboxRef.current;
+        if (el) {
+          const leftPx = `${Math.round(nextX - dw / 2)}px`;
+          const topPx = `${Math.round(nextY - dh)}px`;
+          const widthPx = `${Math.round(dw)}px`;
+          const heightPx = `${Math.round(dh)}px`;
+
+          if (el.style.left !== leftPx) el.style.left = leftPx;
+          if (el.style.top !== topPx) el.style.top = topPx;
+          if (el.style.width !== widthPx) el.style.width = widthPx;
+          if (el.style.height !== heightPx) el.style.height = heightPx;
+        }
       }
 
       animationFrameId = requestAnimationFrame(updateLoop);
     };
 
-    let animationFrameId = requestAnimationFrame(updateLoop);
-
-    // Unmount and WebGL cleanup
-    return () => {
-      isCancelled = true;
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('pointermove', handleGlobalPointerMove);
-
-      if (modelRef.current) {
-        try {
-          modelRef.current.destroy({ children: true, texture: true, baseTexture: true });
-        } catch (_) {}
-        modelRef.current = null;
-      }
-
-      if (appRef.current) {
-        try {
-          appRef.current.stop();
-          appRef.current.destroy(true, { children: true, texture: true, baseTexture: true });
-        } catch (_) {}
-        appRef.current = null;
-      }
-
-      // Discard WebGL Context
-      if (canvas) {
-        try {
-          const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-          const ext = gl?.getExtension('WEBGL_lose_context');
-          ext?.loseContext();
-        } catch (_) {}
-      }
-    };
-  }, [selectedLive2dModel]);
+    animationFrameId = requestAnimationFrame(updateLoop);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, []);
 
   return (
     <div className="w-full h-full pointer-events-none relative select-none">
       <canvas ref={canvasRef} className="w-full h-full pointer-events-none absolute inset-0" />
 
-      {/* Pulsing loading orb while model loads */}
+      {/* Pulsing loading indicator */}
       {isLoading && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-none">
           <div className="w-9 h-9 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 animate-ping opacity-75" />
@@ -394,16 +560,17 @@ export function Live2DViewer() {
         </div>
       )}
 
-      {/* Error display if asset missing */}
+      {/* Error notification if asset fails to load */}
       {loadError && (
         <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-red-600/90 backdrop-blur-md text-white px-4 py-2 rounded-xl text-xs font-bold border border-red-400 pointer-events-auto shadow-2xl">
           Live2D Load Error: {loadError}
         </div>
       )}
 
-      {/* Draggable Hitbox over the avatar */}
+      {/* Draggable Hitbox over the avatar - zero React re-renders for ultra-low CPU */}
       {!isLoading && (
         <div
+          ref={hitboxRef}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -411,11 +578,12 @@ export function Live2DViewer() {
           onContextMenu={handleContextMenu}
           className="fixed cursor-grab active:cursor-grabbing pointer-events-auto z-[60]"
           style={{
-            left: `${hitbox.left}px`,
-            top: `${hitbox.top}px`,
-            width: `${hitbox.width}px`,
-            height: `${hitbox.height}px`,
+            left: 0,
+            top: 0,
+            width: 200,
+            height: 380,
             borderRadius: '24px',
+            willChange: 'left, top',
           }}
           title={`${selectedLive2dModel.toUpperCase()} (Live2D) - Drag to move, Tap to interact, Right-click for menu`}
         />

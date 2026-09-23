@@ -1,5 +1,5 @@
 /**
- * Soltini User Authentication & License Session Manager
+ * Lucy User Authentication & License Session Manager
  * Connects Desktop App to License Server & Neon DB
  */
 
@@ -18,7 +18,7 @@ export interface UserSession {
   periodEnd?: string;
 }
 
-const STORAGE_KEY = 'soltini_user_session';
+const STORAGE_KEY = 'lucy_user_session';
 const DEFAULT_LICENSE_SERVER = 'https://lucymate.vercel.app';
 
 class UserAuthManager {
@@ -261,7 +261,7 @@ class UserAuthManager {
    */
   public async refreshStatus(serverUrl = DEFAULT_LICENSE_SERVER): Promise<UserSession | null> {
     if (!this.session?.email) return null;
-    if (this.session.email === 'guest@soltini.local' || this.session.email === 'guest@lucy.local') return this.session;
+    if (this.session.email === 'guest@lucy.local') return this.session;
 
     try {
       const res = await fetch(`${serverUrl}/api/auth/verify`, {

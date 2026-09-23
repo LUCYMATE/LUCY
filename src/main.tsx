@@ -78,11 +78,11 @@ function showCustomAlert(msg: string) {
 }
 
 window.addEventListener('error', (e) => {
-  showCustomAlert('Global error: ' + e.message + ' at ' + e.filename + ':' + e.lineno);
+  console.error('Global error:', e.message, 'at', e.filename + ':' + e.lineno);
 });
 
 window.addEventListener('unhandledrejection', (e) => {
-  showCustomAlert('Unhandled Promise Rejection: ' + (e.reason?.message || e.reason || 'Unknown error'));
+  console.warn('Unhandled promise rejection:', e.reason);
 });
 
 createRoot(document.getElementById('root')!).render(

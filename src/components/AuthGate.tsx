@@ -45,7 +45,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       setAuthError(e.detail || 'Authentication failed.');
       if (pollingRef.current) clearTimeout(pollingRef.current);
     };
-    window.addEventListener('soltini-auth-error', handleAuthError);
+    window.addEventListener('lucy-auth-error', handleAuthError);
 
     const unsub = userAuth.subscribe((session) => {
       if (session && session.status !== 'revoked') {
@@ -84,7 +84,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     });
     return () => { 
       unsub(); 
-      window.removeEventListener('soltini-auth-error', handleAuthError);
+      window.removeEventListener('lucy-auth-error', handleAuthError);
       if (pollingRef.current) clearTimeout(pollingRef.current);
     };
   }, [checkAuth, onAuthorized]);
@@ -119,7 +119,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     const codeChallenge = btoa(String.fromCharCode.apply(null, hashArray)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
     const stateParam = crypto.randomUUID();
-    localStorage.setItem('soltini_auth_state', stateParam);
+    localStorage.setItem('lucy_auth_state', stateParam);
 
     // Start polling the backend for the session token with exponential backoff
     if (pollingRef.current) clearTimeout(pollingRef.current);

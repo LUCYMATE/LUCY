@@ -29,6 +29,11 @@ description = "Allows opening external URLs"
 commands.allow = ["open_external_url"]
 
 [[permission]]
+identifier = "allow-open-app"
+description = "Allows opening desktop applications safely"
+commands.allow = ["open_app"]
+
+[[permission]]
 identifier = "allow-move-and-click-mouse"
 description = "Allows moving and clicking the mouse"
 commands.allow = ["move_and_click_mouse"]
@@ -132,3 +137,24 @@ commands.allow = ["is_autostart"]
 identifier = "allow-get-desktop-rectangles"
 description = "Allows getting desktop windows and taskbar coordinates"
 commands.allow = ["get_desktop_rectangles"]
+
+[[permission]]
+identifier = "allow-get-lucy-link-pairing-data"
+description = "Allows retrieving QR pairing data for LucyLink P2P connection"
+commands.allow = ["get_lucy_link_pairing_data"]
+
+[[permission]]
+identifier = "allow-send-prompt-to-phone"
+description = "Allows sending prompts to paired mobile phone agent"
+commands.allow = ["send_prompt_to_phone"]
+
+[[permission]]
+identifier = "allow-resolve-mobile-prompt"
+description = "Allows resolving tasks delegated by the mobile phone"
+commands.allow = ["resolve_mobile_prompt"]
+
+[[permission]]
+identifier = "allow-get-lucy-link-status"
+description = "Allows retrieving LucyLink connection and network status"
+commands.allow = ["get_lucy_link_status"]
+

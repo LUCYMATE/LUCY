@@ -28,9 +28,9 @@ multiwin/
 ## Run it
 
 ```sh
-pnpm install
-pnpm tauri dev
-pnpm tauri build
+npm install
+npm tauri dev
+npm tauri build
 ```
 
 ## Episode topics
