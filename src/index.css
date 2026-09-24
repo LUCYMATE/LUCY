@@ -63,3 +63,19 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.4);
 }
+
+/* Custom Scrollbar for Settings and Light Surfaces */
+.settings-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.settings-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.settings-scrollbar::-webkit-scrollbar-thumb {
+  background: #FCE7F3;
+  border-radius: 9999px;
+}
+.settings-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #F43F8E;
+}
+

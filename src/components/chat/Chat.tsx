@@ -35,6 +35,7 @@ export function Chat({ isVisible, onCloseChat, isSecondaryWindow = false }: { is
   })));
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastSendTimeRef = useRef<{ text: string; time: number }>({ text: '', time: 0 });
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -45,8 +46,16 @@ export function Chat({ isVisible, onCloseChat, isSecondaryWindow = false }: { is
   const handleSendText = (textToSend?: string) => {
     const query = (textToSend || input).trim();
     if (!query) return;
+
+    // Drop rapid duplicate submissions within 500ms
+    const now = performance.now();
+    if (query === lastSendTimeRef.current.text && now - lastSendTimeRef.current.time < 500) {
+      return;
+    }
+    lastSendTimeRef.current = { text: query, time: now };
+
     if (isSecondaryWindow) {
-      emitCrossWindow('soltini-chat-send', query);
+      emitCrossWindow('lucy-chat-send', query);
     } else {
       sendText(query);
     }
@@ -55,7 +64,7 @@ export function Chat({ isVisible, onCloseChat, isSecondaryWindow = false }: { is
 
   const handleToggleMic = () => {
     if (isSecondaryWindow) {
-      emitCrossWindow('soltini-toggle-mic');
+      emitCrossWindow('lucy-toggle-mic');
     } else {
       toggleMic();
     }
@@ -103,12 +112,14 @@ export function Chat({ isVisible, onCloseChat, isSecondaryWindow = false }: { is
           </div>
         </div>
 
-        <button 
-          onClick={onCloseChat} 
-          className="cancel-drag p-1.5 hover:bg-pink-50 rounded-full text-[#9CA3AF] hover:text-[#1E1926] transition-colors cursor-pointer"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {!isSecondaryWindow && (
+          <button 
+            onClick={onCloseChat} 
+            className="cancel-drag p-1.5 hover:bg-pink-50 rounded-full text-[#9CA3AF] hover:text-[#1E1926] transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Messages Area */}

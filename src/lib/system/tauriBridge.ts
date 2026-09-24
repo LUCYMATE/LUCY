@@ -1,14 +1,27 @@
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
-// Check if we are running in Tauri
+// Check if we are running in Tauri with initialized internals
+export const isTauriReady = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const tauriWindow = window as any;
+  return Boolean(tauriWindow.__TAURI_INTERNALS__?.metadata?.currentWindow?.label);
+};
+
 export const isTauriApp = (): boolean => {
   if (typeof window === 'undefined') return false;
-  const tauriWindow = window as Window & {
-    __TAURI_INTERNALS__?: unknown;
-    __TAURI__?: unknown;
-  };
-
+  const tauriWindow = window as any;
   return Boolean(tauriWindow.__TAURI_INTERNALS__ || tauriWindow.__TAURI__);
+};
+
+export const getSafeCurrentWindow = () => {
+  if (!isTauriReady()) return null;
+  try {
+    return getCurrentWindow();
+  } catch (e) {
+    console.warn('getCurrentWindow not ready:', e);
+    return null;
+  }
 };
 
 export const getSystemStats = async (): Promise<{ cpu_usage: number; total_memory: number; used_memory: number; app_memory: number } | null> => {

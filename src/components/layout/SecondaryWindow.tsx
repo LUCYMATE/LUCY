@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { SettingsPage } from '../settings/SettingsPage';
 import { Chat } from '../chat/Chat';
 import { SystemLogs } from './SystemLogs';
-import { CalendarClock, Trash2, Clock, X, Sliders, LayoutDashboard, ListTodo } from 'lucide-react';
+import { CalendarClock, Trash2, Clock, X, Sliders, LayoutDashboard, ListTodo, Minus, Square, Copy, Terminal } from 'lucide-react';
 import { getScheduledTasks, cancelScheduledTaskById, ScheduledTask } from '../../lib/gemini/gemini-live';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useChatStore } from '../../lib/store/chatStore';
@@ -11,7 +11,9 @@ import { LogEntry } from '../../lib/store/logger';
 import { listenCrossWindow, emitCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 export function SecondaryWindow() {
-  const [activeTab, setActiveTab] = useState<'settings' | 'dashboard' | 'tasks'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'dashboard' | 'tasks'>('dashboard');
+  const [showLogs, setShowLogs] = useState(true);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [stats, setStats] = useState<{ cpu: number | string; memory: string; latency: string }>({
     cpu: 0,
@@ -19,18 +21,45 @@ export function SecondaryWindow() {
     latency: 'checking...'
   });
 
+  // Track window maximize state
+  useEffect(() => {
+    let unlistenResize: (() => void) | undefined;
+    try {
+      const win = getCurrentWebviewWindow();
+      win.isMaximized().then(setIsMaximized).catch(() => {});
+      win.onResized(() => {
+        win.isMaximized().then(setIsMaximized).catch(() => {});
+      }).then(u => { unlistenResize = u; }).catch(() => {});
+    } catch (_) {}
+    return () => {
+      if (unlistenResize) unlistenResize();
+    };
+  }, []);
+
   // Handle Hash routing from URL to select the right tab initially
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash;
-      if (hash.includes('tab=dashboard')) setActiveTab('dashboard');
-      else if (hash.includes('tab=tasks')) setActiveTab('tasks');
-      else setActiveTab('settings');
+      if (hash.includes('tab=dashboard')) {
+        setActiveTab('dashboard');
+      } else if (hash.includes('tab=logs')) {
+        setActiveTab('dashboard');
+        setShowLogs(true);
+      } else if (hash.includes('tab=tasks')) {
+        setActiveTab('tasks');
+      } else {
+        setActiveTab('settings');
+      }
     };
     handleHash();
 
-    const unsubTab = listenCrossWindow<string>('soltini-switch-tab', (tab) => {
-      if (tab && ['settings', 'dashboard', 'tasks'].includes(tab)) {
+    const unsubTab = listenCrossWindow<string>('lucy-switch-tab', (tab) => {
+      if (tab === 'logs') {
+        setActiveTab('dashboard');
+        setShowLogs(true);
+      } else if (tab === 'dashboard' || tab === 'chat') {
+        setActiveTab('dashboard');
+      } else if (tab && ['settings', 'tasks'].includes(tab)) {
         setActiveTab(tab as any);
       }
     });
@@ -43,22 +72,22 @@ export function SecondaryWindow() {
     let unlisteners: (() => void)[] = [];
     
     import('@tauri-apps/api/event').then(({ listen, emit }) => {
-      listen('soltini-sync-chat', (e: any) => {
+      listen('lucy-sync-chat', (e: any) => {
         if (e.payload) useChatStore.getState().setMessages(e.payload);
       }).then(u => unlisteners.push(u));
 
-      listen('soltini-sync-avatar', (e: any) => {
+      listen('lucy-sync-avatar', (e: any) => {
         if (e.payload) {
           useAvatarState.getState().setIsMicOn(e.payload.isMicOn);
           useAvatarState.getState().setConnectionState(e.payload.connectionState);
         }
       }).then(u => unlisteners.push(u));
 
-      listen('soltini-sync-logs', (e: any) => {
+      listen('lucy-sync-logs', (e: any) => {
         if (e.payload) setLogs(e.payload);
       }).then(u => unlisteners.push(u));
 
-      listen('soltini-sync-stats', (e: any) => {
+      listen('lucy-sync-stats', (e: any) => {
         if (e.payload) {
           setStats({
             cpu: e.payload.cpu ?? 0,
@@ -69,11 +98,26 @@ export function SecondaryWindow() {
       }).then(u => unlisteners.push(u));
       
       // Request initial sync from main window
-      emit('soltini-request-sync');
+      emit('lucy-request-sync');
     });
 
     return () => unlisteners.forEach(u => u && u());
   }, []);
+
+  const handleMinimize = () => {
+    try {
+      getCurrentWebviewWindow().minimize();
+    } catch (_) {}
+  };
+
+  const handleToggleMaximize = async () => {
+    try {
+      const win = getCurrentWebviewWindow();
+      await win.toggleMaximize();
+      const max = await win.isMaximized();
+      setIsMaximized(max);
+    } catch (_) {}
+  };
 
   const closeSelf = () => {
     try {
@@ -84,53 +128,107 @@ export function SecondaryWindow() {
   };
 
   return (
-    <div className="h-screen w-screen bg-[#FFF5F8] text-[#1E1926] flex flex-col font-sans select-none overflow-hidden">
-      {/* Title bar with drag region */}
+    <div className="h-screen w-screen bg-[#FFF5F8] text-[#1E1926] flex flex-col font-sans select-none overflow-hidden border border-[#FCE7F3] rounded-2xl shadow-2xl">
+      {/* Sleek Custom Frameless Titlebar */}
       <div 
         data-tauri-drag-region 
-        className="flex items-center justify-between bg-white/80 backdrop-blur-sm border-b border-[#FCE7F3] px-3 py-2 shrink-0 cursor-move"
+        className="h-11 bg-white/90 backdrop-blur-md border-b border-[#FCE7F3] px-3 flex items-center justify-between shrink-0 select-none"
       >
-        <div className="flex items-center gap-1">
-          <button 
-            onClick={() => setActiveTab('settings')} 
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              activeTab === 'settings' 
-                ? 'bg-[#FDF2F8] text-[#F43F8E] border border-[#FCE7F3] shadow-xs' 
-                : 'hover:bg-pink-50 text-[#6B7280] hover:text-[#1E1926]'
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5" /> Settings
-          </button>
-          <button 
-            onClick={() => setActiveTab('dashboard')} 
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              activeTab === 'dashboard' 
-                ? 'bg-[#FDF2F8] text-[#F43F8E] border border-[#FCE7F3] shadow-xs' 
-                : 'hover:bg-pink-50 text-[#6B7280] hover:text-[#1E1926]'
-            }`}
-          >
-            <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
-          </button>
-          <button 
-            onClick={() => setActiveTab('tasks')} 
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              activeTab === 'tasks' 
-                ? 'bg-[#FDF2F8] text-[#F43F8E] border border-[#FCE7F3] shadow-xs' 
-                : 'hover:bg-pink-50 text-[#6B7280] hover:text-[#1E1926]'
-            }`}
-          >
-            <ListTodo className="w-3.5 h-3.5" /> Tasks
-          </button>
+        {/* Left: Branding & Opening Tabs (shifted up into titlebar) */}
+        <div className="flex items-center gap-2">
+          {/* LUCY Brand */}
+          <div className="flex items-center gap-2 pr-3 border-r border-[#FCE7F3]">
+            <div className="w-5 h-5 rounded-full overflow-hidden border border-[#FCE7F3] shadow-2xs">
+              <img src="/lucy-logo.png" alt="LUCY" className="w-full h-full object-cover" />
+            </div>
+            <span className="font-extrabold text-xs tracking-wider text-[#1E1926]">LUCY</span>
+          </div>
+
+          {/* Navigation Tabs */}
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={() => setActiveTab('dashboard')} 
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                activeTab === 'dashboard' 
+                  ? 'bg-[#FDF2F8] text-[#F43F8E] border border-[#FCE7F3] shadow-xs' 
+                  : 'hover:bg-pink-50 text-[#6B7280] hover:text-[#1E1926]'
+              }`}
+            >
+              <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
+            </button>
+            <button 
+              onClick={() => setActiveTab('tasks')} 
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                activeTab === 'tasks' 
+                  ? 'bg-[#FDF2F8] text-[#F43F8E] border border-[#FCE7F3] shadow-xs' 
+                  : 'hover:bg-pink-50 text-[#6B7280] hover:text-[#1E1926]'
+              }`}
+            >
+              <ListTodo className="w-3.5 h-3.5" /> Tasks
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')} 
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                activeTab === 'settings' 
+                  ? 'bg-[#FDF2F8] text-[#F43F8E] border border-[#FCE7F3] shadow-xs' 
+                  : 'hover:bg-pink-50 text-[#6B7280] hover:text-[#1E1926]'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5" /> Settings
+            </button>
+          </div>
         </div>
 
-        {/* Window Close Button */}
-        <div className="flex items-center">
+        {/* Center: Draggable region */}
+        <div data-tauri-drag-region className="flex-1 h-full cursor-move" />
+
+        {/* Right: System Logs Toggle & Custom Window Controls */}
+        <div className="flex items-center gap-1.5">
+          {/* Logs Opening Toggle Button */}
+          <button
+            onClick={() => {
+              if (activeTab !== 'dashboard') {
+                setActiveTab('dashboard');
+                setShowLogs(true);
+              } else {
+                setShowLogs(!showLogs);
+              }
+            }}
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+              activeTab === 'dashboard' && showLogs
+                ? 'bg-[#FDF2F8] text-[#8B5CF6] border border-[#DDD6FE] shadow-2xs' 
+                : 'hover:bg-pink-50 text-[#6B7280] hover:text-[#1E1926]'
+            }`}
+            title={showLogs && activeTab === 'dashboard' ? "Hide System Logs" : "Show System Logs"}
+          >
+            <Terminal className="w-3.5 h-3.5 text-[#8B5CF6]" />
+            <span>Logs</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${showLogs && activeTab === 'dashboard' ? 'bg-[#10B981]' : 'bg-gray-300'}`} />
+          </button>
+
+          <div className="w-[1px] h-4 bg-[#FCE7F3] mx-1" />
+
+          {/* Window Control Buttons */}
+          <button 
+            onClick={handleMinimize} 
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-pink-100/60 text-[#6B7280] hover:text-[#1E1926] transition-colors cursor-pointer"
+            title="Minimize"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <button 
+            onClick={handleToggleMaximize} 
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-pink-100/60 text-[#6B7280] hover:text-[#1E1926] transition-colors cursor-pointer"
+            title={isMaximized ? "Restore" : "Maximize"}
+          >
+            {isMaximized ? <Copy className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+          </button>
           <button 
             onClick={closeSelf} 
-            className="p-1.5 hover:bg-red-50 text-[#9CA3AF] hover:text-red-500 rounded-lg transition-colors cursor-pointer"
-            title="Close Window"
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-500 hover:text-white text-[#6B7280] transition-colors cursor-pointer"
+            title="Close"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -147,18 +245,20 @@ export function SecondaryWindow() {
             <div className="flex-1 h-full relative min-w-0">
               <Chat isVisible={true} onCloseChat={closeSelf} isSecondaryWindow={true} />
             </div>
-            <div className="w-[360px] h-full border-l border-[#FCE7F3] relative shrink-0">
-              <SystemLogs
-                isVisible={true}
-                onClose={closeSelf}
-                logs={logs}
-                cpu={stats.cpu}
-                memory={stats.memory}
-                latency={stats.latency}
-                isTauri={true}
-                isSecondaryWindow={true}
-              />
-            </div>
+            {showLogs && (
+              <div className="w-[360px] h-full border-l border-[#FCE7F3] relative shrink-0">
+                <SystemLogs
+                  isVisible={true}
+                  onClose={() => setShowLogs(false)}
+                  logs={logs}
+                  cpu={stats.cpu}
+                  memory={stats.memory}
+                  latency={stats.latency}
+                  isTauri={true}
+                  isSecondaryWindow={true}
+                />
+              </div>
+            )}
           </div>
         )}
         {activeTab === 'tasks' && <TasksPanel />}
@@ -173,7 +273,7 @@ function TasksPanel() {
   useEffect(() => {
     const loadTasks = () => setTasks(getScheduledTasks());
     loadTasks();
-    const unsub = listenCrossWindow('soltini-tasks-changed', loadTasks);
+    const unsub = listenCrossWindow('lucy-tasks-changed', loadTasks);
     const interval = setInterval(loadTasks, 4000);
     return () => {
       unsub();
@@ -183,7 +283,7 @@ function TasksPanel() {
 
   const handleCancelTask = (id: string) => {
     cancelScheduledTaskById(id);
-    emitCrossWindow('soltini-cancel-task', id);
+    emitCrossWindow('lucy-cancel-task', id);
     setTasks(getScheduledTasks());
   };
 

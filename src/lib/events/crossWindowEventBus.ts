@@ -33,13 +33,20 @@ export function listenCrossWindow<T = any>(
 ): UnlistenFn {
   let isCleanedUp = false;
   let tauriUnlisten: (() => void) | null = null;
+  let lastTriggerTime = 0;
 
-  // DOM listener for local events (or web-only mode)
+  const trigger = (payload: T) => {
+    if (isCleanedUp) return;
+    const now = Date.now();
+    // 80ms deduplication window to prevent double execution if emitted on both DOM and Tauri IPC
+    if (now - lastTriggerTime < 80) return;
+    lastTriggerTime = now;
+    callback(payload);
+  };
+
+  // DOM listener for local events and Rust eval dispatches
   const domHandler = (e: Event) => {
-    // Only handle if not handled by Tauri to avoid double triggers
-    if (!isTauriApp()) {
-      callback((e as CustomEvent).detail);
-    }
+    trigger((e as CustomEvent).detail);
   };
 
   window.addEventListener(event, domHandler);
@@ -50,9 +57,7 @@ export function listenCrossWindow<T = any>(
       .then(({ listen }) => {
         if (isCleanedUp) return;
         return listen<T>(event, (e) => {
-          if (!isCleanedUp) {
-            callback(e.payload);
-          }
+          trigger(e.payload);
         });
       })
       .then((unsub) => {
