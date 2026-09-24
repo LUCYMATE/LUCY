@@ -15,7 +15,7 @@ export class AudioPlayer {
     this.analyser.fftSize = 256;
     
     this.gainNode = this.audioContext.createGain();
-    this.muted = localStorage.getItem('soltini_muted') === 'true';
+    this.muted = localStorage.getItem('lucy_muted') === 'true';
     this.gainNode.gain.value = this.muted ? 0 : 1;
 
     // Connect: source -> gainNode -> analyser -> destination
@@ -48,7 +48,7 @@ export class AudioPlayer {
 
   setMuted(muted: boolean) {
     this.muted = muted;
-    localStorage.setItem('soltini_muted', String(muted));
+    localStorage.setItem('lucy_muted', String(muted));
     if (this.gainNode) {
       this.gainNode.gain.value = muted ? 0 : 1;
     }

@@ -10,7 +10,7 @@ export class AudioRecorder {
   private heartbeatInterval: any = null;
   private lastDataTime: number = 0;
   public onMicFrozen?: () => void;
-  public onData: ((data: Int16Array) => void) | null = null;
+  public onData: ((data: Int16Array, rms?: number) => void) | null = null;
 
   getAnalyser(): AnalyserNode | null {
     return this.analyser;
@@ -24,7 +24,7 @@ export class AudioRecorder {
       
       const timeoutPromise = (ms: number, msg: string) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms));
 
-      const savedDeviceId = localStorage.getItem('soltini_mic_id');
+      const savedDeviceId = localStorage.getItem('lucy_mic_id');
       const audioConstraints: MediaTrackConstraints = {
         echoCancellation: true,
         noiseSuppression: true,
@@ -62,8 +62,11 @@ export class AudioRecorder {
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-worklet');
       
       this.workletNode.port.onmessage = (event) => {
-        if (this.onData) {
-          this.onData(event.data);
+        if (!this.onData) return;
+        if (event.data instanceof Int16Array) {
+          this.onData(event.data, 0);
+        } else if (event.data?.pcm) {
+          this.onData(event.data.pcm, event.data.rms || 0);
         }
       };
       
