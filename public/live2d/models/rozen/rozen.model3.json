@@ -7,7 +7,17 @@
 			"textures/texture_01.png"
 		],
 		"Physics": "rozen.physics3.json",
-		"DisplayInfo": "rozen.cdi3.json"
+		"DisplayInfo": "rozen.cdi3.json",
+		"Expressions": [
+			{
+				"Name": "no_watermark",
+				"File": "expressions/no_watermark.exp3.json"
+			},
+			{
+				"Name": "neck_only",
+				"File": "expressions/neck_only.exp3.json"
+			}
+		]
 	},
 	"Groups": [
 		{
