@@ -14,13 +14,11 @@ if (typeof window !== 'undefined') {
   (window as any).PIXI = PIXI;
   try {
     Live2DModel.registerTicker(PIXI.Ticker);
-  } catch {
-    // Already registered
-  }
-  // Global RAM Saving: aggressive texture GC mode
+  } catch (_) {}
+  // Global RAM Saving: modern TextureGCSystem configuration
   try {
-    PIXI.settings.GC_MODE = PIXI.GC_MODES.AUTO;
-    PIXI.settings.GC_MAX_IDLE = 300; // GC unused textures every 5-10 seconds
+    (PIXI.TextureGCSystem as any).defaultMode = PIXI.GC_MODES.AUTO;
+    (PIXI.TextureGCSystem as any).defaultMaxIdle = 300; // GC unused textures every 5-10 seconds
   } catch (_) {}
 }
 
@@ -270,14 +268,34 @@ export function Live2DViewer() {
 
     let app: PIXI.Application | null = null;
     try {
+      if (PIXI.BatchRenderer) {
+        PIXI.BatchRenderer.defaultMaxTextures = 16;
+        const origContextChange = (PIXI.BatchRenderer.prototype as any).contextChange;
+        (PIXI.BatchRenderer.prototype as any).contextChange = function () {
+          const gl = this.renderer?.gl;
+          let maxT = 16;
+          try {
+            maxT = gl ? gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) : 16;
+          } catch (_) {}
+          if (!maxT || maxT < 1) {
+            this.maxTextures = 1;
+            this._shader = this.shaderGenerator.generateShader(1);
+            for (let i = 0; i < this._packedGeometryPoolSize; i++) {
+              this._packedGeometries[i] = new this.geometryClass();
+            }
+            this.initFlushBuffers();
+            return;
+          }
+          return origContextChange.call(this);
+        };
+      }
       app = new PIXI.Application({
         view: canvas,
         resizeTo: window,
         backgroundAlpha: 0,
-        antialias: false, // Disables 4x MSAA renderbuffers, saving ~100MB+ GPU RAM
+        antialias: true,
         autoDensity: true,
-        powerPreference: 'low-power',
-        resolution: Math.min(window.devicePixelRatio || 1, 1.25), // Caps canvas framebuffer on high-DPI screens
+        resolution: Math.min(window.devicePixelRatio || 1, 1.25),
       });
       // Set initial maxFPS cap to prevent runaway CPU loops
       app.ticker.maxFPS = 30;
