@@ -54,8 +54,8 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
           y: r.y / dpr,
           width: r.width / dpr,
           height: r.height / dpr,
-        }));
-        console.log('[DesktopMate] Polled rectangles:', rects);
+        }))
+        
         s.setDesktopRectangles(rects);
         const errorEl = document.getElementById('backend-error-alert');
         if (errorEl) errorEl.remove();

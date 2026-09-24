@@ -24,39 +24,39 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       }
       import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
         const win = getCurrentWindow();
-        win.setAlwaysOnTop(false).catch(() => {});
-        win.setIgnoreCursorEvents(false).catch(() => {});
-        win.unmaximize().catch(() => {});
-        win.setSkipTaskbar(false).catch(() => {});
-        win.show().catch(() => {});
+        win.setAlwaysOnTop(false).catch(() => { });
+        win.setIgnoreCursorEvents(false).catch(() => { });
+        win.unmaximize().catch(() => { });
+        win.setSkipTaskbar(false).catch(() => { });
+        win.show().catch(() => { });
         import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
-          win.setSize(new LogicalSize(1000, 700)).catch(() => {});
-          win.center().catch(() => {});
-        }).catch(() => {});
-      }).catch(() => {});
+          win.setSize(new LogicalSize(1000, 700)).catch(() => { });
+          win.center().catch(() => { });
+        }).catch(() => { });
+      }).catch(() => { });
     }
   }, [onAuthorized]);
 
   useEffect(() => {
     checkAuth();
-    
+
     // Listen for auth state changes from deep link or other sources
     const handleAuthError = (e: any) => {
       setAuthError(e.detail || 'Authentication failed.');
       if (pollingRef.current) clearTimeout(pollingRef.current);
     };
-    window.addEventListener('soltini-auth-error', handleAuthError);
+    window.addEventListener('lucy-auth-error', handleAuthError);
 
     const unsub = userAuth.subscribe((session) => {
       if (session && session.status !== 'revoked') {
         setStage('authorized');
         setAuthError(null);
         if (pollingRef.current) clearTimeout(pollingRef.current);
-        
+
         // Restore alwaysOnTop when authorized
         import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-          getCurrentWindow().setAlwaysOnTop(true).catch(() => {});
-        }).catch(() => {});
+          getCurrentWindow().setAlwaysOnTop(true).catch(() => { });
+        }).catch(() => { });
 
         setTimeout(onAuthorized, 800);
       } else {
@@ -66,25 +66,25 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         } else {
           setAuthError(null);
         }
-        
+
         // Ensure the window behaves like a normal window again if they are logged out
         import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
           const win = getCurrentWindow();
-          win.setAlwaysOnTop(false).catch(() => {});
-          win.setIgnoreCursorEvents(false).catch(() => {});
-          win.unmaximize().catch(() => {});
-          win.setSkipTaskbar(false).catch(() => {});
-          win.show().catch(() => {});
+          win.setAlwaysOnTop(false).catch(() => { });
+          win.setIgnoreCursorEvents(false).catch(() => { });
+          win.unmaximize().catch(() => { });
+          win.setSkipTaskbar(false).catch(() => { });
+          win.show().catch(() => { });
           import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
-            win.setSize(new LogicalSize(1000, 700)).catch(() => {});
-            win.center().catch(() => {});
-          }).catch(() => {});
-        }).catch(() => {});
+            win.setSize(new LogicalSize(1000, 700)).catch(() => { });
+            win.center().catch(() => { });
+          }).catch(() => { });
+        }).catch(() => { });
       }
     });
-    return () => { 
-      unsub(); 
-      window.removeEventListener('soltini-auth-error', handleAuthError);
+    return () => {
+      unsub();
+      window.removeEventListener('lucy-auth-error', handleAuthError);
       if (pollingRef.current) clearTimeout(pollingRef.current);
     };
   }, [checkAuth, onAuthorized]);
@@ -108,9 +108,9 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       window.crypto.getRandomValues(array);
       return btoa(String.fromCharCode.apply(null, Array.from(array))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     };
-    
+
     const codeVerifier = generateVerifier();
-    
+
     // Hash it for the challenge
     const encoder = new TextEncoder();
     const data = encoder.encode(codeVerifier);
@@ -119,12 +119,12 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     const codeChallenge = btoa(String.fromCharCode.apply(null, hashArray)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
     const stateParam = crypto.randomUUID();
-    localStorage.setItem('soltini_auth_state', stateParam);
+    localStorage.setItem('lucy_auth_state', stateParam);
 
     // Start polling the backend for the session token with exponential backoff
     if (pollingRef.current) clearTimeout(pollingRef.current);
     let attempts = 0;
-    
+
     const poll = async () => {
       try {
         const res = await fetch(`https://lucymate.vercel.app/api/auth/session?id=${sessionId}&code_verifier=${codeVerifier}`);
@@ -139,7 +139,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       } catch (err) {
         console.warn("Session polling failed", err);
       }
-      
+
       attempts++;
       if (attempts === 8) {
         setAuthError('Still waiting for authentication...');
@@ -209,17 +209,17 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
             animation: 'fadeIn 0.4s ease',
             pointerEvents: 'auto',
           }}>
-          
+
             <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 6, zIndex: 10 }}>
-              <button 
-                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().minimize())} 
+              <button
+                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().minimize())}
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
                 title="Minimize"
               >
                 <Minus size={18} />
               </button>
-              <button 
-                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().close())} 
+              <button
+                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().close())}
                 style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
                 title="Close"
               >

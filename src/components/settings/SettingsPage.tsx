@@ -51,6 +51,13 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     const val = localStorage.getItem('lucy_auto_mic');
     return val === null ? true : val === 'true';
   });
+  const [headphoneMode, setHeadphoneMode] = useState(() => localStorage.getItem('lucy_headphone_mode') === 'true');
+
+  const handleHeadphoneModeChange = (val: boolean) => {
+    setHeadphoneMode(val);
+    localStorage.setItem('lucy_headphone_mode', String(val));
+    logger.add('success', 'Settings', val ? 'Headphones Mode enabled (Barge-in allowed)' : 'Speaker Mode enabled (Echo Shield active)');
+  };
   const [avatarLocked, setAvatarLocked] = useState(localStorage.getItem('lucy_avatar_locked') === 'true');
   const {
     avatarEngine,
@@ -646,6 +653,30 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     <option key={d.deviceId} value={d.deviceId}>{d.label || 'Unknown Microphone'}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Headphone Mode / Echo Shield Toggle */}
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex items-center justify-between transition-colors">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <label className="block text-sm font-bold text-[#1E1926]">Headphones Mode</label>
+                    <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${headphoneMode ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                      {headphoneMode ? 'Headphones (Voice Barge-In)' : 'Speakers (Echo Shield Protected)'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#6B7280] mt-0.5">
+                    {headphoneMode
+                      ? 'Enabled: You are wearing headphones. You can speak to interrupt Lucy without speaker audio feedback.'
+                      : 'Disabled (Recommended for PC Speakers): Lucy blocks microphone transmission while speaking so she never hears her own voice.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleHeadphoneModeChange(!headphoneMode)}
+                  className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${headphoneMode ? 'bg-[#F43F8E]' : 'bg-gray-200'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${headphoneMode ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
               </div>
 
               <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4">

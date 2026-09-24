@@ -6,6 +6,7 @@ import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
 import { AvatarContextMenu } from './AvatarContextMenu';
 import { animationBridge } from './animations/avatarAnimationBridge';
+import { useEngineStore } from '../../lib/store/engineStore';
 
 const ZOOM = 250;
 
@@ -25,19 +26,39 @@ if (typeof window !== 'undefined') {
   if ((PIXI as any).BatchRenderer) {
     try {
       (PIXI as any).BatchRenderer.defaultMaxTextures = 16;
-      const origContextChange = (PIXI as any).BatchRenderer.prototype.contextChange;
       (PIXI as any).BatchRenderer.prototype.contextChange = function () {
-        try {
-          return origContextChange.call(this);
-        } catch (err) {
-          console.warn('[Live2DViewer] Safe BatchRenderer fallback on WebGL context:', err);
+        const gl = this.renderer?.gl;
+        if (!gl || gl.isContextLost?.()) {
           this.maxTextures = 1;
           this._shader = this.shaderGenerator.generateShader(1);
+          this._packedGeometries = [];
           for (let i = 0; i < this._packedGeometryPoolSize; i++) {
             this._packedGeometries[i] = new this.geometryClass();
           }
           this.initFlushBuffers();
+          return;
         }
+        let units = 1;
+        try {
+          units = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) || 1;
+        } catch (_) {
+          units = 1;
+        }
+        this.maxTextures = Math.max(1, Math.min(units, (PIXI as any).BatchRenderer.defaultMaxTextures || 16));
+        try {
+          if ((PIXI as any).checkMaxIfStatementsInShader) {
+            this.maxTextures = (PIXI as any).checkMaxIfStatementsInShader(this.maxTextures, gl);
+          }
+        } catch (_) {
+          this.maxTextures = 1;
+        }
+        this.maxTextures = Math.max(1, this.maxTextures || 1);
+        this._shader = this.shaderGenerator.generateShader(this.maxTextures);
+        this._packedGeometries = [];
+        for (let i = 0; i < this._packedGeometryPoolSize; i++) {
+          this._packedGeometries[i] = new this.geometryClass();
+        }
+        this.initFlushBuffers();
       };
     } catch (_) {}
   }
@@ -147,6 +168,9 @@ export function Live2DViewer() {
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return; // Left click only
     const s = useAvatarState.getState();
+    if (s.isSpeaking) {
+      useEngineStore.getState().interruptSpeech();
+    }
     dragInfoRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -293,7 +317,6 @@ export function Live2DViewer() {
         view: canvas,
         resizeTo: window,
         backgroundAlpha: 0,
-        backgroundColor: 0x000000,
         antialias: true,
         autoDensity: true,
         resolution: Math.min(window.devicePixelRatio || 1, 1.25),
@@ -362,7 +385,7 @@ export function Live2DViewer() {
 
     const modelPath = `/live2d/models/${selectedLive2dModel}/${selectedLive2dModel}.model3.json`;
 
-    Live2DModel.from(modelPath, { autoInteract: false })
+    Live2DModel.from(modelPath, { autoHitTest: false, autoFocus: false })
       .then((model) => {
         if (isCancelled) {
           try {
@@ -373,27 +396,24 @@ export function Live2DViewer() {
 
         modelRef.current = model;
 
-        // Bottom-center anchor (feet)
-        model.anchor.set(0.5, 1.0);
+        // Anchor at bottom-center so avatar stands grounded
+        model.anchor.set(0.5, 0.88);
 
-        // Normalize initial scale to match 3D height (~390px)
+        // Normalize initial scale
         const designHeight = (model.internalModel as any)?.height || model.height || 2048;
-        const targetHeight = 390;
+        const targetHeight = 420;
         const baseScale = targetHeight / designHeight;
         baseScaleRef.current = baseScale;
 
         const currentScale = useAvatarState.getState().avatarScale || 1.0;
         model.scale.set(baseScale * currentScale);
 
-        // Position model grounded to match 3D feet
+        // Position model centered on screen
         const s = useAvatarState.getState();
         const curPos = s.worldPosition;
         const screenX = curPos.x * ZOOM + window.innerWidth / 2;
-        const feetWorldY = curPos.y - 1.2 * currentScale;
-        const screenFeetY = -feetWorldY * ZOOM + window.innerHeight / 2;
-        const isSitting = s.basePose === 'sit' || s.basePose === 'sitting';
-        const sitOffset = (isSitting ? 0.60 : 0) * currentScale * ZOOM;
-        model.position.set(screenX, screenFeetY + sitOffset);
+        const screenY = -curPos.y * ZOOM + window.innerHeight / 2;
+        model.position.set(screenX, screenY);
 
         // Real-time animation, lip-sync, gestures & poses hook via AnimationBridge
         const internal = model.internalModel as any;
@@ -486,10 +506,9 @@ export function Live2DViewer() {
         const currentScale = s.avatarScale || 1.0;
         const curPos = s.worldPosition;
         let targetScreenX = curPos.x * ZOOM + window.innerWidth / 2;
-        const feetWorldY = curPos.y - 1.2 * currentScale;
-        const screenFeetY = -feetWorldY * ZOOM + window.innerHeight / 2;
+        let targetScreenY = -curPos.y * ZOOM + window.innerHeight / 2;
         const isSitting = s.basePose === 'sit' || s.basePose === 'sitting';
-        const sitOffset = (isSitting ? 0.60 : 0) * currentScale * ZOOM;
+        const sitOffset = (isSitting ? 40 : 0) * currentScale;
 
         // Screen-Edge Peeking Positioning & Dance Hip Bounce
         const isPeekLeft = s.basePose === 'peek-left';
@@ -500,17 +519,19 @@ export function Live2DViewer() {
 
         if (isPeekLeft) {
           // Dock to left screen edge with avatar peeking inward
-          targetScreenX = 55 * currentScale;
+          targetScreenX = 70 * currentScale;
         } else if (isPeekRight) {
           // Dock to right screen edge with avatar peeking inward
-          targetScreenX = window.innerWidth - 55 * currentScale;
+          targetScreenX = window.innerWidth - 70 * currentScale;
         }
+
+        const targetY = targetScreenY + sitOffset + peekBobY + danceBobY;
 
         // Smoothly lerp model position
         const curX = model.position.x || targetScreenX;
-        const curY = model.position.y || screenFeetY;
+        const curY = model.position.y || targetY;
         const nextX = curX + (targetScreenX - curX) * Math.min(1, delta * 8.0);
-        const nextY = curY + ((screenFeetY + sitOffset + peekBobY + danceBobY) - curY) * Math.min(1, delta * 8.0);
+        const nextY = curY + (targetY - curY) * Math.min(1, delta * 8.0);
 
         model.position.set(nextX, nextY);
 
@@ -528,7 +549,7 @@ export function Live2DViewer() {
         const el = hitboxRef.current;
         if (el) {
           const leftPx = `${Math.round(nextX - dw / 2)}px`;
-          const topPx = `${Math.round(nextY - dh)}px`;
+          const topPx = `${Math.round(nextY - dh * 0.88)}px`;
           const widthPx = `${Math.round(dw)}px`;
           const heightPx = `${Math.round(dh)}px`;
 

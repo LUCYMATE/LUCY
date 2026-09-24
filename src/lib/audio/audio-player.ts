@@ -64,6 +64,12 @@ export class AudioPlayer {
     return Math.max(0, this.nextPlayTime - now);
   }
 
+  isPlaying(): boolean {
+    if (!this.audioContext) return false;
+    const now = this.audioContext.currentTime;
+    return (this.nextPlayTime - now) > 0.02 || this.activeSources.length > 0;
+  }
+
   playChunk(pcmBase64: string): number {
     if (!this.audioContext || !this.gainNode) return 0;
 

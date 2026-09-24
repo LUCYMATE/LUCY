@@ -28,6 +28,7 @@ export function useCoreEngine() {
   const speechWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechActiveRef = useRef(false);
   const silenceCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastModelSpeechTimeRef = useRef<number>(0);
 
   const startWakeWordListener = useCallback(() => {
     const triggerWake = () => {
@@ -188,7 +189,22 @@ export function useCoreEngine() {
     speakTimerRef.current = setTimeout(() => {
       setSpeaking(false);
       modelBubbleIdRef.current = '';
-    }, additionalDelaySecs * 1000 + 500); 
+      lastModelSpeechTimeRef.current = Date.now();
+    }, additionalDelaySecs * 1000 + 400); 
+  }, [setSpeaking]);
+
+  const interruptSpeech = useCallback(() => {
+    playerRef.current?.stopCurrentPlayback();
+    setSpeaking(false);
+    stopSpeakingTimer();
+    lastModelSpeechTimeRef.current = 0;
+    if (silenceCheckTimerRef.current) {
+      clearTimeout(silenceCheckTimerRef.current);
+      silenceCheckTimerRef.current = null;
+    }
+    speechActiveRef.current = false;
+    modelBubbleIdRef.current = '';
+    geminiRef.current?.endTurn();
   }, [setSpeaking]);
 
   const setMicEnabled = async (targetOn: boolean) => {
@@ -212,6 +228,8 @@ export function useCoreEngine() {
       try {
         playerRef.current?.stopCurrentPlayback();
         setSpeaking(false);
+        stopSpeakingTimer();
+        lastModelSpeechTimeRef.current = 0;
         modelBubbleIdRef.current = ''; 
         await recorderRef.current?.start();
         if (recorderRef.current) {
@@ -224,31 +242,65 @@ export function useCoreEngine() {
               return;
             }
 
+            const isModelSpeaking = useAvatarState.getState().isSpeaking;
+            const isAudioPlaying = playerRef.current?.isPlaying() ?? false;
+            const currentTime = Date.now();
+
+            if (isModelSpeaking || isAudioPlaying) {
+              lastModelSpeechTimeRef.current = currentTime;
+            }
+
+            // Post-speech echo decay tail guard (500ms after speech ends to dissipate room reverberation)
+            const isPostSpeechCooldown = (currentTime - lastModelSpeechTimeRef.current) < 500;
+            const isHeadphoneMode = localStorage.getItem('lucy_headphone_mode') === 'true';
+
+            // ECHO SUPPRESSION GATE:
+            // When Lucy is speaking, audio is playing out of speakers, or room echo is dissipating,
+            // DO NOT stream mic audio to Gemini Live (unless user is in headphone mode).
+            if ((isModelSpeaking || isAudioPlaying || isPostSpeechCooldown) && !isHeadphoneMode) {
+              if (silenceCheckTimerRef.current) {
+                clearTimeout(silenceCheckTimerRef.current);
+                silenceCheckTimerRef.current = null;
+              }
+              speechActiveRef.current = false;
+              return; // Completely blocks microphone feedback loop
+            }
+
+            // In Headphone Mode:
+            // If model is speaking, only send audio if user speaks loud enough to barge in (> 0.035)
+            if (isHeadphoneMode && (isModelSpeaking || isAudioPlaying)) {
+              if (rms > 0.035) {
+                playerRef.current?.stopCurrentPlayback();
+                setSpeaking(false);
+                stopSpeakingTimer();
+                lastModelSpeechTimeRef.current = 0;
+              } else {
+                return;
+              }
+            }
+
             geminiRef.current?.sendAudio(pcm16);
 
             // Client-side VAD & instant turn finalization:
             // When speech is detected, track it; when user goes silent for 650ms, endTurn() immediately.
             const SPEECH_THRESHOLD = 0.012;
             const SILENCE_TIMEOUT_MS = 650;
-            const isModelSpeaking = useAvatarState.getState().isSpeaking;
 
-            if (!isModelSpeaking) {
-              if (rms > SPEECH_THRESHOLD) {
-                speechActiveRef.current = true;
-                if (silenceCheckTimerRef.current) {
-                  clearTimeout(silenceCheckTimerRef.current);
-                  silenceCheckTimerRef.current = null;
-                }
-              } else if (speechActiveRef.current) {
-                if (!silenceCheckTimerRef.current) {
-                  silenceCheckTimerRef.current = setTimeout(() => {
-                    if (speechActiveRef.current && !useAvatarState.getState().isSpeaking) {
-                      speechActiveRef.current = false;
-                      silenceCheckTimerRef.current = null;
-                      geminiRef.current?.endTurn();
-                    }
-                  }, SILENCE_TIMEOUT_MS);
-                }
+            if (rms > SPEECH_THRESHOLD) {
+              speechActiveRef.current = true;
+              if (silenceCheckTimerRef.current) {
+                clearTimeout(silenceCheckTimerRef.current);
+                silenceCheckTimerRef.current = null;
+              }
+            } else if (speechActiveRef.current) {
+              if (!silenceCheckTimerRef.current) {
+                silenceCheckTimerRef.current = setTimeout(() => {
+                  if (speechActiveRef.current && !useAvatarState.getState().isSpeaking) {
+                    speechActiveRef.current = false;
+                    silenceCheckTimerRef.current = null;
+                    geminiRef.current?.endTurn();
+                  }
+                }, SILENCE_TIMEOUT_MS);
               }
             }
           };
@@ -294,6 +346,10 @@ export function useCoreEngine() {
           silenceCheckTimerRef.current = null;
         }
         speechActiveRef.current = false;
+        playerRef.current?.stopCurrentPlayback();
+        setSpeaking(false);
+        stopSpeakingTimer();
+        lastModelSpeechTimeRef.current = 0;
         try { recorderRef.current?.stop(); } catch (e) {}
         try { geminiRef.current?.endTurn(); } catch (e) {}
 
@@ -418,6 +474,7 @@ export function useCoreEngine() {
       }
       speechActiveRef.current = false;
       setSpeaking(true);
+      lastModelSpeechTimeRef.current = Date.now();
       player.playChunk(pcmBase64);
       resetSpeakingTimer(player.getRemainingTime());
     };
@@ -453,6 +510,8 @@ export function useCoreEngine() {
     gemini.onInterrupted = () => {
       player.stopCurrentPlayback();
       setSpeaking(false);
+      stopSpeakingTimer();
+      lastModelSpeechTimeRef.current = 0;
       modelBubbleIdRef.current = '';
     };
 
@@ -485,12 +544,14 @@ export function useCoreEngine() {
     modelBubbleIdRef.current = ''; 
     playerRef.current?.stopCurrentPlayback();
     setSpeaking(false);
+    stopSpeakingTimer();
+    lastModelSpeechTimeRef.current = 0;
     geminiRef.current.sendText(trimmed);
   }, [setMessages, setSpeaking]);
 
   useEffect(() => {
-    setEngineMethods({ initSystem, toggleMic, setMicEnabled, sendText });
-  }, [initSystem, toggleMic, setMicEnabled, sendText, setEngineMethods]);
+    setEngineMethods({ initSystem, toggleMic, setMicEnabled, sendText, interruptSpeech });
+  }, [initSystem, toggleMic, setMicEnabled, sendText, interruptSpeech, setEngineMethods]);
 
   useEffect(() => {
     if (!initialized) {

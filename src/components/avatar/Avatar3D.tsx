@@ -58,24 +58,6 @@ function FpsLimiter() {
   return null;
 }
 
-// Forces Chromium to discard the WebGL context and GPU memory immediately when Canvas unmounts
-function WebGLContextLoser() {
-  const { gl } = useThree();
-  useEffect(() => {
-    return () => {
-      setTimeout(() => {
-        try {
-          const ext = gl.extensions.get('WEBGL_lose_context') as any;
-          if (ext) ext.loseContext();
-          gl.dispose();
-        } catch (e) {
-          console.error("Failed to aggressively release WebGL Context", e);
-        }
-      }, 0);
-    };
-  }, [gl]);
-  return null;
-}
 
 function Stool({ visible }: { visible: boolean }) {
   if (!visible) return null;
@@ -441,6 +423,9 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const s = useAvatarState.getState();
+    if (s.isSpeaking) {
+      useEngineStore.getState().interruptSpeech();
+    }
     cursorTargetRef.current = { ...s.worldPosition };
     s.setIsDragging(true);
     // Snap out of any stuck animation when grabbed
@@ -669,7 +654,6 @@ export function Avatar3D() {
         }}
         style={{ pointerEvents: 'none' }}
       >
-        <WebGLContextLoser />
         <FpsLimiter />
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
 

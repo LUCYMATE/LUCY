@@ -742,7 +742,6 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
     if (!this.isReady()) return;
     try {
       this.session.sendClientContent({
-        turns: [],
         turnComplete: true
       });
       this.audioChunksSent = 0; // reset for next turn
