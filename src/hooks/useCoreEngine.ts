@@ -12,7 +12,6 @@ import { useEngineStore } from '../lib/store/engineStore';
 import { listen } from '@tauri-apps/api/event';
 import { checkAppUpdate, markUpdateNotified } from '../lib/system/updateChecker';
 import { emitCrossWindow, listenCrossWindow } from '../lib/events/crossWindowEventBus';
-import { WakeWordDetector } from '../lib/audio/wakeWordDetector';
 
 export function useCoreEngine() {
   const [initialized, setInitialized] = useState(false);
@@ -29,7 +28,6 @@ export function useCoreEngine() {
   const speechWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechActiveRef = useRef(false);
   const silenceCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wakeDetectorRef = useRef<WakeWordDetector | null>(null);
 
   const startWakeWordListener = useCallback(() => {
     const triggerWake = () => {
@@ -60,21 +58,7 @@ export function useCoreEngine() {
       }
     };
 
-    // 1. Always start the lightweight on-device Web Audio voice cadence detector
-    // This runs completely offline with zero cloud dependencies and works in WebView2 / Windows.
-    if (!wakeDetectorRef.current) {
-      const detector = new WakeWordDetector({
-        onWake: () => {
-          triggerWake();
-        },
-      });
-      wakeDetectorRef.current = detector;
-    }
-    wakeDetectorRef.current.start().catch((err) => {
-      console.warn('[useCoreEngine] WakeWordDetector failed to start:', err);
-    });
-
-    // 2. Parallel Web Speech API listener (if supported by environment)
+    // Web Speech API wake-word listener (only wakes on actual spoken words)
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       return;
@@ -235,9 +219,8 @@ export function useCoreEngine() {
             const isSleep = useAvatarState.getState().isSleepMode;
             const micOn = useAvatarState.getState().isMicOn;
 
-            // When in sleep mode or when mic is off, process wake words and do NOT send to Gemini
+            // When in sleep mode or when mic is off, do NOT send to Gemini
             if (isSleep || !micOn) {
-              wakeDetectorRef.current?.processAudioChunk(pcm16, rms);
               return;
             }
 
@@ -585,13 +568,7 @@ export function useCoreEngine() {
       setThinking(false);
       setIsMicOn(false);
 
-      // Keep AudioRecorder actively running so it captures "Lucy" and "Wake up"
-      if (!recorderRef.current) {
-        recorderRef.current = new AudioRecorder();
-      }
-      recorderRef.current.start().catch((err) => {
-        console.warn('[useCoreEngine] AudioRecorder start in sleep mode:', err);
-      });
+      recorderRef.current?.stop();
 
       startWakeWordListener();
       logger.add('info', 'Sleep Mode', 'Sleeping... Say "Lucy", "Wake up", or "Wakeup" to wake me.');
@@ -636,10 +613,6 @@ export function useCoreEngine() {
       geminiRef.current?.disconnect();
       recorderRef.current?.stop();
       playerRef.current?.stop();
-      if (wakeDetectorRef.current) {
-        wakeDetectorRef.current.stop();
-        wakeDetectorRef.current = null;
-      }
       if (speechRecognitionRef.current) {
         try { speechRecognitionRef.current.stop(); } catch (_) {}
       }

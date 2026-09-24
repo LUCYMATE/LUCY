@@ -20,6 +20,27 @@ if (typeof window !== 'undefined') {
     (PIXI.TextureGCSystem as any).defaultMode = PIXI.GC_MODES.AUTO;
     (PIXI.TextureGCSystem as any).defaultMaxIdle = 300; // GC unused textures every 5-10 seconds
   } catch (_) {}
+
+  // Safe fallback if GPU or WebView2 throws checkMaxIfStatementsInShader
+  if ((PIXI as any).BatchRenderer) {
+    try {
+      (PIXI as any).BatchRenderer.defaultMaxTextures = 16;
+      const origContextChange = (PIXI as any).BatchRenderer.prototype.contextChange;
+      (PIXI as any).BatchRenderer.prototype.contextChange = function () {
+        try {
+          return origContextChange.call(this);
+        } catch (err) {
+          console.warn('[Live2DViewer] Safe BatchRenderer fallback on WebGL context:', err);
+          this.maxTextures = 1;
+          this._shader = this.shaderGenerator.generateShader(1);
+          for (let i = 0; i < this._packedGeometryPoolSize; i++) {
+            this._packedGeometries[i] = new this.geometryClass();
+          }
+          this.initFlushBuffers();
+        }
+      };
+    } catch (_) {}
+  }
 }
 
 export function Live2DViewer() {
@@ -268,31 +289,11 @@ export function Live2DViewer() {
 
     let app: PIXI.Application | null = null;
     try {
-      if (PIXI.BatchRenderer) {
-        PIXI.BatchRenderer.defaultMaxTextures = 16;
-        const origContextChange = (PIXI.BatchRenderer.prototype as any).contextChange;
-        (PIXI.BatchRenderer.prototype as any).contextChange = function () {
-          const gl = this.renderer?.gl;
-          let maxT = 16;
-          try {
-            maxT = gl ? gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) : 16;
-          } catch (_) {}
-          if (!maxT || maxT < 1) {
-            this.maxTextures = 1;
-            this._shader = this.shaderGenerator.generateShader(1);
-            for (let i = 0; i < this._packedGeometryPoolSize; i++) {
-              this._packedGeometries[i] = new this.geometryClass();
-            }
-            this.initFlushBuffers();
-            return;
-          }
-          return origContextChange.call(this);
-        };
-      }
       app = new PIXI.Application({
         view: canvas,
         resizeTo: window,
         backgroundAlpha: 0,
+        backgroundColor: 0x000000,
         antialias: true,
         autoDensity: true,
         resolution: Math.min(window.devicePixelRatio || 1, 1.25),
@@ -328,7 +329,7 @@ export function Live2DViewer() {
         try {
           appRef.current.stop();
           PIXI.utils.clearTextureCache();
-          appRef.current.destroy(false, { children: true, texture: true, baseTexture: true });
+          appRef.current.destroy(false, { children: true });
         } catch (_) {}
         appRef.current = null;
       }
@@ -344,7 +345,7 @@ export function Live2DViewer() {
     setIsLoading(true);
     setLoadError(null);
 
-    // Safely tear down previous model from the stage and remove all internal listeners to prevent memory leak
+    // Safely tear down previous model from the stage
     if (modelRef.current) {
       try {
         const oldModel = modelRef.current;
@@ -354,17 +355,9 @@ export function Live2DViewer() {
           internal.removeAllListeners?.();
         }
         app.stage.removeChild(oldModel);
-        oldModel.destroy({ children: true, texture: true, baseTexture: true });
+        oldModel.destroy({ children: true });
       } catch (_) {}
       modelRef.current = null;
-
-      // Aggressively flush PIXI texture cache & invoke WebGL texture GC
-      try {
-        PIXI.utils.clearTextureCache();
-        if (app.renderer && (app.renderer as any).textureGC) {
-          (app.renderer as any).textureGC.run();
-        }
-      } catch (_) {}
     }
 
     const modelPath = `/live2d/models/${selectedLive2dModel}/${selectedLive2dModel}.model3.json`;
@@ -373,7 +366,7 @@ export function Live2DViewer() {
       .then((model) => {
         if (isCancelled) {
           try {
-            model.destroy({ children: true, texture: true, baseTexture: true });
+            model.destroy({ children: true });
           } catch (_) {}
           return;
         }
@@ -405,53 +398,42 @@ export function Live2DViewer() {
         // Real-time animation, lip-sync, gestures & poses hook via AnimationBridge
         const internal = model.internalModel as any;
         if (internal) {
-          // Completely deactivate and clear all disparate built-in motions (.motion3.json)
-          // so all models execute identical, synchronized procedural animations
           try {
             model.stopMotions();
             internal.motionManager?.stopAllMotions();
-          } catch (_) {}
-
-          if (internal.motionManager) {
-            internal.motionManager.groups = {};
-            internal.motionManager.definitions = {};
-            internal.motionManager.defaultIdleMotion = '';
-            internal.motionManager.playing = false;
-            if (internal.motionManager.state) {
+            if (internal.motionManager?.state) {
               internal.motionManager.state.shouldRequestIdleMotion = () => false;
             }
-          }
-
-          if (internal.settings) {
-            internal.settings.motions = {};
-          }
-
-          model.motion = () => Promise.resolve(false);
+          } catch (_) {}
 
           internal.on('beforeModelUpdate', () => {
-            const state = useAvatarState.getState();
-            const core = internal.coreModel;
-            if (!core) return;
+            try {
+              const state = useAvatarState.getState();
+              const core = internal.coreModel;
+              if (!core) return;
 
-            const t = performance.now() / 1000;
-            const gestures = animationBridge.computeGestures({
-              t,
-              isSpeaking: state.isSpeaking,
-              isThinking: state.isThinking,
-              isListening: state.isListening,
-              basePose: state.basePose,
-              emotion: state.emotion,
-              avatarScale: state.avatarScale || 1.0,
-            });
+              const t = performance.now() / 1000;
+              const gestures = animationBridge.computeGestures({
+                t,
+                isSpeaking: state.isSpeaking,
+                isThinking: state.isThinking,
+                isListening: state.isListening,
+                basePose: state.basePose,
+                emotion: state.emotion,
+                avatarScale: state.avatarScale || 1.0,
+              });
 
-            // Unified parameter application driving head, body, face, and talking hand/arm gestures
-            animationBridge.applyToLive2DModel(
-              model,
-              selectedLive2dModel,
-              gestures,
-              animValuesRef.current,
-              0.16
-            );
+              // Unified parameter application driving head, body, face, and talking hand/arm gestures
+              animationBridge.applyToLive2DModel(
+                model,
+                selectedLive2dModel,
+                gestures,
+                animValuesRef.current,
+                0.16
+              );
+            } catch (paramErr) {
+              console.warn('[Live2DViewer] Parameter update error:', paramErr);
+            }
           });
         }
 

@@ -882,7 +882,7 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(300));
                 let _ = win_clone.set_ignore_cursor_events(true);
-                let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('soltini-wake-up'));");
+                let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('lucy-wake-up'));");
             });
         }
     }
@@ -1021,12 +1021,12 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             do_wake_up_main(app);
-            let _ = app.emit("soltini-exit-pet-mode", ());
+            let _ = app.emit("lucy-exit-pet-mode", ());
             
             // Manually forward any deep links to the primary instance (using contains to handle Windows quotes)
             for arg in args {
-                if arg.contains("lucymate://") || arg.contains("soltini://") {
-                    let _ = app.emit("soltini-deep-link-manual", arg);
+                if arg.contains("lucymate://") || arg.contains("lucy://") {
+                    let _ = app.emit("lucy-deep-link-manual", arg);
                 }
             }
         }))
@@ -1085,13 +1085,13 @@ pub fn run() {
                         if event.state == ShortcutState::Pressed {
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyX) {
                                 do_wake_up_main(app);
-                                let _ = app.emit("soltini-exit-pet-mode", ());
+                                let _ = app.emit("lucy-exit-pet-mode", ());
                             }
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyS) {
-                                let _ = app.emit("soltini-toggle-mute", ());
+                                let _ = app.emit("lucy-toggle-mute", ());
                             }
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyM) || shortcut.matches(Modifiers::empty(), Code::F9) {
-                                let _ = app.emit("soltini-toggle-mic", ());
+                                let _ = app.emit("lucy-toggle-mic", ());
                             }
                         }
                     })
@@ -1144,7 +1144,7 @@ pub fn run() {
                     }
                     "hide" => {
                         if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-sleep'));");
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-sleep'));");
                             // We intentionally do not call win.hide() here. The frontend will 
                             // become transparent and ignore mouse events. Hiding the window 
                             // causes WebView2 to suspend, which kills the SpeechRecognition wake word.
@@ -1159,7 +1159,7 @@ pub fn run() {
                         if let Some(win) = app.get_webview_window("main") {
                             win.show().unwrap();
                             win.set_focus().unwrap();
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-open-settings'));");
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-open-settings'));");
                         }
                     }
                     _ => {}
@@ -1178,7 +1178,7 @@ pub fn run() {
                             do_wake_up_main(app);
                         } else {
                             if let Some(win) = app.get_webview_window("main") {
-                                let _ = win.eval("window.dispatchEvent(new CustomEvent('soltini-sleep'));");
+                                let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-sleep'));");
                             }
                         }
                     }
