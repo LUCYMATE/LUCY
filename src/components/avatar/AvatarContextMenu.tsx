@@ -5,6 +5,7 @@ import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 export const LIVE2D_MODELS = [
+  { id: 'icy', name: 'Icy', icon: '❄️', desc: 'Ice Cheongsam' },
   { id: 'rozen', name: 'Rozen', icon: '🌹', desc: 'Maiden Doll' },
   { id: 'shiroko', name: 'Shiroko', icon: '🐺', desc: 'Blue Archive' },
   { id: 'maya', name: 'Maya', icon: '🐱', desc: 'Catgirl Maid' },
@@ -42,9 +43,9 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
   const [tasks, setTasks] = useState<{ id: string; targetTimeMs: number; instruction: string }[]>([]);
 
   const setSize = (pct: number) => {
-    localStorage.setItem('soltini_avatar_size', pct.toString());
+    localStorage.setItem('lucy_avatar_size', pct.toString());
     setAvatarScale(pct / 100);
-    emitCrossWindow('soltini-settings-changed');
+    emitCrossWindow('lucy-settings-changed');
   };
 
   const handleLockAvatar = () => {
@@ -56,27 +57,27 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
     } else {
       s.setLockedPosition(null);
     }
-    localStorage.setItem('soltini_avatar_locked', String(val));
-    emitCrossWindow('soltini-settings-changed');
+    localStorage.setItem('lucy_avatar_locked', String(val));
+    emitCrossWindow('lucy-settings-changed');
     onClose();
   };
 
   const handleMicToggle = async () => {
-    emitCrossWindow('soltini-toggle-mic');
+    emitCrossWindow('lucy-toggle-mic');
   };
 
   const openChat = () => {
-    emitCrossWindow('soltini-open-chat');
+    emitCrossWindow('lucy-open-chat');
     onClose();
   };
 
   const openSettings = () => {
-    emitCrossWindow('soltini-open-settings');
+    emitCrossWindow('lucy-open-settings');
     onClose();
   };
 
   const openLogs = () => {
-    emitCrossWindow('soltini-open-logs');
+    emitCrossWindow('lucy-open-logs');
     onClose();
   };
 
@@ -88,12 +89,12 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
     };
     fetchTasks();
     const handleUpdate = () => fetchTasks();
-    const unsub = listenCrossWindow('soltini-tasks-changed', handleUpdate);
+    const unsub = listenCrossWindow('lucy-tasks-changed', handleUpdate);
     return () => unsub();
   }, [showTasksPopup]);
 
   const openTasks = () => {
-    emitCrossWindow('soltini-open-tasks', { x, y });
+    emitCrossWindow('lucy-open-tasks', { x, y });
     onClose();
   };
 
@@ -105,7 +106,7 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
   const sleepApp = async () => {
     try {
       useAvatarState.getState().setIsSleepMode(true);
-      emitCrossWindow('soltini-sleep');
+      emitCrossWindow('lucy-sleep');
     } catch (e) {
       console.warn('Error entering sleep mode:', e);
     }
@@ -171,6 +172,41 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
 
   const items = showSubMenu ? subItems : mainItems;
 
+  const getResponsivePopupStyle = (popupWidth: number, popupHeight: number) => {
+    const margin = 16;
+    const menuExtent = radius + 30; // extent of circular menu ~115px
+    const winW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+    const winH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+
+    // Prefer right side of circular menu, fallback to left side
+    const spaceRight = winW - (x + menuExtent);
+    const spaceLeft = x - menuExtent;
+
+    let leftPos: number;
+    if (spaceRight >= popupWidth + margin) {
+      leftPos = x + menuExtent;
+    } else if (spaceLeft >= popupWidth + margin) {
+      leftPos = x - menuExtent - popupWidth;
+    } else {
+      // Not enough room on either full side, place where there is more space and clamp
+      leftPos = spaceRight >= spaceLeft
+        ? Math.max(margin, Math.min(winW - popupWidth - margin, x + menuExtent))
+        : Math.max(margin, Math.min(winW - popupWidth - margin, x - menuExtent - popupWidth));
+    }
+
+    // Vertically center relative to circular menu center (y), clamp within screen boundaries
+    const targetTop = y - popupHeight / 2;
+    const topPos = Math.max(margin, Math.min(winH - popupHeight - margin, targetTop));
+
+    return {
+      position: 'fixed' as const,
+      left: `${leftPos}px`,
+      top: `${topPos}px`,
+      width: `${popupWidth}px`,
+      zIndex: 10000,
+    };
+  };
+
   return (
     <div
       className="avatar-context-menu fixed pointer-events-auto z-[9999] animate-in fade-in zoom-in-95 duration-200"
@@ -227,39 +263,49 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
         );
       })}
 
-      {/* Model Selector Popup */}
+      {/* Model Selector Popup - Dynamic Responsive Frosted Blurry Glass */}
       {showModelSelector && (
-        <div className="absolute top-24 -translate-x-1/2 w-64 glass rounded-xl p-3 border border-pink-300/30 shadow-2xl animate-in slide-in-from-top-2 fade-in pointer-events-auto flex flex-col gap-2 bg-[#1E1926]/90 backdrop-blur-xl text-white">
-          <div className="flex items-center justify-between pb-2 border-b border-white/10">
-            <span className="text-xs font-bold uppercase tracking-wider text-pink-300 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> Select Avatar
+        <div
+          style={getResponsivePopupStyle(285, 385)}
+          className="bg-[#141022]/85 backdrop-blur-3xl border border-pink-400/40 ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_30px_rgba(236,72,153,0.3)] rounded-2xl p-3.5 text-white flex flex-col gap-2.5 animate-in fade-in duration-200 pointer-events-auto select-none"
+        >
+          <div className="flex items-center justify-between pb-2 border-b border-pink-500/20">
+            <span className="text-xs font-black uppercase tracking-wider text-pink-300 flex items-center gap-1.5 drop-shadow-sm">
+              <Sparkles className="w-4 h-4 text-pink-400" /> Select Companion
             </span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-semibold uppercase">
+            <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-pink-500/25 text-pink-200 font-black uppercase border border-pink-400/40 shadow-inner">
               {avatarEngine.toUpperCase()}
             </span>
           </div>
 
-          <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-0.5">
-            <div className="text-[10px] text-white/50 font-bold uppercase mt-1 px-1">3D VRM Mode</div>
+          <div className="flex flex-col gap-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+            <div className="text-[10px] text-pink-300 font-extrabold uppercase tracking-widest mt-0.5 px-1 drop-shadow-sm">3D VRM Mode</div>
             <button
               onClick={() => {
                 setAvatarEngine('vrm');
-                emitCrossWindow('soltini-settings-changed');
+                emitCrossWindow('lucy-settings-changed');
               }}
-              className={`flex items-center justify-between p-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+              className={`flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer group ${
                 avatarEngine === 'vrm'
-                  ? 'bg-gradient-to-r from-pink-500/40 to-purple-500/40 border border-pink-400/60 text-white font-bold'
-                  : 'bg-white/5 hover:bg-white/10 text-white/80'
+                  ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold border border-pink-300 shadow-[0_0_18px_rgba(236,72,153,0.55)]'
+                  : 'bg-[#201A36]/80 hover:bg-[#2F2650]/90 text-white border border-white/15 hover:border-pink-400/60 shadow-sm'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <span className="text-sm">🌸</span>
-                <span>LUCY 3D</span>
+              <div className="flex items-center gap-2.5">
+                <span className="text-base">🌸</span>
+                <div className="flex flex-col text-left">
+                  <span className="leading-tight font-black text-white group-hover:text-pink-100 transition-colors">LUCY 3D</span>
+                  <span className="text-[10px] text-pink-200/90 font-medium">Original 3D VRM</span>
+                </div>
               </div>
-              {avatarEngine === 'vrm' && <span className="text-[10px] text-pink-300 font-bold">ACTIVE</span>}
+              {avatarEngine === 'vrm' && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/30 text-white font-black tracking-wider border border-white/40 shadow-sm">
+                  ACTIVE
+                </span>
+              )}
             </button>
 
-            <div className="text-[10px] text-white/50 font-bold uppercase mt-2 px-1">Live2D Models</div>
+            <div className="text-[10px] text-pink-300 font-extrabold uppercase tracking-widest mt-1 px-1 drop-shadow-sm">Live2D Models</div>
             {LIVE2D_MODELS.map((m) => {
               const isCurrent = avatarEngine === 'live2d' && selectedLive2dModel === m.id;
               return (
@@ -268,22 +314,26 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
                   onClick={() => {
                     setAvatarEngine('live2d');
                     setSelectedLive2dModel(m.id);
-                    emitCrossWindow('soltini-settings-changed');
+                    emitCrossWindow('lucy-settings-changed');
                   }}
-                  className={`flex items-center justify-between p-2 rounded-lg text-xs transition-all cursor-pointer ${
+                  className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer group ${
                     isCurrent
-                      ? 'bg-gradient-to-r from-pink-500/40 to-purple-500/40 border border-pink-400/60 text-white font-bold'
-                      : 'bg-white/5 hover:bg-white/10 text-white/80'
+                      ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold border border-pink-300 shadow-[0_0_18px_rgba(236,72,153,0.55)]'
+                      : 'bg-[#201A36]/80 hover:bg-[#2F2650]/90 text-white border border-white/15 hover:border-pink-400/60 shadow-sm'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">{m.icon}</span>
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-base">{m.icon}</span>
                     <div className="flex flex-col text-left">
-                      <span className="leading-tight">{m.name}</span>
-                      <span className="text-[9px] text-white/50">{m.desc}</span>
+                      <span className="leading-tight font-black text-white group-hover:text-pink-100 transition-colors">{m.name}</span>
+                      <span className={`text-[10px] font-medium ${isCurrent ? 'text-pink-100' : 'text-slate-300'}`}>{m.desc}</span>
                     </div>
                   </div>
-                  {isCurrent && <span className="text-[10px] text-pink-300 font-bold">ACTIVE</span>}
+                  {isCurrent && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/30 text-white font-black tracking-wider border border-white/40 shadow-sm">
+                      ACTIVE
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -291,9 +341,16 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
         </div>
       )}
 
+      {/* Size Slider Popup - Dynamic Responsive Frosted Blurry Glass */}
       {showSizeSlider && (
-        <div className="absolute top-24 -translate-x-1/2 w-48 glass rounded-xl p-3 border border-white/10 flex flex-col gap-2 shadow-xl animate-in slide-in-from-top-2 fade-in pointer-events-auto bg-[#1E1926]/90 backdrop-blur-xl">
-          <span className="text-[10px] text-white/50 uppercase text-center font-bold">Avatar Size</span>
+        <div
+          style={getResponsivePopupStyle(235, 145)}
+          className="bg-[#141022]/85 backdrop-blur-3xl border border-pink-400/40 ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_25px_rgba(236,72,153,0.3)] rounded-2xl p-3.5 text-white flex flex-col gap-2.5 animate-in fade-in duration-200 pointer-events-auto select-none"
+        >
+          <div className="flex items-center justify-between pb-1 border-b border-pink-500/20">
+            <span className="text-[11px] text-pink-300 uppercase font-black tracking-wider drop-shadow-sm">Avatar Scale</span>
+            <span className="text-[11px] font-mono text-white font-black">{Math.round(avatarScale * 100)}%</span>
+          </div>
           <input
             type="range"
             min="50"
@@ -301,43 +358,53 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
             step="10"
             value={Math.round(avatarScale * 100)}
             onChange={(e) => setSize(parseInt(e.target.value))}
-            className="w-full h-1.5 bg-white/20 rounded-full appearance-none accent-pink-500 cursor-pointer pointer-events-auto"
+            className="w-full h-2 bg-[#2B2348] rounded-full appearance-none accent-pink-500 cursor-pointer pointer-events-auto"
           />
-          <div className="flex gap-1 mt-1">
-            <button onClick={() => setSize(70)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors text-white cursor-pointer">
-              S
+          <div className="flex gap-1.5 mt-0.5">
+            <button onClick={() => setSize(70)} className="flex-1 text-[11px] font-bold bg-[#201A36]/80 hover:bg-pink-600/50 border border-white/15 hover:border-pink-400/50 rounded-lg py-1 transition-all text-white cursor-pointer shadow-sm">
+              Small
             </button>
-            <button onClick={() => setSize(100)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors text-white cursor-pointer">
-              M
+            <button onClick={() => setSize(100)} className="flex-1 text-[11px] font-bold bg-[#201A36]/80 hover:bg-pink-600/50 border border-white/15 hover:border-pink-400/50 rounded-lg py-1 transition-all text-white cursor-pointer shadow-sm">
+              Normal
             </button>
-            <button onClick={() => setSize(150)} className="flex-1 text-[10px] bg-white/5 hover:bg-white/15 rounded py-1 transition-colors text-white cursor-pointer">
-              L
+            <button onClick={() => setSize(150)} className="flex-1 text-[11px] font-bold bg-[#201A36]/80 hover:bg-pink-600/50 border border-white/15 hover:border-pink-400/50 rounded-lg py-1 transition-all text-white cursor-pointer shadow-sm">
+              Large
             </button>
           </div>
         </div>
       )}
 
+      {/* Tasks Popup - Dynamic Responsive Frosted Blurry Glass */}
       {showTasksPopup && (
-        <div className="absolute top-24 -translate-x-1/2 w-64 glass rounded-xl p-3 border border-white/10 shadow-xl animate-in slide-in-from-top-2 fade-in pointer-events-auto flex flex-col gap-2 bg-[#1E1926]/90 backdrop-blur-xl">
-          <div className="flex items-center gap-2 pb-2 border-b border-white/10">
-            <CalendarClock className="w-4 h-4 text-pink-400" />
-            <span className="text-xs text-white/90 font-bold uppercase">Scheduled Tasks</span>
+        <div
+          style={getResponsivePopupStyle(285, 320)}
+          className="bg-[#141022]/85 backdrop-blur-3xl border border-pink-400/40 ring-1 ring-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.8),0_0_25px_rgba(236,72,153,0.3)] rounded-2xl p-3.5 text-white flex flex-col gap-2.5 animate-in fade-in duration-200 pointer-events-auto select-none"
+        >
+          <div className="flex items-center justify-between pb-2 border-b border-pink-500/20">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="w-4 h-4 text-pink-400" />
+              <span className="text-xs text-white font-black uppercase tracking-wider drop-shadow-sm">Scheduled Tasks</span>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/25 text-pink-200 font-black border border-pink-400/40 shadow-inner">
+              {tasks.length}
+            </span>
           </div>
-          <div className="flex flex-col gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+          <div className="flex flex-col gap-2 max-h-52 overflow-y-auto custom-scrollbar pr-1">
             {tasks.length === 0 ? (
-              <p className="text-xs text-white/40 text-center py-2">No tasks right now.</p>
+              <p className="text-xs text-slate-300 font-medium text-center py-4">No scheduled tasks active.</p>
             ) : (
               tasks.map((t) => (
-                <div key={t.id} className="bg-white/5 rounded-lg p-2 flex flex-col gap-1 relative group">
-                  <p className="text-[10px] text-white/80 line-clamp-2 pr-5">{t.instruction}</p>
-                  <p className="text-[9px] text-pink-300 font-mono flex items-center gap-1">
+                <div key={t.id} className="bg-[#201A36]/80 border border-white/15 rounded-xl p-2.5 flex flex-col gap-1 relative group shadow-sm">
+                  <p className="text-[11px] text-white font-semibold line-clamp-2 pr-6">{t.instruction}</p>
+                  <p className="text-[10px] text-pink-300 font-mono font-bold flex items-center gap-1">
                     <Clock className="w-3 h-3" /> {new Date(t.targetTimeMs).toLocaleTimeString()}
                   </p>
                   <button
                     onClick={() => handleCancelTask(t.id)}
-                    className="absolute right-1 top-1 p-1 hover:bg-red-500/20 rounded text-red-400 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                    className="absolute right-2 top-2 p-1 hover:bg-red-500/40 rounded-lg text-red-300 transition-colors opacity-80 group-hover:opacity-100 cursor-pointer"
+                    title="Cancel Task"
                   >
-                    <Trash2 className="w-3 h-3" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ))

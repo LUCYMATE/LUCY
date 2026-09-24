@@ -15,12 +15,12 @@ import { AvatarContextMenu } from './AvatarContextMenu';
 // Highly optimized FPS limiter using rAF instead of setInterval
 function FpsLimiter() {
   const { invalidate } = useThree();
-  const [limit, setLimit] = useState(() => localStorage.getItem('soltini_low_fps') === 'true' ? 30 : 60);
+  const [limit, setLimit] = useState(() => localStorage.getItem('lucy_low_fps') === 'true' ? 30 : 60);
   const isActive = useRef(false);
 
   useEffect(() => {
-    const handleFpsChange = () => setLimit(localStorage.getItem('soltini_low_fps') === 'true' ? 30 : 60);
-    const unsub = listenCrossWindow('soltini-settings-changed', handleFpsChange);
+    const handleFpsChange = () => setLimit(localStorage.getItem('lucy_low_fps') === 'true' ? 30 : 60);
+    const unsub = listenCrossWindow('lucy-settings-changed', handleFpsChange);
     return () => unsub();
   }, []);
 
@@ -36,6 +36,12 @@ function FpsLimiter() {
     let frameId = 0;
 
     const loop = (time: number) => {
+      // Zero WebGL rendering when window is minimized or hidden
+      if (typeof document !== 'undefined' && document.hidden) {
+        frameId = requestAnimationFrame(loop);
+        return;
+      }
+
       // 60/30 FPS when active, 15 FPS when idle to keep breathing/blinking alive with 4x less CPU overhead
       const currentLimit = isActive.current ? limit : 15;
       const interval = 1000 / currentLimit;
@@ -207,17 +213,17 @@ function SceneManager() {
 
   useEffect(() => {
     const onSettingsChanged = () => {
-      const val = localStorage.getItem('soltini_avatar_size');
+      const val = localStorage.getItem('lucy_avatar_size');
       if (val) {
         const n = parseFloat(val);
         if (!isNaN(n)) useAvatarState.getState().setAvatarScale(n / 100);
       }
     };
-    window.addEventListener('soltini-settings-changed', onSettingsChanged);
-    return () => window.removeEventListener('soltini-settings-changed', onSettingsChanged);
+    window.addEventListener('lucy-settings-changed', onSettingsChanged);
+    return () => window.removeEventListener('lucy-settings-changed', onSettingsChanged);
   }, []);
 
-  const initialModelUrl = typeof window !== 'undefined' && localStorage.getItem('soltini_has_custom_avatar') === 'false' ? '/lucy.vrm' : null;
+  const initialModelUrl = typeof window !== 'undefined' && localStorage.getItem('lucy_has_custom_avatar') === 'false' ? '/lucy.vrm' : null;
   const [modelUrl, setModelUrl] = useState<string | null>(initialModelUrl);
   const [vrmReloadKey, setVrmReloadKey] = useState(0);
   const blobUrlRef = useRef<string | null>(null);
@@ -227,10 +233,10 @@ function SceneManager() {
     import('../../lib/system/assetDB').then(({ getAssetDataUrl, getAsset }) => {
       getAsset('custom-avatar').then(asset => {
         if (!asset || asset.type !== 'vrm') {
-          localStorage.setItem('soltini_has_custom_avatar', 'false');
+          localStorage.setItem('lucy_has_custom_avatar', 'false');
           if (useAvatarState.getState().flipCustomModel) {
             useAvatarState.getState().setFlipCustomModel(false);
-            localStorage.setItem('soltini_flip_vrm', 'false');
+            localStorage.setItem('lucy_flip_vrm', 'false');
           }
           if (modelUrlRef.current !== '/lucy.vrm' || forceBustCache) {
             if (blobUrlRef.current && blobUrlRef.current.startsWith('blob:')) { URL.revokeObjectURL(blobUrlRef.current); blobUrlRef.current = null; }
@@ -242,7 +248,7 @@ function SceneManager() {
           return;
         }
         
-        localStorage.setItem('soltini_has_custom_avatar', 'true');
+        localStorage.setItem('lucy_has_custom_avatar', 'true');
         getAssetDataUrl('custom-avatar').then(url => {
           if (url) {
             if (modelUrlRef.current !== url || forceBustCache) {
@@ -274,8 +280,8 @@ function SceneManager() {
     };
     
     const unsubs = [
-      listenCrossWindow('soltini-settings-changed', onSettingsChanged),
-      listenCrossWindow('soltini-vrm-changed', onVrmChanged)
+      listenCrossWindow('lucy-settings-changed', onSettingsChanged),
+      listenCrossWindow('lucy-vrm-changed', onVrmChanged)
     ];
     return () => {
       unsubs.forEach(u => u());
@@ -384,20 +390,8 @@ function SceneManager() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
-    const edgeX = (ww / 2) / ZOOM;
-    const currentPos = useAvatarState.getState().worldPosition;
+  // No peek edge locomotion — avatar stays stationary in place
 
-    if (basePose === 'peek-left') {
-      setTargetPosition({ x: -(edgeX + 0.1), y: currentPos.y, z: currentPos.z });
-      useAvatarState.getState().setIsWalking(true);
-    } else if (basePose === 'peek-right') {
-      setTargetPosition({ x: (edgeX + 0.1), y: currentPos.y, z: currentPos.z });
-      useAvatarState.getState().setIsWalking(true);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [basePose]);
 
   const isCurrentlySitting = basePose === 'sit' && !isWalking;
   const y_head  = isCurrentlySitting ? 1.03 : 1.45;
@@ -544,6 +538,7 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
     
     if (s.basePose.startsWith('peek')) {
       s.setBasePose('stand');
+      s.setPrePeekPosition(null);
       s.setIsWalking(false);
     }
   };
@@ -650,12 +645,28 @@ function AvatarLoader() {
 }
 
 export function Avatar3D() {
+  // Clear VRM from RAM immediately when Avatar3D unmounts (e.g. switching to Live2D)
+  useEffect(() => {
+    return () => {
+      try {
+        clearVrmCache();
+        clearFbxCache();
+      } catch (_) {}
+    };
+  }, []);
+
   return (
     <div className="w-full h-full pointer-events-none relative">
       <Canvas
-        dpr={[1, 1.5]}
+        dpr={[1, 1.25]}
         frameloop="demand"
-        gl={{ powerPreference: "low-power", antialias: true, alpha: true }}
+        gl={{
+          powerPreference: "low-power",
+          antialias: false,
+          alpha: true,
+          preserveDrawingBuffer: false,
+          precision: "mediump",
+        }}
         style={{ pointerEvents: 'none' }}
       >
         <WebGLContextLoser />
