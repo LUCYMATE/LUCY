@@ -1,11 +1,10 @@
 class AudioWorklet extends AudioWorkletProcessor {
   constructor() {
     super();
-    // 1600 samples = 100ms at 16kHz (reduces chunk buffering latency from 256ms to 100ms)
-    this.bufferSize = 1600;
+    // 2048 samples = 128ms at 16kHz (delivers audio 2x faster than 4096 for fast response times)
+    this.bufferSize = 2048;
     this.buffer = new Int16Array(this.bufferSize);
     this.bufferIndex = 0;
-    this.sumSquares = 0;
   }
 
   process(inputs, outputs, parameters) {
@@ -16,17 +15,11 @@ class AudioWorklet extends AudioWorkletProcessor {
       for (let i = 0; i < channelData.length; i++) {
         let s = channelData[i];
         s = Math.max(-1, Math.min(1, s));
-        this.sumSquares += s * s;
         this.buffer[this.bufferIndex++] = s < 0 ? s * 0x8000 : s * 0x7FFF;
 
         if (this.bufferIndex >= this.bufferSize) {
-          const rms = Math.sqrt(this.sumSquares / this.bufferSize);
-          this.port.postMessage({
-            pcm: new Int16Array(this.buffer),
-            rms: rms
-          });
+          this.port.postMessage(new Int16Array(this.buffer));
           this.bufferIndex = 0;
-          this.sumSquares = 0;
         }
       }
     }

@@ -5,8 +5,6 @@ import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism4';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
 import { AvatarContextMenu } from './AvatarContextMenu';
-import { animationBridge } from './animations/avatarAnimationBridge';
-import { useEngineStore } from '../../lib/store/engineStore';
 
 const ZOOM = 250;
 
@@ -15,148 +13,63 @@ if (typeof window !== 'undefined') {
   (window as any).PIXI = PIXI;
   try {
     Live2DModel.registerTicker(PIXI.Ticker);
-  } catch (_) {}
-  // Global RAM Saving: modern TextureGCSystem configuration
-  try {
-    (PIXI.TextureGCSystem as any).defaultMode = PIXI.GC_MODES.AUTO;
-    (PIXI.TextureGCSystem as any).defaultMaxIdle = 300; // GC unused textures every 5-10 seconds
-  } catch (_) {}
+  } catch {
+    // Already registered
+  }
 
-  // Safe fallback if GPU or WebView2 throws checkMaxIfStatementsInShader
-  if ((PIXI as any).BatchRenderer) {
-    try {
-      (PIXI as any).BatchRenderer.defaultMaxTextures = 16;
-      (PIXI as any).BatchRenderer.prototype.contextChange = function () {
-        const gl = this.renderer?.gl;
-        if (!gl || gl.isContextLost?.()) {
+  // WebView2 ANGLE shader guard:
+  // On Windows WebView2 ANGLE D3D11, checkMaxIfStatementsInShader's compilation test
+  // can fail down to 0 and throw "Invalid value of 0 passed to checkMaxIfStatementsInShader".
+  // Fix: patch checkMaxIfStatementsInShader and safely catch errors in contextChange, falling back to 1 texture.
+  try {
+    if ((PIXI as any).BatchRenderer) {
+      const origContextChange = (PIXI as any).BatchRenderer.prototype.contextChange;
+      (PIXI as any).BatchRenderer.prototype.contextChange = function (this: any) {
+        try {
+          return origContextChange.call(this);
+        } catch (err) {
+          console.warn('[Live2DViewer] Safe BatchRenderer fallback to maxTextures=1:', err);
           this.maxTextures = 1;
           this._shader = this.shaderGenerator.generateShader(1);
-          this._packedGeometries = [];
+          if (!this._packedGeometries) {
+            this._packedGeometries = [];
+          }
           for (let i = 0; i < this._packedGeometryPoolSize; i++) {
             this._packedGeometries[i] = new this.geometryClass();
           }
           this.initFlushBuffers();
-          return;
         }
-        let units = 1;
-        try {
-          units = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) || 1;
-        } catch (_) {
-          units = 1;
-        }
-        this.maxTextures = Math.max(1, Math.min(units, (PIXI as any).BatchRenderer.defaultMaxTextures || 16));
-        try {
-          if ((PIXI as any).checkMaxIfStatementsInShader) {
-            this.maxTextures = (PIXI as any).checkMaxIfStatementsInShader(this.maxTextures, gl);
-          }
-        } catch (_) {
-          this.maxTextures = 1;
-        }
-        this.maxTextures = Math.max(1, this.maxTextures || 1);
-        this._shader = this.shaderGenerator.generateShader(this.maxTextures);
-        this._packedGeometries = [];
-        for (let i = 0; i < this._packedGeometryPoolSize; i++) {
-          this._packedGeometries[i] = new this.geometryClass();
-        }
-        this.initFlushBuffers();
       };
-    } catch (_) {}
-  }
+    }
+  } catch (_) {}
 }
 
 export function Live2DViewer() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const modelRef = useRef<InstanceType<typeof Live2DModel> | null>(null);
-  const hitboxRef = useRef<HTMLDivElement>(null);
   const baseScaleRef = useRef(1);
+  const isSpeakingRef = useRef(false);
 
-  const [isAppReady, setIsAppReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [hitbox, setHitbox] = useState({ left: 0, top: 0, width: 200, height: 380 });
 
-  // Smoothed animation parameter values for natural transitions across bridge
-  const animValuesRef = useRef<Record<string, number>>({
-    angleX: 0,
-    angleY: 0,
-    angleZ: 0,
-    bodyAngleX: 0,
-    bodyAngleZ: 0,
-    eyeL: 1.0,
-    eyeR: 1.0,
-    eyeBallX: 0,
-    eyeBallY: 0,
-    mouthForm: 0,
-    browLY: 0,
-    browRY: 0,
-    armLShoulder: 0,
-    armLElbow: 0,
-    armLWrist: 0,
-    handL: 0,
-    armRShoulder: 0,
-    armRElbow: 0,
-    armRWrist: 0,
-    handR: 0,
-  });
-
-  const {
-    selectedLive2dModel,
-    avatarScale,
-    basePose,
-  } = useAvatarState(
+  const { selectedLive2dModel, isSpeaking, avatarScale } = useAvatarState(
     useShallow((s) => ({
       selectedLive2dModel: s.selectedLive2dModel,
+      isSpeaking: s.isSpeaking,
       avatarScale: s.avatarScale,
-      basePose: s.basePose,
     }))
   );
 
-  // Dynamic FPS Limiter (Throttles PIXI ticker to 20-30 FPS on idle, 15 FPS on sleep, 60 FPS when active)
+  // Keep speaking ref in sync without triggering re-renders
   useEffect(() => {
-    const updateFps = () => {
-      const app = appRef.current;
-      if (!app) return;
-      const lowFpsSetting = localStorage.getItem('lucy_low_fps') === 'true';
-      const s = useAvatarState.getState();
-      const isActive = s.isSpeaking || s.isThinking || s.isDragging;
-      const targetFps = isActive
-        ? (lowFpsSetting ? 30 : 60)
-        : (s.basePose === 'sleep' ? 15 : (lowFpsSetting ? 20 : 30));
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
 
-      app.ticker.maxFPS = targetFps;
-      try {
-        PIXI.Ticker.shared.maxFPS = targetFps;
-      } catch (_) {}
-    };
-
-    updateFps();
-    const unsub = useAvatarState.subscribe(updateFps);
-    window.addEventListener('lucy-settings-changed', updateFps);
-    return () => {
-      unsub();
-      window.removeEventListener('lucy-settings-changed', updateFps);
-    };
-  }, [isAppReady]);
-
-  // Stop conflicting canned motions when procedural poses run so mathematical bridge drives model cleanly
-  const prevPoseRef = useRef(basePose);
-  useEffect(() => {
-    if (prevPoseRef.current !== basePose) {
-      prevPoseRef.current = basePose;
-      const model = modelRef.current;
-      if (model) {
-        try {
-          const isProcedural = /dance|kiss|point|stretch|lean|caress|lie-down|edge-lean|dynamic-talk|sit|sleep/i.test(basePose);
-          if (isProcedural) {
-            model.stopMotions();
-          }
-        } catch (_) {}
-      }
-    }
-  }, [basePose]);
-
-  // Pointer & Drag handling
+  // Drag state
   const dragInfoRef = useRef<{
     startX: number;
     startY: number;
@@ -166,11 +79,8 @@ export function Live2DViewer() {
   } | null>(null);
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return; // Left click only
+    if (e.button !== 0) return;
     const s = useAvatarState.getState();
-    if (s.isSpeaking) {
-      useEngineStore.getState().interruptSpeech();
-    }
     dragInfoRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -184,31 +94,23 @@ export function Live2DViewer() {
   const handlePointerMove = (e: React.PointerEvent) => {
     const info = dragInfoRef.current;
     if (!info) return;
-
     const deltaX = e.clientX - info.startX;
     const deltaY = e.clientY - info.startY;
-
     if (!info.hasMoved && Math.hypot(deltaX, deltaY) > 6) {
       info.hasMoved = true;
       const s = useAvatarState.getState();
       s.setIsDragging(true);
-      s.setBasePose('stand');
-      s.setIsWalking(false);
     }
-
     if (info.hasMoved) {
       const s = useAvatarState.getState();
-      const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
-      const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
+      const ww = window.innerWidth;
+      const wh = window.innerHeight;
       const edgeX = (ww / 2) / ZOOM;
       const edgeY = (wh / 2) / ZOOM;
-
       const newWorldX = Math.max(-edgeX, Math.min(edgeX, info.startWorldX + deltaX / ZOOM));
-      const newWorldY = Math.max(-edgeY, Math.min(edgeY + 0.3 * avatarScale, info.startWorldY - deltaY / ZOOM));
-
+      const newWorldY = Math.max(-edgeY, Math.min(edgeY, info.startWorldY - deltaY / ZOOM));
       s.setWorldPosition({ x: newWorldX, y: newWorldY, z: 0 });
       s.setTargetPosition({ x: newWorldX, y: newWorldY, z: 0 });
-      s.setDragOffset({ x: deltaX / ZOOM, y: -deltaY / ZOOM });
     }
   };
 
@@ -217,15 +119,10 @@ export function Live2DViewer() {
     const info = dragInfoRef.current;
     dragInfoRef.current = null;
     const s = useAvatarState.getState();
-
     if (info && !info.hasMoved) {
       const model = modelRef.current;
       if (model) {
-        try {
-          model.tap(e.clientX, e.clientY);
-        } catch (_) {}
-
-        // Sweet procedural tap reaction without disparate canned motion files
+        try { model.tap(e.clientX, e.clientY); } catch (_) {}
         s.setEmotion('happy');
         setTimeout(() => {
           if (useAvatarState.getState().emotion === 'happy') {
@@ -235,60 +132,8 @@ export function Live2DViewer() {
       }
     } else if (info && info.hasMoved) {
       s.setIsDragging(false);
-      s.setDragOffset({ x: 0, y: 0 });
-
-      // Grounding & snapping check
-      const finalX = s.worldPosition.x;
-      const finalY = s.worldPosition.y;
-      const ww = typeof window !== 'undefined' ? window.innerWidth : 1200;
-      const wh = typeof window !== 'undefined' ? window.innerHeight : 800;
-      const screenX = finalX * ZOOM + ww / 2;
-      const feetY = finalY - 1.2 * avatarScale;
-      const screenFeetY = -feetY * ZOOM + wh / 2;
-
-      let snapped = false;
-      if (s.desktopRectangles) {
-        const threshold = 50;
-        for (const rect of s.desktopRectangles) {
-          if (screenX >= rect.x - 50 && screenX <= rect.x + rect.width + 50) {
-            const isMatch = rect.is_taskbar
-              ? screenFeetY > rect.y - threshold
-              : Math.abs(screenFeetY - rect.y) < threshold;
-
-            if (isMatch) {
-              snapped = true;
-              s.setAnchor({ type: rect.is_taskbar ? 'taskbar' : 'window', rect });
-              const edgeWorldY = -(rect.y - wh / 2) / ZOOM;
-              s.setTargetPosition({
-                x: finalX,
-                y: edgeWorldY + (rect.is_taskbar ? 1.2 : 1.15) * avatarScale,
-                z: 0,
-              });
-              s.setIsAvatarLocked(true);
-              s.setBasePose('sit');
-              break;
-            }
-          }
-        }
-      }
-
-      if (!snapped) {
-        s.setAnchor(null);
-        s.setTargetPosition({ x: finalX, y: finalY, z: 0 });
-        if (s.isAvatarLocked) {
-          s.setLockedPosition({ x: finalX, y: finalY, z: 0 });
-        }
-      }
-
-      if (s.basePose.startsWith('peek')) {
-        s.setBasePose('stand');
-        s.setPrePeekPosition(null);
-      }
     }
-
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch (_) {}
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -306,12 +151,18 @@ export function Live2DViewer() {
     return () => window.removeEventListener('pointerdown', handleCloseMenu);
   }, []);
 
-  // 1. Initialize PIXI.Application once per component lifecycle
+  // Main Live2D Initialization & Lifecycle — exact fba6cda approach
   useEffect(() => {
+    let isCancelled = false;
+    setIsLoading(true);
+    setLoadError(null);
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    let app: PIXI.Application | null = null;
+    // Create PIXI Application — identical to working commit fba6cda.
+    // Do NOT pass backgroundColor alongside backgroundAlpha; only backgroundAlpha: 0.
+    let app: PIXI.Application;
     try {
       app = new PIXI.Application({
         view: canvas,
@@ -321,76 +172,32 @@ export function Live2DViewer() {
         autoDensity: true,
         resolution: Math.min(window.devicePixelRatio || 1, 1.25),
       });
-      // Set initial maxFPS cap to prevent runaway CPU loops
-      app.ticker.maxFPS = 30;
+
+      // Cubism 4 mask FBO clearColor sanitization:
+      // Cubism 4 sets gl.clearColor(1, 1, 1, 1) during mask rendering and never restores it.
+      // Restore gl.clearColor(0, 0, 0, 0) after every render frame to guarantee full transparency.
       try {
-        PIXI.Ticker.shared.maxFPS = 30;
+        app.renderer.on('postrender', () => {
+          const gl = (app.renderer as any).gl as WebGLRenderingContext | null;
+          if (gl && typeof gl.clearColor === 'function' && !gl.isContextLost?.()) {
+            gl.clearColor(0, 0, 0, 0);
+          }
+        });
       } catch (_) {}
-
-      appRef.current = app;
-      setIsAppReady(true);
-    } catch (e) {
-      console.error('[Live2DViewer] Failed to initialize PIXI Application:', e);
-      setLoadError('Failed to initialize WebGL');
+    } catch (initErr: any) {
+      console.error('[Live2DViewer] Failed to initialize PIXI Application:', initErr);
+      setLoadError(initErr?.message ? `Failed to initialize WebGL: ${initErr.message}` : 'Failed to initialize WebGL');
+      setIsLoading(false);
+      return;
     }
-
-    // Background Inactivity Throttling: Pause ticker when minimized or tab/window hidden
-    const handleVisibilityChange = () => {
-      if (!appRef.current) return;
-      if (document.hidden) {
-        appRef.current.ticker.stop();
-      } else {
-        appRef.current.ticker.start();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      setIsAppReady(false);
-      if (appRef.current) {
-        try {
-          appRef.current.stop();
-          PIXI.utils.clearTextureCache();
-          appRef.current.destroy(false, { children: true });
-        } catch (_) {}
-        appRef.current = null;
-      }
-    };
-  }, []);
-
-  // 2. Load & Swap Live2D Models inside the existing PIXI application
-  useEffect(() => {
-    if (!isAppReady || !appRef.current) return;
-    const app = appRef.current;
-
-    let isCancelled = false;
-    setIsLoading(true);
-    setLoadError(null);
-
-    // Safely tear down previous model from the stage
-    if (modelRef.current) {
-      try {
-        const oldModel = modelRef.current;
-        const internal = oldModel.internalModel as any;
-        if (internal) {
-          internal.removeAllListeners?.('beforeModelUpdate');
-          internal.removeAllListeners?.();
-        }
-        app.stage.removeChild(oldModel);
-        oldModel.destroy({ children: true });
-      } catch (_) {}
-      modelRef.current = null;
-    }
+    appRef.current = app;
 
     const modelPath = `/live2d/models/${selectedLive2dModel}/${selectedLive2dModel}.model3.json`;
 
-    Live2DModel.from(modelPath, { autoHitTest: false, autoFocus: false })
+    Live2DModel.from(modelPath, { autoInteract: false })
       .then((model) => {
         if (isCancelled) {
-          try {
-            model.destroy({ children: true });
-          } catch (_) {}
+          model.destroy({ children: true, texture: true, baseTexture: true });
           return;
         }
 
@@ -405,54 +212,27 @@ export function Live2DViewer() {
         const baseScale = targetHeight / designHeight;
         baseScaleRef.current = baseScale;
 
-        const currentScale = useAvatarState.getState().avatarScale || 1.0;
-        model.scale.set(baseScale * currentScale);
+        model.scale.set(baseScale * (useAvatarState.getState().avatarScale || 1.0));
 
-        // Position model centered on screen
-        const s = useAvatarState.getState();
-        const curPos = s.worldPosition;
-        const screenX = curPos.x * ZOOM + window.innerWidth / 2;
-        const screenY = -curPos.y * ZOOM + window.innerHeight / 2;
+        // Initial position
+        const currentPos = useAvatarState.getState().worldPosition;
+        const screenX = currentPos.x * ZOOM + window.innerWidth / 2;
+        const screenY = -currentPos.y * ZOOM + window.innerHeight / 2;
         model.position.set(screenX, screenY);
 
-        // Real-time animation, lip-sync, gestures & poses hook via AnimationBridge
+        // Real-time lip sync via beforeModelUpdate hook
         const internal = model.internalModel as any;
         if (internal) {
-          try {
-            model.stopMotions();
-            internal.motionManager?.stopAllMotions();
-            if (internal.motionManager?.state) {
-              internal.motionManager.state.shouldRequestIdleMotion = () => false;
-            }
-          } catch (_) {}
-
           internal.on('beforeModelUpdate', () => {
-            try {
-              const state = useAvatarState.getState();
-              const core = internal.coreModel;
-              if (!core) return;
-
+            if (isSpeakingRef.current) {
               const t = performance.now() / 1000;
-              const gestures = animationBridge.computeGestures({
-                t,
-                isSpeaking: state.isSpeaking,
-                isThinking: state.isThinking,
-                isListening: state.isListening,
-                basePose: state.basePose,
-                emotion: state.emotion,
-                avatarScale: state.avatarScale || 1.0,
-              });
-
-              // Unified parameter application driving head, body, face, and talking hand/arm gestures
-              animationBridge.applyToLive2DModel(
-                model,
-                selectedLive2dModel,
-                gestures,
-                animValuesRef.current,
-                0.16
-              );
-            } catch (paramErr) {
-              console.warn('[Live2DViewer] Parameter update error:', paramErr);
+              const aa = Math.min(1.0, Math.max(0, Math.sin(t * 15.0) * 1.4 + Math.sin(t * 8.5) * 0.5));
+              const core = internal.coreModel;
+              if (core) {
+                try { core.setParameterValueById('ParamMouthOpenY', aa); } catch (_) {}
+                try { core.setParameterValueById('ParamA', aa); } catch (_) {}
+                try { core.setParameterValueById('PARAM_MOUTH_OPEN_Y', aa); } catch (_) {}
+              }
             }
           });
         }
@@ -467,33 +247,17 @@ export function Live2DViewer() {
         setIsLoading(false);
       });
 
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedLive2dModel, isAppReady]);
-
-  // Window mouse tracking for Live2D focus (throttled to 30Hz to prevent CPU spikes on mouse move)
-  useEffect(() => {
-    let lastFocusTime = 0;
+    // Window mouse tracking for eye focus
     const handleGlobalPointerMove = (e: PointerEvent) => {
-      const now = performance.now();
-      if (now - lastFocusTime < 33) return;
-      lastFocusTime = now;
       const model = modelRef.current;
       if (model) {
         model.focus(e.clientX, e.clientY);
       }
     };
-    window.addEventListener('pointermove', handleGlobalPointerMove, { passive: true });
-    return () => window.removeEventListener('pointermove', handleGlobalPointerMove);
-  }, []);
+    window.addEventListener('pointermove', handleGlobalPointerMove);
 
-  // Frame update loop for stationary placement, sitting offset, smooth scaling, and direct DOM hitboxes
-  // Zero React re-renders to maintain minimal, stable CPU/RAM usage
-  useEffect(() => {
+    // Animation & Position Update Loop
     let lastFrameTime = performance.now();
-    let animationFrameId = 0;
-
     const updateLoop = () => {
       const now = performance.now();
       const delta = Math.min(0.1, (now - lastFrameTime) / 1000);
@@ -503,75 +267,95 @@ export function Live2DViewer() {
       const model = modelRef.current;
 
       if (model) {
-        const currentScale = s.avatarScale || 1.0;
-        const curPos = s.worldPosition;
-        let targetScreenX = curPos.x * ZOOM + window.innerWidth / 2;
-        let targetScreenY = -curPos.y * ZOOM + window.innerHeight / 2;
-        const isSitting = s.basePose === 'sit' || s.basePose === 'sitting';
-        const sitOffset = (isSitting ? 40 : 0) * currentScale;
+        // Lerp towards targetPosition if active
+        if (s.targetPosition && !s.isDragging) {
+          const cur = s.worldPosition;
+          const tgt = s.targetPosition;
+          const diffX = tgt.x - cur.x;
+          const diffY = tgt.y - cur.y;
+          const dist = Math.hypot(diffX, diffY);
 
-        // Screen-Edge Peeking Positioning & Dance Hip Bounce
-        const isPeekLeft = s.basePose === 'peek-left';
-        const isPeekRight = s.basePose === 'peek-right';
-        const peekBobY = (s.basePose.startsWith('peek') ? Math.sin(now / 350) * 4 : 0) * currentScale;
-        const isDancing = s.basePose === 'dance' || s.basePose === 'dancing';
-        const danceBobY = (isDancing ? Math.sin(now / 150) * 7.5 : 0) * currentScale;
-
-        if (isPeekLeft) {
-          // Dock to left screen edge with avatar peeking inward
-          targetScreenX = 70 * currentScale;
-        } else if (isPeekRight) {
-          // Dock to right screen edge with avatar peeking inward
-          targetScreenX = window.innerWidth - 70 * currentScale;
+          if (dist > 0.005) {
+            const nextX = cur.x + diffX * Math.min(1, delta * 3.5);
+            const nextY = cur.y + diffY * Math.min(1, delta * 3.5);
+            s.setWorldPosition({ x: nextX, y: nextY, z: 0 });
+          } else {
+            s.setTargetPosition(null);
+            s.setIsWalking(false);
+          }
         }
 
-        const targetY = targetScreenY + sitOffset + peekBobY + danceBobY;
-
-        // Smoothly lerp model position
-        const curX = model.position.x || targetScreenX;
-        const curY = model.position.y || targetY;
-        const nextX = curX + (targetScreenX - curX) * Math.min(1, delta * 8.0);
-        const nextY = curY + (targetY - curY) * Math.min(1, delta * 8.0);
-
-        model.position.set(nextX, nextY);
+        // Apply world position to screen coordinates
+        const curPos = s.worldPosition;
+        const sx = curPos.x * ZOOM + window.innerWidth / 2;
+        const sy = -curPos.y * ZOOM + window.innerHeight / 2;
+        model.position.set(sx, sy);
 
         // Smooth scale
-        const baseScale = baseScaleRef.current || 1;
-        const currentFactor = model.scale.x / baseScale;
-        if (Math.abs(currentFactor - currentScale) > 0.002) {
-          const nextFactor = currentFactor + (currentScale - currentFactor) * Math.min(1, delta * 6.0);
-          model.scale.set(baseScale * nextFactor);
+        const currentFactor = model.scale.x / (baseScaleRef.current || 1);
+        const targetFactor = s.avatarScale || 1;
+        if (Math.abs(currentFactor - targetFactor) > 0.002) {
+          const nextFactor = currentFactor + (targetFactor - currentFactor) * Math.min(1, delta * 6.0);
+          model.scale.set(baseScaleRef.current * nextFactor);
         }
 
-        // Direct DOM Hitbox positioning without React state updates (prevents 60Hz component re-renders)
+        // Update Hitbox bounds
         const dw = Math.max(160, model.width * 0.85);
-        const dh = Math.max(240, model.height * 0.95);
-        const el = hitboxRef.current;
-        if (el) {
-          const leftPx = `${Math.round(nextX - dw / 2)}px`;
-          const topPx = `${Math.round(nextY - dh * 0.88)}px`;
-          const widthPx = `${Math.round(dw)}px`;
-          const heightPx = `${Math.round(dh)}px`;
-
-          if (el.style.left !== leftPx) el.style.left = leftPx;
-          if (el.style.top !== topPx) el.style.top = topPx;
-          if (el.style.width !== widthPx) el.style.width = widthPx;
-          if (el.style.height !== heightPx) el.style.height = heightPx;
-        }
+        const dh = Math.max(220, model.height * 0.95);
+        setHitbox({
+          left: sx - dw / 2,
+          top: sy - dh * 0.88,
+          width: dw,
+          height: dh,
+        });
       }
 
       animationFrameId = requestAnimationFrame(updateLoop);
     };
 
-    animationFrameId = requestAnimationFrame(updateLoop);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, []);
+    let animationFrameId = requestAnimationFrame(updateLoop);
+
+    // Unmount and WebGL cleanup
+    return () => {
+      isCancelled = true;
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('pointermove', handleGlobalPointerMove);
+
+      if (modelRef.current) {
+        try {
+          modelRef.current.destroy({ children: true, texture: true, baseTexture: true });
+        } catch (_) {}
+        modelRef.current = null;
+      }
+
+      if (appRef.current) {
+        try {
+          appRef.current.stop();
+          appRef.current.destroy(true, { children: true, texture: true, baseTexture: true });
+        } catch (_) {}
+        appRef.current = null;
+      }
+
+      // Discard WebGL Context
+      if (canvas) {
+        try {
+          const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+          const ext = gl?.getExtension('WEBGL_lose_context');
+          ext?.loseContext();
+        } catch (_) {}
+      }
+    };
+  }, [selectedLive2dModel]);
 
   return (
     <div className="w-full h-full pointer-events-none relative select-none">
-      <canvas ref={canvasRef} className="w-full h-full pointer-events-none absolute inset-0" />
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full pointer-events-none absolute inset-0 bg-transparent"
+        style={{ background: 'transparent' }}
+      />
 
-      {/* Pulsing loading indicator */}
+      {/* Pulsing loading orb while model loads */}
       {isLoading && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 pointer-events-none">
           <div className="w-9 h-9 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 animate-ping opacity-75" />
@@ -581,17 +365,16 @@ export function Live2DViewer() {
         </div>
       )}
 
-      {/* Error notification if asset fails to load */}
+      {/* Error display if asset missing */}
       {loadError && (
         <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-red-600/90 backdrop-blur-md text-white px-4 py-2 rounded-xl text-xs font-bold border border-red-400 pointer-events-auto shadow-2xl">
           Live2D Load Error: {loadError}
         </div>
       )}
 
-      {/* Draggable Hitbox over the avatar - zero React re-renders for ultra-low CPU */}
+      {/* Draggable Hitbox over the avatar */}
       {!isLoading && (
         <div
-          ref={hitboxRef}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -599,12 +382,11 @@ export function Live2DViewer() {
           onContextMenu={handleContextMenu}
           className="fixed cursor-grab active:cursor-grabbing pointer-events-auto z-[60]"
           style={{
-            left: 0,
-            top: 0,
-            width: 200,
-            height: 380,
+            left: `${hitbox.left}px`,
+            top: `${hitbox.top}px`,
+            width: `${hitbox.width}px`,
+            height: `${hitbox.height}px`,
             borderRadius: '24px',
-            willChange: 'left, top',
           }}
           title={`${selectedLive2dModel.toUpperCase()} (Live2D) - Drag to move, Tap to interact, Right-click for menu`}
         />

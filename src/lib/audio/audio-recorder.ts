@@ -7,13 +7,20 @@ export class AudioRecorder {
   private workletNode: AudioWorkletNode | null = null;
   private analyser: AnalyserNode | null = null;
 
+  private micPreamp: GainNode | null = null;
   private heartbeatInterval: any = null;
   private lastDataTime: number = 0;
-  public onMicFrozen?: () => void;
-  public onData: ((data: Int16Array, rms?: number) => void) | null = null;
+  public onData: ((data: Int16Array) => void) | null = null;
+  public onMicFrozen: (() => void) | null = null;
 
   getAnalyser(): AnalyserNode | null {
     return this.analyser;
+  }
+
+  setMicBoost(boost: number) {
+    if (this.micPreamp) {
+      this.micPreamp.gain.value = Math.max(1.0, Math.min(5.0, boost));
+    }
   }
 
   async start() {
@@ -29,6 +36,7 @@ export class AudioRecorder {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
+        channelCount: 1,
         ...(savedDeviceId && savedDeviceId !== 'default' ? { deviceId: { exact: savedDeviceId } } : {})
       };
 
@@ -49,7 +57,7 @@ export class AudioRecorder {
         }
       }
       
-      this.audioContext = new AudioContext({ sampleRate: 16000 });
+      this.audioContext = new AudioContext({ sampleRate: 16000, latencyHint: 'interactive' });
       
       await Promise.race([
         this.audioContext.audioWorklet.addModule('/audio-worklet.js'),
@@ -60,18 +68,22 @@ export class AudioRecorder {
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-worklet');
+
+      // Digital pre-amp gain boost for soft / low voices (default 2.0x / +6dB)
+      const savedBoost = parseFloat(localStorage.getItem('lucy_mic_boost') || '2.0');
+      const boostFactor = isNaN(savedBoost) ? 2.0 : Math.max(1.0, Math.min(5.0, savedBoost));
+      this.micPreamp = this.audioContext.createGain();
+      this.micPreamp.gain.value = boostFactor;
       
       this.workletNode.port.onmessage = (event) => {
-        if (!this.onData) return;
-        if (event.data instanceof Int16Array) {
-          this.onData(event.data, 0);
-        } else if (event.data?.pcm) {
-          this.onData(event.data.pcm, event.data.rms || 0);
+        if (this.onData) {
+          this.onData(event.data);
         }
       };
       
-      this.source.connect(this.analyser);
-      this.source.connect(this.workletNode);
+      this.source.connect(this.micPreamp);
+      this.micPreamp.connect(this.analyser);
+      this.micPreamp.connect(this.workletNode);
       
       // Prevent browser/WebView from suspending AudioContext after idle time
       const keepAliveGain = this.audioContext.createGain();
@@ -115,6 +127,10 @@ export class AudioRecorder {
     if (this.source) {
       try { this.source.disconnect(); } catch (e) {}
       this.source = null;
+    }
+    if (this.micPreamp) {
+      try { this.micPreamp.disconnect(); } catch (e) {}
+      this.micPreamp = null;
     }
     if (this.analyser) {
       try { this.analyser.disconnect(); } catch (e) {}

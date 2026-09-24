@@ -30,6 +30,16 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [memories, setMemories] = useState<MemoryFact[]>([]);
   
   const [micId, setMicId] = useState(localStorage.getItem('lucy_mic_id') || '');
+  const [micBoost, setMicBoost] = useState(() => {
+    const val = localStorage.getItem('lucy_mic_boost');
+    return val ? parseFloat(val) : 2.0;
+  });
+
+  const handleMicBoostChange = (val: number) => {
+    setMicBoost(val);
+    localStorage.setItem('lucy_mic_boost', String(val));
+    emitCrossWindow('lucy-mic-boost-changed', { boost: val });
+  };
   const [camId, setCamId] = useState(localStorage.getItem('lucy_camera_id') || '');
   const [voice, setVoice] = useState(localStorage.getItem('lucy_voice') || 'Aoede');
   const [avatarSize, setAvatarSize] = useState(parseInt(localStorage.getItem('lucy_avatar_size') || '100'));
@@ -51,13 +61,9 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     const val = localStorage.getItem('lucy_auto_mic');
     return val === null ? true : val === 'true';
   });
-  const [headphoneMode, setHeadphoneMode] = useState(() => localStorage.getItem('lucy_headphone_mode') === 'true');
-
-  const handleHeadphoneModeChange = (val: boolean) => {
-    setHeadphoneMode(val);
-    localStorage.setItem('lucy_headphone_mode', String(val));
-    logger.add('success', 'Settings', val ? 'Headphones Mode enabled (Barge-in allowed)' : 'Speaker Mode enabled (Echo Shield active)');
-  };
+  useEffect(() => {
+    localStorage.removeItem('lucy_headphone_mode');
+  }, []);
   const [avatarLocked, setAvatarLocked] = useState(localStorage.getItem('lucy_avatar_locked') === 'true');
   const {
     avatarEngine,
@@ -653,30 +659,42 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     <option key={d.deviceId} value={d.deviceId}>{d.label || 'Unknown Microphone'}</option>
                   ))}
                 </select>
+
+                <div className="pt-3 border-t border-pink-100 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#1E1926]">Microphone Sensitivity Boost</label>
+                    <span className="text-xs font-bold text-[#F43F8E]">
+                      {micBoost.toFixed(1)}x {micBoost >= 2.0 ? '(Low Voice Boost Active)' : '(Normal)'}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1.0"
+                    max="4.0"
+                    step="0.2"
+                    value={micBoost}
+                    onChange={(e) => handleMicBoostChange(parseFloat(e.target.value))}
+                    className="w-full accent-[#F43F8E] cursor-pointer"
+                  />
+                  <p className="text-[11px] text-[#6B7280]">
+                    Increase this slider if Lucy has trouble hearing you when you speak softly or quietly. Recommended: 2.0x – 2.6x.
+                  </p>
+                </div>
               </div>
 
-              {/* Headphone Mode / Echo Shield Toggle */}
+              {/* Acoustic Echo Shield Status */}
               <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex items-center justify-between transition-colors">
                 <div>
                   <div className="flex items-center gap-2">
-                    <label className="block text-sm font-bold text-[#1E1926]">Headphones Mode</label>
-                    <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${headphoneMode ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
-                      {headphoneMode ? 'Headphones (Voice Barge-In)' : 'Speakers (Echo Shield Protected)'}
+                    <label className="block text-sm font-bold text-[#1E1926]">Acoustic Echo Shield</label>
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-green-100 text-green-700">
+                      Always Active
                     </span>
                   </div>
                   <p className="text-xs text-[#6B7280] mt-0.5">
-                    {headphoneMode
-                      ? 'Enabled: You are wearing headphones. You can speak to interrupt Lucy without speaker audio feedback.'
-                      : 'Disabled (Recommended for PC Speakers): Lucy blocks microphone transmission while speaking so she never hears her own voice.'}
+                    Microphone feedback is dynamically gated while Lucy is speaking and during room reverberation, ensuring she never listens or replies to her own voice.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleHeadphoneModeChange(!headphoneMode)}
-                  className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer shrink-0 ${headphoneMode ? 'bg-[#F43F8E]' : 'bg-gray-200'}`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${headphoneMode ? 'translate-x-6' : 'translate-x-0'}`} />
-                </button>
               </div>
 
               <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4">

@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar3D } from './Avatar3D';
 import { Live2DViewer } from './Live2DViewer';
+import { AvatarErrorBoundary } from './AvatarErrorBoundary';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
 import { BasePose } from './animations/core';
@@ -222,7 +223,9 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
   return createPortal(
     <>
       <div className="fixed inset-0 pointer-events-none z-[50]">
-        {avatarEngine === 'live2d' ? <Live2DViewer /> : <Avatar3D />}
+        <AvatarErrorBoundary key={avatarEngine}>
+          {avatarEngine === 'live2d' ? <Live2DViewer /> : <Avatar3D />}
+        </AvatarErrorBoundary>
       </div>
     </>,
     document.body

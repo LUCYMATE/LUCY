@@ -881,8 +881,11 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
             let win_clone = win.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(300));
-                let _ = win_clone.set_ignore_cursor_events(true);
-                let _ = win_clone.eval("window.dispatchEvent(new CustomEvent('lucy-wake-up'));");
+                let w = win_clone.clone();
+                let _ = win_clone.run_on_main_thread(move || {
+                    let _ = w.set_ignore_cursor_events(true);
+                    let _ = w.eval("window.dispatchEvent(new CustomEvent('lucy-wake-up'));");
+                });
             });
         }
     }

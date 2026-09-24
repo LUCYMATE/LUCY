@@ -10,7 +10,7 @@ export class AudioPlayer {
   private hasAttachedGesture = false;
 
   start() {
-    this.audioContext = new AudioContext({ sampleRate: 24000 }); // 24kHz — Gemini output rate
+    this.audioContext = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' }); // 24kHz — Gemini output rate with low-latency WASAPI buffer
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 256;
     
@@ -102,8 +102,8 @@ export class AudioPlayer {
     source.connect(this.gainNode);
 
     const now = this.audioContext.currentTime;
-    if (this.nextPlayTime < now + 0.05) {
-      this.nextPlayTime = now + 0.05;
+    if (this.nextPlayTime < now + 0.015) {
+      this.nextPlayTime = now + 0.015;
     }
     source.start(this.nextPlayTime);
     this.nextPlayTime += buffer.duration;
