@@ -6,7 +6,7 @@ export interface ScheduledTask {
   instruction: string;
 }
 
-const STORAGE_KEY = 'soltini_scheduled_tasks';
+const STORAGE_KEY = 'lucy_scheduled_tasks';
 
 function loadTasksFromStorage(): ScheduledTask[] {
   try {
@@ -46,7 +46,7 @@ export function cancelScheduledTaskById(id: string): boolean {
   activeScheduledTasks = activeScheduledTasks.filter(t => t.id !== id);
   if (activeScheduledTasks.length < initialLength) {
     saveTasksToStorage(activeScheduledTasks);
-    emitCrossWindow('soltini-tasks-changed', activeScheduledTasks);
+    emitCrossWindow('lucy-tasks-changed', activeScheduledTasks);
     return true;
   }
   return false;
@@ -58,7 +58,7 @@ export function addScheduledTask(task: ScheduledTask) {
   if (!activeScheduledTasks.some(t => t.id === task.id)) {
     activeScheduledTasks.push(task);
     saveTasksToStorage(activeScheduledTasks);
-    emitCrossWindow('soltini-tasks-changed', activeScheduledTasks);
+    emitCrossWindow('lucy-tasks-changed', activeScheduledTasks);
   }
 }
 
@@ -74,7 +74,7 @@ let isInitializedListener = false;
 function initCrossWindowTaskListener() {
   if (isInitializedListener) return;
   isInitializedListener = true;
-  listenCrossWindow<string>('soltini-cancel-task', (taskId) => {
+  listenCrossWindow<string>('lucy-cancel-task', (taskId) => {
     if (taskId) {
       cancelScheduledTaskById(taskId);
     }
@@ -94,7 +94,7 @@ export function startScheduler() {
       dueTasks.forEach(task => {
         if (globalScheduleCallback) globalScheduleCallback(task.instruction);
       });
-      emitCrossWindow('soltini-tasks-changed', activeScheduledTasks);
+      emitCrossWindow('lucy-tasks-changed', activeScheduledTasks);
     }
   }, 3000);
 }

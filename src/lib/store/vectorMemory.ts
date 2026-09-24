@@ -12,7 +12,7 @@ export interface MemoryFact {
 
 export class VectorMemoryManager {
   private memories: MemoryFact[] = [];
-  private readonly STORAGE_KEY = 'soltini_vector_memory';
+  private readonly STORAGE_KEY = 'lucy_vector_memory';
   
   constructor() {
     this.loadFromStorage();
@@ -33,7 +33,7 @@ export class VectorMemoryManager {
   private saveToStorage() {
     try {
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.memories));
-      emitCrossWindow('soltini-memory-updated');
+      emitCrossWindow('lucy-memory-updated');
     } catch (e) {
       console.error('Failed to save vector memory:', e);
       // In case localStorage is full due to embeddings, we might want to log a warning

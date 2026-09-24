@@ -115,7 +115,7 @@ export const checkAppUpdate = async (): Promise<AppUpdateInfo | null> => {
       return null;
     }
 
-    const lastNotifiedId = localStorage.getItem('soltini_last_notified_update_id');
+    const lastNotifiedId = localStorage.getItem('lucy_last_notified_update_id');
     const updateId = platformUpdate.update_id;
     const isNewNotification = lastNotifiedId !== updateId;
 
@@ -135,7 +135,7 @@ export const checkAppUpdate = async (): Promise<AppUpdateInfo | null> => {
 };
 
 export const markUpdateNotified = (updateId: string) => {
-  localStorage.setItem('soltini_last_notified_update_id', updateId);
+  localStorage.setItem('lucy_last_notified_update_id', updateId);
 };
 
 export const downloadUpdate = (url: string) => {
