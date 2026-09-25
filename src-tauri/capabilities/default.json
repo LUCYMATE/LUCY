@@ -60,6 +60,10 @@
     "allow-wake-up-main",
     "allow-is-autostart",
     "allow-get-desktop-rectangles",
+    "allow-get-lucy-link-pairing-data",
+    "allow-send-prompt-to-phone",
+    "allow-resolve-mobile-prompt",
+    "allow-get-lucy-link-status",
     "autostart:default",
     {
       "identifier": "http:default",

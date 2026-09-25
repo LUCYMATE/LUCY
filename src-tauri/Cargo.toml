@@ -38,6 +38,10 @@ tauri-plugin-http = "=2.6.1"
 tauri-plugin-fs = "2"
 aes-gcm = "0.10"
 rand = "0.8"
+tokio = { version = "1", features = ["net", "time", "sync", "rt", "macros", "io-util"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+local-ip-address = "0.6"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 ed25519-dalek = { version = "2.1", features = ["serde"] }

@@ -4,6 +4,11 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // Keep React-based dependencies (including qrcode.react) on the same React
+  // instance as the renderer. Duplicate React instances break hook dispatch.
+  resolve: {
+    dedupe: ['react', 'react-dom']
+  },
   plugins: [
     tailwindcss(),
     react()

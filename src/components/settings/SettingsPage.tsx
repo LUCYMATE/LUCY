@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video, Brain, User, ShieldCheck, Download, Sparkles, ExternalLink, Info, RefreshCw, Smartphone } from 'lucide-react';
 import { AssetLibrary } from './AssetLibrary';
+import { PhoneLinkTab } from './PhoneLinkTab';
 import { logger } from '../../lib/store/logger';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { vectorMemory, MemoryFact } from '../../lib/store/vectorMemory';
@@ -781,11 +782,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         )}
 
         {activeTab === 'link' && (
-          <div className="flex flex-col items-center justify-center p-12 text-center text-[#6B7280]">
-            <Smartphone className="w-12 h-12 text-pink-400 mb-3 animate-pulse" />
-            <h3 className="text-lg font-bold text-[#1E1926] mb-1">Phone Link</h3>
-            <p className="text-xs max-w-sm">Companion app pairing will be configured in the final step.</p>
-          </div>
+          <PhoneLinkTab />
         )}
 
         {activeTab === 'api' && (

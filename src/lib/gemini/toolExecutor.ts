@@ -88,9 +88,9 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     result = await invoke('get_system_stats');
   } else if (name === 'delegate_to_phone') {
     try {
-      logger.add('info', 'LucyLink', `Delegating task to phone: "${args.prompt}"`);
+      logger.add('info', 'LucyLink', 'Delegating task to paired phone');
       const summary = await invoke<string>('send_prompt_to_phone', { prompt: args.prompt });
-      logger.add('success', 'LucyLink', `Phone task completed: ${summary}`);
+      logger.add('success', 'LucyLink', 'Phone task completed');
       result = { success: true, summary, message: `Completed on phone: ${summary}` };
     } catch (err: any) {
       const errMsg = err?.toString() || 'Phone is not currently connected via LucyLink';

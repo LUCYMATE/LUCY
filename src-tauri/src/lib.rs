@@ -15,6 +15,8 @@ use std::net::TcpListener;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+mod lucy_link;
+
 static AUTH_CALLBACK_TOKEN: OnceLock<Mutex<Option<(String, String)>>> = OnceLock::new();
 
 // Ed25519 public key (hex string) compiled from environment
@@ -1201,6 +1203,9 @@ pub fn run() {
             authorization_expires_at: Mutex::new(0),
             is_sleeping: Mutex::new(false),
         })
+        // Keep phone networking out of application startup. The listener is bound only
+        // after the user opens Phone Link and requests pairing data.
+        .manage(std::sync::Arc::new(tokio::sync::Mutex::new(lucy_link::LucyLinkState::new())))
         .invoke_handler(tauri::generate_handler![
             get_system_stats,
             open_external_url,
@@ -1233,6 +1238,10 @@ pub fn run() {
             setup_wayland_automation,
             exit_app,
             get_desktop_rectangles,
+            lucy_link::get_lucy_link_pairing_data,
+            lucy_link::send_prompt_to_phone,
+            lucy_link::resolve_mobile_prompt,
+            lucy_link::get_lucy_link_status,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

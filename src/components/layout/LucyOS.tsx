@@ -143,7 +143,9 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
           y: 200,
           resizable: true,
           decorations: false,
-          transparent: true
+          // The secondary dashboard/settings window is a normal content window.
+          // Keeping it opaque prevents a renderer error from exposing the desktop.
+          transparent: false
         });
         win.once('tauri://error', (e) => {
           console.warn('Failed to open settings window:', e);
