@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import * as PIXI from 'pixi.js';
 import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism4';
 import { useAvatarState } from '../../lib/store/avatarState';
+import { useEngineStore } from '../../lib/store/engineStore';
 import { useShallow } from 'zustand/react/shallow';
 import { AvatarContextMenu } from './AvatarContextMenu';
 import { animationBridge } from './animations/avatarAnimationBridge';
@@ -27,22 +28,39 @@ if (typeof window !== 'undefined') {
   if ((PIXI as any).BatchRenderer) {
     try {
       (PIXI as any).BatchRenderer.defaultMaxTextures = 16;
-      const origContextChange = (PIXI as any).BatchRenderer.prototype.contextChange;
-      (PIXI as any).BatchRenderer.prototype.contextChange = function (this: any) {
-        try {
-          return origContextChange.call(this);
-        } catch (err) {
-          console.warn('[Live2DViewer] Safe BatchRenderer fallback on WebGL context:', err);
+      (PIXI as any).BatchRenderer.prototype.contextChange = function () {
+        const gl = this.renderer?.gl;
+        if (!gl || gl.isContextLost?.()) {
           this.maxTextures = 1;
           this._shader = this.shaderGenerator.generateShader(1);
-          if (!this._packedGeometries) {
-            this._packedGeometries = [];
-          }
+          this._packedGeometries = [];
           for (let i = 0; i < this._packedGeometryPoolSize; i++) {
             this._packedGeometries[i] = new this.geometryClass();
           }
           this.initFlushBuffers();
+          return;
         }
+        let units = 1;
+        try {
+          units = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) || 1;
+        } catch (_) {
+          units = 1;
+        }
+        this.maxTextures = Math.max(1, Math.min(units, (PIXI as any).BatchRenderer.defaultMaxTextures || 16));
+        try {
+          if ((PIXI as any).checkMaxIfStatementsInShader) {
+            this.maxTextures = (PIXI as any).checkMaxIfStatementsInShader(this.maxTextures, gl);
+          }
+        } catch (_) {
+          this.maxTextures = 1;
+        }
+        this.maxTextures = Math.max(1, this.maxTextures || 1);
+        this._shader = this.shaderGenerator.generateShader(this.maxTextures);
+        this._packedGeometries = [];
+        for (let i = 0; i < this._packedGeometryPoolSize; i++) {
+          this._packedGeometries[i] = new this.geometryClass();
+        }
+        this.initFlushBuffers();
       };
     } catch (_) {}
   }
@@ -152,6 +170,11 @@ export function Live2DViewer() {
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return; // Left click only
     const s = useAvatarState.getState();
+    if (s.isSpeaking) {
+      try {
+        useEngineStore.getState().interruptSpeech();
+      } catch (_) {}
+    }
     dragInfoRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -303,6 +326,11 @@ export function Live2DViewer() {
         powerPreference: 'low-power',
         resolution: Math.min(window.devicePixelRatio || 1, 1.25), // Caps canvas framebuffer on high-DPI screens
       });
+      // Set initial maxFPS cap to prevent runaway CPU loops
+      app.ticker.maxFPS = 30;
+      try {
+        PIXI.Ticker.shared.maxFPS = 30;
+      } catch (_) {}
 
       // Cubism 4 mask FBO clearColor sanitization:
       // Cubism 4 sets gl.clearColor(1, 1, 1, 1) during mask rendering and never restores it.
@@ -314,12 +342,6 @@ export function Live2DViewer() {
             gl.clearColor(0, 0, 0, 0);
           }
         });
-      } catch (_) {}
-
-      // Set initial maxFPS cap to prevent runaway CPU loops
-      app.ticker.maxFPS = 30;
-      try {
-        PIXI.Ticker.shared.maxFPS = 30;
       } catch (_) {}
 
       appRef.current = app;
@@ -426,9 +448,6 @@ export function Live2DViewer() {
           try {
             model.stopMotions();
             internal.motionManager?.stopAllMotions();
-            if (internal.motionManager?.state) {
-              internal.motionManager.state.shouldRequestIdleMotion = () => false;
-            }
           } catch (_) {}
 
           if (internal.motionManager) {
@@ -436,6 +455,9 @@ export function Live2DViewer() {
             internal.motionManager.definitions = {};
             internal.motionManager.defaultIdleMotion = '';
             internal.motionManager.playing = false;
+            if (internal.motionManager.state) {
+              internal.motionManager.state.shouldRequestIdleMotion = () => false;
+            }
           }
 
           if (internal.settings) {
@@ -445,33 +467,29 @@ export function Live2DViewer() {
           model.motion = () => Promise.resolve(false);
 
           internal.on('beforeModelUpdate', () => {
-            try {
-              const state = useAvatarState.getState();
-              const core = internal.coreModel;
-              if (!core) return;
+            const state = useAvatarState.getState();
+            const core = internal.coreModel;
+            if (!core) return;
 
-              const t = performance.now() / 1000;
-              const gestures = animationBridge.computeGestures({
-                t,
-                isSpeaking: state.isSpeaking,
-                isThinking: state.isThinking,
-                isListening: state.isListening,
-                basePose: state.basePose,
-                emotion: state.emotion,
-                avatarScale: state.avatarScale || 1.0,
-              });
+            const t = performance.now() / 1000;
+            const gestures = animationBridge.computeGestures({
+              t,
+              isSpeaking: state.isSpeaking,
+              isThinking: state.isThinking,
+              isListening: state.isListening,
+              basePose: state.basePose,
+              emotion: state.emotion,
+              avatarScale: state.avatarScale || 1.0,
+            });
 
-              // Unified parameter application driving head, body, face, and talking hand/arm gestures
-              animationBridge.applyToLive2DModel(
-                model,
-                selectedLive2dModel,
-                gestures,
-                animValuesRef.current,
-                0.16
-              );
-            } catch (paramErr) {
-              console.warn('[Live2DViewer] Parameter update error:', paramErr);
-            }
+            // Unified parameter application driving head, body, face, and talking hand/arm gestures
+            animationBridge.applyToLive2DModel(
+              model,
+              selectedLive2dModel,
+              gestures,
+              animValuesRef.current,
+              0.16
+            );
           });
         }
 
