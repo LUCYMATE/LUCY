@@ -8,13 +8,20 @@ import { useAvatarState } from '../store/avatarState';
 import { addScheduledTask, cancelScheduledTaskById, startScheduler } from './scheduler';
 import { rateLimiter, RATE_LIMITS } from '../utils/rateLimiter';
 import { userAuth } from '../auth/userAuth';
-import { Command } from '@tauri-apps/plugin-shell';
 import { emitCrossWindow } from '../events/crossWindowEventBus';
 
 let lastScreenScaleFactor = 1.0;
-let autoScrollProcess: any = null;
+let autoScrollInterval: ReturnType<typeof setInterval> | null = null;
 
 export async function executeTool(name: string, args: any, deferredMedia?: string[]): Promise<any> {
+  if (name === 'run_terminal_command' || name === 'run_python_script') {
+    const payload = name === 'run_terminal_command' ? String(args.command || '') : String(args.script || '');
+    const preview = payload.length > 1200 ? `${payload.slice(0, 1200)}\n… (truncated)` : payload;
+    const accepted = window.confirm(
+      `Lucy is requesting unrestricted ${name === 'run_terminal_command' ? 'terminal' : 'Python'} execution. This can change or delete files. Approve only if you trust this exact request.\n\n${preview}`
+    );
+    if (!accepted) return { error: 'User declined native code execution.' };
+  }
   // Pro tier check for advanced automation, custom uploads & OS execution
   const proOnlyTools = [
     'trigger_automation',
@@ -143,7 +150,9 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     const lowerKeys = keys.map((k: string) => k.toLowerCase());
     
     // Windows OS-level shortcuts often block simulated input, so we use native commands
-    if (lowerKeys.includes('win')) {
+    if (lowerKeys.includes('win') && !userAuth.isPro()) {
+      await invoke('press_key_combo', { keys });
+    } else if (lowerKeys.includes('win')) {
       if (lowerKeys.includes('l')) {
         await invoke('run_terminal_command', { command: 'rundll32.exe user32.dll,LockWorkStation' });
       } else if (lowerKeys.includes('d')) {
@@ -202,31 +211,28 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     }
   } else if (name === 'auto_scroll_reels') {
     if (args.action === 'stop') {
-      if (autoScrollProcess) {
-        try { await autoScrollProcess.kill(); } catch(e) {}
-        autoScrollProcess = null;
+      if (autoScrollInterval) {
+        clearInterval(autoScrollInterval);
+        autoScrollInterval = null;
       }
       result = { success: true, message: 'Auto-scrolling stopped.' };
     } else {
-      if (autoScrollProcess) {
-        try { await autoScrollProcess.kill(); } catch(e) {}
-        autoScrollProcess = null;
+      if (autoScrollInterval) {
+        clearInterval(autoScrollInterval);
+        autoScrollInterval = null;
       }
       
       try {
-        const interval = parseInt(args.interval_seconds as string, 10) || 30;
+        const parsedInterval = Number.parseInt(String(args.interval_seconds ?? ''), 10);
+        const interval = Number.isFinite(parsedInterval) ? Math.max(5, Math.min(3600, parsedInterval)) : 30;
         const direction = args.direction === 'up' ? 'up' : 'down';
 
-        const keyPress = direction === 'up' ? '{UP}' : '{DOWN}';
-        const psScript = `
-          $wshell = New-Object -ComObject wscript.shell
-          while ($true) {
-            Start-Sleep -Seconds ${interval}
-            $wshell.SendKeys('${keyPress}')
-          }
-        `;
-        autoScrollProcess = Command.create('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', psScript]);
-        await autoScrollProcess.spawn();
+        const key = direction === 'up' ? 'up' : 'down';
+        autoScrollInterval = setInterval(() => {
+          void invoke('press_key', { key }).catch(err => {
+            logger.add('warning', 'Auto Scroll', String(err));
+          });
+        }, interval * 1000);
 
         result = { success: true, message: `Auto-Scrolling activated! Tell the user playfully that you've started scrolling ${direction} every ${interval} seconds.` };
       } catch (e) {
@@ -236,7 +242,8 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   } else if (name === 'search_web') {
     try {
       const query = args.query || '';
-      const tavilyKey = localStorage.getItem('lucy_tavily_api_key') || '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';
+      const tavilyKey = localStorage.getItem('lucy_tavily_api_key');
+      if (!tavilyKey) throw new Error('Add your Tavily API key in Settings to use web search.');
       const response = await fetch('https://api.tavily.com/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -246,6 +253,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
           max_results: 3
         })
       });
+      if (!response.ok) throw new Error(`Search service returned HTTP ${response.status}`);
       const json = await response.json();
       const snippets = json.results?.map((r: any) => `${r.title}: ${r.content}`).slice(0, 3) || [];
       result = { success: true, data: snippets };
@@ -264,21 +272,25 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   } else if (name === 'schedule_task') {
     const targetStr = String(args.target_time || '');
     const instruction = String(args.instruction || '');
-    
+    const match = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(targetStr);
     let targetTimeMs = NaN;
-    try {
-      const [datePart, timePart] = targetStr.split(' ');
-      const [day, month, year] = datePart.split('/');
-      const [hour, minute, second] = timePart.split(':');
-      targetTimeMs = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second)).getTime();
-    } catch (e) {
-      targetTimeMs = NaN;
+    if (match) {
+      const [, dd, mm, yyyy, hh, min, ss] = match;
+      const day = Number(dd), month = Number(mm), year = Number(yyyy);
+      const hour = Number(hh), minute = Number(min), second = Number(ss);
+      const date = new Date(year, month - 1, day, hour, minute, second);
+      if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day &&
+          date.getHours() === hour && date.getMinutes() === minute && date.getSeconds() === second) {
+        targetTimeMs = date.getTime();
+      }
     }
 
     if (isNaN(targetTimeMs)) {
       result = { error: 'Invalid target_time format. Use exactly DD/MM/YYYY HH:MM:SS' };
     } else if (targetTimeMs <= Date.now()) {
       result = { error: 'Target time must be in the future. Please check the current year and time.' };
+    } else if (instruction.length > 4000) {
+      result = { error: 'Scheduled instruction is too long (maximum 4000 characters).' };
     } else {
       const newId = Math.random().toString(36).substring(2, 9);
       addScheduledTask({ id: newId, targetTimeMs, instruction });
@@ -378,15 +390,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
           await invoke('run_terminal_command', { command: directCommandMap[appName] });
           result = { success: true, message: `Opened ${appName}` };
         } else {
-          // 3. Fast fallback: try cmd start first, then fast PowerShell lookup
-          try {
-            await invoke('run_terminal_command', { command: `start "" "${appName}"` });
-            result = { success: true, message: `Launched ${appName}` };
-          } catch {
-            const psCommand = `powershell -NoProfile -NonInteractive -Command "$app = '${appName}'; if (Get-Command $app -ErrorAction SilentlyContinue) { Start-Process $app } else { $lnk = Get-ChildItem -Path '$env:ProgramData\\Microsoft\\Windows\\Start Menu\\Programs', '$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs' -Filter '*$app*.lnk' -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($lnk) { Invoke-Item $lnk.FullName } else { Start-Process $app } }"`;
-            const output = await invoke('run_terminal_command', { command: psCommand });
-            result = { success: true, output };
-          }
+          result = { error: 'That app is not in Lucy’s approved launch list.' };
         }
       }
     } catch (e) {
@@ -395,6 +399,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
   } else if (name === 'close_app') {
     try {
       const appName = String(args.app_name || '').trim().toLowerCase().replace('.exe', '');
+      if (!/^[a-z0-9_-]{1,64}$/.test(appName)) throw new Error('Invalid app name.');
 
       // Fetch ONLY apps with a visible window (ignores background services)
       const psCommand = `powershell -Command "Get-Process | Where-Object {$_.MainWindowTitle -ne ''} | Select-Object -ExpandProperty Name"`;
@@ -412,9 +417,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
         const output = await invoke('run_terminal_command', { command: `taskkill /IM "${target}.exe" /F` });
         result = { success: true, message: `Successfully killed visible app ${target}.exe`, output };
       } else {
-        // Fallback wildcard attempt
-        const output = await invoke('run_terminal_command', { command: `taskkill /IM "*${appName}*.exe" /F` });
-        result = { success: true, message: `Attempted wildcard kill on *${appName}*.exe`, output };
+        result = { error: `No visible app matched “${appName}”.` };
       }
     } catch (e) {
       result = { error: 'Failed to close app: ' + String(e) };

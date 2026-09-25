@@ -1050,8 +1050,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <p className="text-[#6B7280] mt-0.5">Tauri 2.0 (Native Rust Engine + WebView2 Chromium Layer)</p>
                 </div>
                 <div className="p-3 bg-[#FFF5F8] rounded-xl border border-[#FCE7F3]">
-                  <p className="font-bold text-[#1E1926]">Deep Link Protocol</p>
-                  <p className="text-[#6B7280] mt-0.5">lucymate:// (Single-Instance Inter-Process Forwarding)</p>
+                  <p className="font-bold text-[#1E1926]">Sign-in Flow</p>
+                  <p className="text-[#6B7280] mt-0.5">Browser sign-in with a secure session check</p>
                 </div>
               </div>
             </div>
@@ -1097,7 +1097,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
               <h4 className="text-xs font-bold text-[#1E1926] uppercase tracking-wider mb-2">What&apos;s New in v2.0.0</h4>
               <ul className="text-xs text-[#6B7280] space-y-1.5 list-disc pl-4">
                 <li>Complete LUCY luxury rebranding with pearl-pink color palette.</li>
-                <li>Unified <code className="text-[#F43F8E] font-bold">com.lucy.mate</code> package and <code className="text-[#F43F8E] font-bold">lucymate://</code> deep link.</li>
+                <li>Simplified browser sign-in with secure session verification.</li>
                 <li>Auto-enabled microphone and audio playback with no browser permission pop-ups.</li>
                 <li>Brand new luxury chat interface with avatar badges, prompt chips, and copy support.</li>
                 <li>Official high-resolution Android launcher icon ported to Windows desktop.</li>

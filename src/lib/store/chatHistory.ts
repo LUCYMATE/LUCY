@@ -26,7 +26,13 @@ class ChatHistoryManager {
     try {
       const data = localStorage.getItem(this.STORAGE_KEY);
       if (data) {
-        this.chats = JSON.parse(data);
+        const parsed: unknown = JSON.parse(data);
+        this.chats = Array.isArray(parsed) ? parsed.filter((chat): chat is ChatSession =>
+          !!chat && typeof chat.id === 'string' && typeof chat.title === 'string' &&
+          Number.isFinite(chat.updatedAt) && Array.isArray(chat.messages) &&
+          chat.messages.every((message: any) => message && typeof message.id === 'string' &&
+            (message.role === 'user' || message.role === 'model') && typeof message.text === 'string' && message.text.length <= 100_000)
+        ).slice(-15) : [];
       }
     } catch (e) {
       console.error('Failed to load chat history:', e);
@@ -53,6 +59,7 @@ class ChatHistoryManager {
 
   public saveChat(id: string, messages: ChatMessage[], generatedTitle?: string) {
     if (messages.length <= 1) return; // don't save empty/initial chats
+    if (id.length > 200 || messages.length > 2000 || messages.some(message => message.text.length > 100_000)) return;
 
     let title = generatedTitle || 'New Chat';
     if (!generatedTitle) {

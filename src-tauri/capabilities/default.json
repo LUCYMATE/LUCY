@@ -28,8 +28,6 @@
     "core:window:allow-set-resizable",
     "core:window:allow-hide",
     "core:webview:allow-clear-all-browsing-data",
-    "shell:default",
-    "opener:default",
     "allow-start-native-mic",
     "allow-stop-native-mic",
     "allow-check-microphone-permission",
@@ -52,8 +50,11 @@
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "allow-get-device-hwid",
+    "allow-start-auth-callback",
+    "allow-take-auth-callback",
     "allow-verify-license",
     "allow-check-authorization",
+    "allow-logout-license",
     "allow-trim-memory",
     "allow-enter-sleep-mode",
     "allow-wake-up-main",
@@ -64,33 +65,17 @@
       "identifier": "http:default",
       "allow": [
         {
-          "url": "https://**"
+          "url": "https://api.tavily.com/**"
         },
         {
-          "url": "http://**"
+          "url": "https://generativelanguage.googleapis.com/**"
+        },
+        {
+          "url": "https://lucymate.vercel.app/**"
         }
       ]
     },
     "fs:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "powershell",
-          "cmd": "powershell",
-          "args": true
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "powershell",
-          "cmd": "powershell",
-          "args": true
-        }
-      ]
-    }
+    "allow-read-3d-asset-bytes"
   ]
 }

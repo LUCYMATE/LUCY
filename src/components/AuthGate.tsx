@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Minus, X as XIcon } from 'lucide-react';
 import { userAuth } from '../lib/auth/userAuth';
-import { openExternalUrl } from '../lib/system/tauriBridge';
+import { isTauriApp, openExternalUrl } from '../lib/system/tauriBridge';
 
 export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
   const [stage, setStage] = useState<'checking' | 'locked' | 'authorized'>('checking');
@@ -22,30 +22,27 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       } else {
         setAuthError(null);
       }
-      import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-        const win = getCurrentWindow();
-        win.setAlwaysOnTop(false).catch(() => { });
-        win.setIgnoreCursorEvents(false).catch(() => { });
-        win.unmaximize().catch(() => { });
-        win.setSkipTaskbar(false).catch(() => { });
-        win.show().catch(() => { });
-        import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
-          win.setSize(new LogicalSize(1000, 700)).catch(() => { });
-          win.center().catch(() => { });
+      if (isTauriApp()) {
+        import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+          try {
+            const win = getCurrentWindow();
+            win.setAlwaysOnTop(false).catch(() => { });
+            win.setIgnoreCursorEvents(false).catch(() => { });
+            win.unmaximize().catch(() => { });
+            win.setSkipTaskbar(false).catch(() => { });
+            win.show().catch(() => { });
+            import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
+              win.setSize(new LogicalSize(1000, 700)).catch(() => { });
+              win.center().catch(() => { });
+            }).catch(() => { });
+          } catch (_) {}
         }).catch(() => { });
-      }).catch(() => { });
+      }
     }
   }, [onAuthorized]);
 
   useEffect(() => {
     checkAuth();
-
-    // Listen for auth state changes from deep link or other sources
-    const handleAuthError = (e: any) => {
-      setAuthError(e.detail || 'Authentication failed.');
-      if (pollingRef.current) clearTimeout(pollingRef.current);
-    };
-    window.addEventListener('lucy-auth-error', handleAuthError);
 
     const unsub = userAuth.subscribe((session) => {
       if (session && session.status !== 'revoked') {
@@ -54,9 +51,11 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         if (pollingRef.current) clearTimeout(pollingRef.current);
 
         // Restore alwaysOnTop when authorized
-        import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-          getCurrentWindow().setAlwaysOnTop(true).catch(() => { });
-        }).catch(() => { });
+        if (isTauriApp()) {
+          import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+            try { getCurrentWindow().setAlwaysOnTop(true).catch(() => { }); } catch (_) {}
+          }).catch(() => { });
+        }
 
         setTimeout(onAuthorized, 800);
       } else {
@@ -68,39 +67,87 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         }
 
         // Ensure the window behaves like a normal window again if they are logged out
-        import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-          const win = getCurrentWindow();
-          win.setAlwaysOnTop(false).catch(() => { });
-          win.setIgnoreCursorEvents(false).catch(() => { });
-          win.unmaximize().catch(() => { });
-          win.setSkipTaskbar(false).catch(() => { });
-          win.show().catch(() => { });
-          import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
-            win.setSize(new LogicalSize(1000, 700)).catch(() => { });
-            win.center().catch(() => { });
+        if (isTauriApp()) {
+          import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+            try {
+              const win = getCurrentWindow();
+              win.setAlwaysOnTop(false).catch(() => { });
+              win.setIgnoreCursorEvents(false).catch(() => { });
+              win.unmaximize().catch(() => { });
+              win.setSkipTaskbar(false).catch(() => { });
+              win.show().catch(() => { });
+              import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
+                win.setSize(new LogicalSize(1000, 700)).catch(() => { });
+                win.center().catch(() => { });
+              }).catch(() => { });
+            } catch (_) {}
           }).catch(() => { });
-        }).catch(() => { });
+        }
       }
     });
     return () => {
       unsub();
-      window.removeEventListener('lucy-auth-error', handleAuthError);
       if (pollingRef.current) clearTimeout(pollingRef.current);
     };
   }, [checkAuth, onAuthorized]);
 
   const handleSignIn = async () => {
-    const sessionId = crypto.randomUUID();
-
     // Drop alwaysOnTop so the browser opens in front of the app
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      await getCurrentWindow().setAlwaysOnTop(false);
-    } catch (e) {
-      console.warn("Failed to drop alwaysOnTop", e);
+    if (isTauriApp()) {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().setAlwaysOnTop(false);
+      } catch (e) {
+        console.warn("Failed to drop alwaysOnTop", e);
+      }
     }
 
     setAuthError(null);
+
+    if (isTauriApp()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const callback = await invoke<{ port: number; state: string }>('start_auth_callback');
+        if (!Number.isInteger(callback.port) || callback.port < 1 || callback.port > 65535 || !/^[a-f0-9]{64}$/.test(callback.state)) {
+          throw new Error('The local sign-in callback could not be initialized.');
+        }
+
+        if (pollingRef.current) clearTimeout(pollingRef.current);
+        let attempts = 0;
+        const pollCallback = async () => {
+          try {
+            const token = await invoke<string | null>('take_auth_callback', { callbackState: callback.state });
+            if (token) {
+              const success = await userAuth.parseAndSetToken(token);
+              if (!success) setAuthError(userAuth.getLastTokenError() || 'We couldn’t complete sign-in. Please try again.');
+              return;
+            }
+          } catch (error) {
+            console.warn('[UserAuth] Local sign-in callback check failed:', error);
+          }
+          attempts++;
+          if (attempts >= 600) {
+            setAuthError('Sign-in timed out. Please return to LUCY and try again.');
+            return;
+          }
+          pollingRef.current = setTimeout(pollCallback, 500) as any;
+        };
+        void pollCallback();
+
+        const authUrl = new URL('https://lucymate.vercel.app/auth/google');
+        authUrl.searchParams.set('desktop', '1');
+        authUrl.searchParams.set('callback_port', String(callback.port));
+        authUrl.searchParams.set('callback_state', callback.state);
+        await openExternalUrl(authUrl.toString());
+      } catch (error) {
+        console.error('[UserAuth] Could not start browser sign-in:', error);
+        setAuthError(error instanceof Error ? error.message : 'Could not start sign-in. Please try again.');
+      }
+      return;
+    }
+
+    // Browser-only fallback retains the existing PKCE polling flow.
+    const sessionId = crypto.randomUUID();
 
     // Generate PKCE code verifier and challenge
     const generateVerifier = () => {
@@ -118,44 +165,62 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const codeChallenge = btoa(String.fromCharCode.apply(null, hashArray)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-    const stateParam = crypto.randomUUID();
-    localStorage.setItem('lucy_auth_state', stateParam);
-
     // Start polling the backend for the session token with exponential backoff
     if (pollingRef.current) clearTimeout(pollingRef.current);
     let attempts = 0;
+    let consecutiveNotFound = 0;
+    let sessionRouteMissing = false;
 
     const poll = async () => {
       try {
-        const res = await fetch(`https://lucymate.vercel.app/api/auth/session?id=${sessionId}&code_verifier=${codeVerifier}`);
-        const data = await res.json();
-        if (data.success && data.status === 'authenticated' && data.token) {
-          const success = await userAuth.parseAndSetToken(data.token);
-          if (!success) {
-            setAuthError('Invalid token received. Signature verification failed.');
+        const res = await fetch('https://lucymate.vercel.app/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: sessionId, code_verifier: codeVerifier }),
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          consecutiveNotFound = 0;
+          const data = await res.json();
+          if (data.success && data.status === 'authenticated' && data.token) {
+            const success = await userAuth.parseAndSetToken(data.token);
+            if (!success) {
+              setAuthError(userAuth.getLastTokenError() || 'We couldn’t complete sign-in. Please try again.');
+            }
+            return;
           }
-          return;
+        } else if (res.status === 404) {
+          consecutiveNotFound++;
+          sessionRouteMissing ||= !(res.headers.get('content-type') || '').includes('application/json');
+        } else {
+          throw new Error(`Authentication session check failed (${res.status}).`);
         }
       } catch (err) {
         console.warn("Session polling failed", err);
       }
 
       attempts++;
-      if (attempts === 8) {
+      if (attempts === 8 && consecutiveNotFound < 5) {
         setAuthError('Still waiting for authentication...');
+      }
+
+      if (consecutiveNotFound >= 5) {
+        setAuthError(sessionRouteMissing
+          ? 'The sign-in API route is missing from the license server deployment.'
+          : 'The license server did not create this sign-in session. Check its database and OAuth setup.');
       }
 
       if (attempts < 20) {
         const nextDelay = Math.min(2000 * Math.pow(1.5, Math.floor(attempts / 3)), 10000);
         pollingRef.current = setTimeout(poll, nextDelay) as any;
       } else {
-        setAuthError('Login timed out — try again.');
+        if (consecutiveNotFound < 5) setAuthError('Sign-in timed out. Please try again.');
       }
     };
     poll();
 
     // Open the authentication portal with the session ID and PKCE challenge
-    openExternalUrl(`https://lucymate.vercel.app/auth/google?session_id=${sessionId}&code_challenge=${codeChallenge}&state=${stateParam}`);
+    openExternalUrl(`https://lucymate.vercel.app/auth/google?session_id=${sessionId}&code_challenge=${codeChallenge}`);
   };
 
   return (
@@ -165,7 +230,6 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
         .activate-btn:hover:not(:disabled) { background: linear-gradient(135deg, #f43f8e, #e11d48) !important; transform: translateY(-1px); box-shadow: 0 10px 25px rgba(244,63,142,0.35); }
         .activate-btn:active:not(:disabled) { transform: translateY(0); }
-        .guest-btn:hover:not(:disabled) { background: #fff0f5 !important; border-color: #f43f8e !important; color: #f43f8e !important; }
       `}</style>
 
       {/* Full-screen overlay */}
@@ -210,22 +274,28 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
             pointerEvents: 'auto',
           }}>
 
-            <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 6, zIndex: 10 }}>
-              <button
-                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().minimize())}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
-                title="Minimize"
-              >
-                <Minus size={18} />
-              </button>
-              <button
-                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().close())}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
-                title="Close"
-              >
-                <XIcon size={18} />
-              </button>
-            </div>
+            {isTauriApp() && (
+              <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 6, zIndex: 10 }}>
+                <button
+                  onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+                    try { getCurrentWindow().minimize(); } catch (_) {}
+                  })}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
+                  title="Minimize"
+                >
+                  <Minus size={18} />
+                </button>
+                <button
+                  onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+                    try { getCurrentWindow().close(); } catch (_) {}
+                  })}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
+                  title="Close"
+                >
+                  <XIcon size={18} />
+                </button>
+              </div>
+            )}
 
             <div style={{ textAlign: 'center', marginBottom: 28 }}>
               <div style={{
@@ -247,7 +317,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
                 {authError ? 'Sign-In Notice' : 'Sign in to LUCY'}
               </h1>
               <p style={{ color: authError ? '#E11D48' : '#6B7280', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
-                {authError || 'Sign in with Google to activate your companion and 10-day trial.'}
+                {authError || 'Sign in to continue to LUCY.'}
               </p>
             </div>
 
@@ -266,34 +336,7 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
                 boxShadow: '0 4px 15px rgba(244,63,142,0.25)'
               }}
             >
-              Sign In with Google
-            </button>
-            <button
-              className="guest-btn"
-              onClick={() => {
-                userAuth.setSession({
-                  email: 'guest@lucy.local',
-                  name: 'Guest User',
-                  tier: 'free',
-                  status: 'active',
-                  token: 'guest_token',
-                  expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
-                });
-                userAuth.authorizeRust();
-              }}
-              style={{
-                width: '100%', padding: '12px',
-                background: '#FFF5F8',
-                border: '1px solid #FCE7F3', borderRadius: 14,
-                color: '#8B5CF6',
-                fontSize: 13, fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                marginTop: '10px'
-              }}
-            >
-              Continue as Guest
+              Continue with Google
             </button>
           </div>
         )}

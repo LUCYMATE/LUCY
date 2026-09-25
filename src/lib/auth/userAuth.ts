@@ -2,6 +2,7 @@
  * Lucy User Authentication & License Session Manager
  * Connects Desktop App to License Server & Neon DB
  */
+import { isTauriApp } from '../system/tauriBridge';
 
 export type SubscriptionTier = 'free' | 'pc_pro' | 'bundle_pro' | 'mobile_pro' | 'pro' | string;
 
@@ -23,6 +24,7 @@ const DEFAULT_LICENSE_SERVER = 'https://lucymate.vercel.app';
 
 class UserAuthManager {
   private session: UserSession | null = null;
+  private lastTokenError: string | null = null;
   private listeners: Set<(session: UserSession | null) => void> = new Set();
 
   constructor() {
@@ -35,8 +37,17 @@ class UserAuthManager {
       if (stored) {
         const parsed: UserSession = JSON.parse(stored);
         if (parsed.expiresAt > Date.now()) {
-          this.session = parsed;
-          this.authorizeRust(parsed.token);
+          if (isTauriApp()) {
+            this.authorizeRust(parsed.token, parsed);
+          } else {
+            void this.parseAndSetToken(parsed.token).then((valid) => {
+              if (!valid) {
+                this.session = null;
+                localStorage.removeItem(STORAGE_KEY);
+                this.notify();
+              }
+            });
+          }
         } else {
           this.logout();
         }
@@ -49,7 +60,8 @@ class UserAuthManager {
     }
   }
 
-  public authorizeRust(token?: string) {
+  public authorizeRust(token?: string, candidateSession?: UserSession) {
+    if (!isTauriApp()) return;
     const t = token || this.session?.token;
     import('@tauri-apps/api/core').then(({ invoke }) => {
       if (t) {
@@ -58,12 +70,26 @@ class UserAuthManager {
           invoke('verify_license', {
             tokenPayload: `${tokenParts[0]}.${tokenParts[1]}`,
             signature: tokenParts[2]
-          }).then(() => console.log('[UserAuth] Rust backend authorized via token.'))
-            .catch(() => {
-              invoke('check_authorization').catch(() => {});
-            });
+          }).then((result: any) => {
+            if (!result?.success) throw new Error('License verification failed');
+            if (candidateSession) {
+              this.session = candidateSession;
+              this.notify();
+            }
+            console.log('[UserAuth] Rust backend authorized via token.');
+          }).catch(() => {
+            this.session = null;
+            localStorage.removeItem(STORAGE_KEY);
+            this.notify();
+            void invoke('logout_license').catch(() => {});
+          });
           return;
         }
+      }
+      if (this.session) {
+        this.session = null;
+        localStorage.removeItem(STORAGE_KEY);
+        this.notify();
       }
       invoke('check_authorization').catch(() => {});
     }).catch(() => {});
@@ -71,6 +97,10 @@ class UserAuthManager {
 
   public getSession(): UserSession | null {
     return this.session;
+  }
+
+  public getLastTokenError(): string | null {
+    return this.lastTokenError;
   }
 
   /**
@@ -120,6 +150,7 @@ class UserAuthManager {
     this.session = null;
     localStorage.removeItem(STORAGE_KEY);
     this.notify();
+    import('@tauri-apps/api/core').then(({ invoke }) => invoke('logout_license')).catch(() => {});
 
     if (oldSession && oldSession.token) {
       fetch('https://lucymate.vercel.app/api/auth/logout', {
@@ -144,6 +175,7 @@ class UserAuthManager {
   }
 
   public async parseAndSetToken(rawToken: string): Promise<boolean> {
+    this.lastTokenError = null;
     try {
       const cleanToken = rawToken.trim();
       let data: any = null;
@@ -158,11 +190,11 @@ class UserAuthManager {
         return b64;
       };
 
-      if (parts.length === 3 || parts.length === 2) {
+      if (parts.length === 3) {
         // JWT format: header.payload.signature
         const header = parts[0];
-        const payload = parts.length === 3 ? parts[1] : parts[0];
-        const signature = parts.length === 3 ? parts[2] : '';
+        const payload = parts[1];
+        const signature = parts[2];
         
         // Base64Url decode payload
         const payloadStr = decodeURIComponent(atob(padB64(payload)).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
@@ -206,6 +238,16 @@ class UserAuthManager {
         }
       } else {
         console.error('[UserAuth] Invalid token format. Expected JWT token.');
+        this.lastTokenError = 'The sign-in service returned an invalid token. Try signing in again.';
+        return false;
+      }
+
+      const expiresAtClaim = Number(data?.exp ?? data?.expiresAt ?? 0);
+      const expiresAt = expiresAtClaim > 0 && expiresAtClaim < 10_000_000_000
+        ? expiresAtClaim * 1000
+        : expiresAtClaim;
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        this.lastTokenError = 'The sign-in token is expired or has no valid expiry. Try signing in again.';
         return false;
       }
 
@@ -225,33 +267,59 @@ class UserAuthManager {
           tier: rawTier,
           status: data.status === 'revoked' ? 'revoked' : 'active',
           token: cleanToken,
-          expiresAt: data.expiresAt || (Date.now() + 30 * 24 * 60 * 60 * 1000),
+          expiresAt,
           isTrial,
           daysRemaining,
           periodEnd
         };
-        this.setSession(newSession);
-
-        // Notify the Rust backend so it unlocks the system API commands
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          const tokenParts = cleanToken.split('.');
-          await invoke('verify_license', {
-            tokenPayload: tokenParts.length > 1 ? `${tokenParts[0]}.${tokenParts[1]}` : cleanToken,
-            signature: tokenParts.length > 2 ? tokenParts[2] : ''
-          });
-          console.log("[UserAuth] Rust backend successfully authorized.");
-        } catch (invokeErr) {
-          console.error("[UserAuth] Failed to authorize Rust backend:", invokeErr);
+        if (isTauriApp()) {
+          // The Rust backend is the authority for desktop capabilities.
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const verified = await invoke<{success: boolean}>('verify_license', {
+              tokenPayload: `${parts[0]}.${parts[1]}`,
+              signature: parts[2]
+            });
+            if (!verified?.success) {
+              this.lastTokenError = 'LUCY could not authorize this token. Try signing in again.';
+              return false;
+            }
+          } catch (invokeErr) {
+            const detail = invokeErr instanceof Error ? invokeErr.message : String(invokeErr);
+            console.error('[UserAuth] Desktop sign-in verification failed:', detail);
+            if (detail.includes('Release public key is not configured')) {
+              this.lastTokenError = 'The LUCY development build did not load its license public key. Start the Tauri app with the project .env configured.';
+            } else if (detail.includes('Invalid license signature')) {
+              this.lastTokenError = 'The license server signed this token with a different key. The app public key must match the server signing key.';
+            } else if (detail.includes('public key')) {
+              this.lastTokenError = 'The license public key in the development environment is invalid. Check that it is the server’s 32-byte Ed25519 public key in hex.';
+            } else if (detail.toLowerCase().includes('expired')) {
+              this.lastTokenError = 'The sign-in token has expired. Try signing in again.';
+            } else {
+              this.lastTokenError = 'LUCY could not verify this sign-in. Check the desktop app console for the verification reason.';
+            }
+            return false;
+          }
+        } else if (!isVerified) {
+          // Browser sessions must be checked locally because the Rust verifier is unavailable.
+          this.lastTokenError = pubKeyEnv
+            ? 'The license server signed this token with a different key than the one configured in this app.'
+            : 'The license public key is missing from this web build.';
+          return false;
         }
+
+        this.setSession(newSession);
 
         // Refresh and verify with live server
         this.refreshStatus().catch(e => console.warn('[UserAuth] Server refresh warning:', e));
 
         return true;
+      } else {
+        this.lastTokenError = 'The sign-in token does not contain a user account. Try signing in again.';
       }
     } catch (e) {
       console.error('[UserAuth] Invalid token format or parsing error:', e);
+      this.lastTokenError = 'The sign-in response could not be read. Try signing in again.';
     }
     return false;
   }
@@ -261,8 +329,6 @@ class UserAuthManager {
    */
   public async refreshStatus(serverUrl = DEFAULT_LICENSE_SERVER): Promise<UserSession | null> {
     if (!this.session?.email) return null;
-    if (this.session.email === 'guest@lucy.local') return this.session;
-
     try {
       const res = await fetch(`${serverUrl}/api/auth/verify`, {
         method: 'POST',
@@ -300,9 +366,11 @@ class UserAuthManager {
           this.setSession(updatedSession);
           return updatedSession;
         }
-      } else {
+      } else if (res.status === 401 || res.status === 403) {
         this.logout();
         return null;
+      } else {
+        console.warn(`[UserAuth] Server status refresh returned ${res.status}; keeping the current verified session temporarily.`);
       }
     } catch (e) {
       console.warn('[UserAuth] Server refresh status check failed:', e);

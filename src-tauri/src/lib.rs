@@ -9,6 +9,13 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
+use rand::RngCore;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::OnceLock;
+use std::time::Duration;
+
+static AUTH_CALLBACK_TOKEN: OnceLock<Mutex<Option<(String, String)>>> = OnceLock::new();
 
 // Ed25519 public key (hex string) compiled from environment
 const ED25519_PUBLIC_KEY: &str = match option_env!("VITE_ED25519_PUBLIC_KEY") {
@@ -29,14 +36,69 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
 struct AppState {
     sys: Mutex<System>,
     authorized: Mutex<bool>,
+    pro_authorized: Mutex<bool>,
+    authorization_expires_at: Mutex<u64>,
     is_sleeping: Mutex<bool>,
+}
+
+fn require_authorized(state: &tauri::State<AppState>) -> Result<(), String> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    if *state.authorization_expires_at.lock().map_err(|_| "Authorization state unavailable")? <= now {
+        *state.authorized.lock().map_err(|_| "Authorization state unavailable")? = false;
+        *state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? = false;
+        return Err("License token has expired".to_string());
+    }
+    if !*state.authorized.lock().map_err(|_| "Authorization state unavailable")? {
+        return Err("Unauthorized".to_string());
+    }
+    Ok(())
+}
+
+fn require_pro(state: &tauri::State<AppState>) -> Result<(), String> {
+    require_authorized(state)?;
+    if !*state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? {
+        return Err("Pro entitlement required".to_string());
+    }
+    Ok(())
+}
+
+fn token_tier_is_pro(token_payload: &str) -> bool {
+    let Some(payload) = token_payload.split('.').nth(1) else { return false };
+    let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload) else { return false };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else { return false };
+    let tier = value.get("tier").or_else(|| value.get("actual_tier"))
+        .or_else(|| value.get("user").and_then(|u| u.get("tier")))
+        .and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
+    matches!(tier.as_str(), "pc_pro" | "bundle_pro" | "pro")
+}
+
+fn verify_token(token_payload: &str, signature: &str) -> Result<serde_json::Value, String> {
+    if ED25519_PUBLIC_KEY == "0000000000000000000000000000000000000000000000000000000000000000" {
+        return Err("Release public key is not configured".to_string());
+    }
+    let pub_key_bytes = decode_hex(ED25519_PUBLIC_KEY)?;
+    if pub_key_bytes.len() != 32 { return Err("Invalid public key length".to_string()); }
+    let mut pub_key_arr = [0u8; 32];
+    pub_key_arr.copy_from_slice(&pub_key_bytes);
+    let public_key = VerifyingKey::from_bytes(&pub_key_arr).map_err(|e| format!("Invalid public key: {e}"))?;
+    let sig_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(signature)
+        .or_else(|_| STANDARD.decode(signature)).map_err(|_| "Invalid signature encoding".to_string())?;
+    let sig_arr: [u8; 64] = sig_bytes.try_into().map_err(|_| "Invalid signature length".to_string())?;
+    public_key.verify(token_payload.as_bytes(), &Signature::from_bytes(&sig_arr))
+        .map_err(|_| "Invalid license signature".to_string())?;
+    let payload_segment = token_payload.split('.').nth(1).ok_or("Invalid token payload")?;
+    let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload_segment)
+        .map_err(|_| "Invalid token payload encoding".to_string())?;
+    let claims: serde_json::Value = serde_json::from_slice(&payload_bytes).map_err(|_| "Invalid token claims".to_string())?;
+    let exp = claims.get("exp").and_then(|v| v.as_u64()).ok_or("Token is missing a valid expiry")?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    if exp <= now { return Err("License token has expired".to_string()); }
+    Ok(claims)
 }
 
 #[tauri::command]
 fn get_system_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_authorized(&state)?;
     let mut sys = state.sys.lock().unwrap();
     sys.refresh_cpu_usage();
     sys.refresh_memory();
@@ -83,6 +145,10 @@ fn get_system_stats(state: tauri::State<AppState>) -> Result<serde_json::Value, 
 
 #[tauri::command]
 fn open_external_url(app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = tauri::Url::parse(&url).map_err(|_| "Invalid URL".to_string())?;
+    if !matches!(parsed.scheme(), "https" | "http" | "mailto") {
+        return Err("Only http, https, and mailto URLs can be opened".to_string());
+    }
     app_handle
         .opener()
         .open_url(url, None::<&str>)
@@ -91,9 +157,7 @@ fn open_external_url(app_handle: tauri::AppHandle, url: String) -> Result<(), St
 
 #[tauri::command]
 fn move_and_click_mouse(x: i32, y: i32, state: tauri::State<AppState>) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_pro(&state)?;
 
     #[cfg(target_os = "linux")]
     if std::env::var("WAYLAND_DISPLAY").is_ok() {
@@ -110,9 +174,7 @@ fn move_and_click_mouse(x: i32, y: i32, state: tauri::State<AppState>) -> Result
 
 #[tauri::command]
 fn scroll_mouse(amount: i32, state: tauri::State<AppState>) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_pro(&state)?;
 
     #[cfg(target_os = "linux")]
     if std::env::var("WAYLAND_DISPLAY").is_ok() {
@@ -126,9 +188,7 @@ fn scroll_mouse(amount: i32, state: tauri::State<AppState>) -> Result<(), String
 
 #[tauri::command]
 fn type_string(text: String, state: tauri::State<AppState>) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_pro(&state)?;
 
     #[cfg(target_os = "linux")]
     if std::env::var("WAYLAND_DISPLAY").is_ok() {
@@ -185,9 +245,8 @@ fn sanitize_identifier(input: &str) -> Result<String, String> {
 
 #[tauri::command]
 fn run_python_script(script: String, state: tauri::State<AppState>) -> Result<String, String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_pro(&state)?;
+    if script.len() > 256 * 1024 { return Err("Script exceeds 256 KiB limit".to_string()); }
     let temp_dir = std::env::temp_dir();
     let unique_id = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -225,9 +284,8 @@ fn run_python_script(script: String, state: tauri::State<AppState>) -> Result<St
 
 #[tauri::command]
 fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Result<String, String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_pro(&state)?;
+    if command.len() > 8 * 1024 { return Err("Command exceeds 8 KiB limit".to_string()); }
     #[cfg(target_os = "windows")]
     let cmd = {
         use std::os::windows::process::CommandExt;
@@ -301,9 +359,7 @@ fn trim_memory_internal() {
 
 #[tauri::command]
 fn trim_memory(state: tauri::State<AppState>) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_authorized(&state)?;
     
     #[cfg(target_os = "windows")]
     {
@@ -315,8 +371,10 @@ fn trim_memory(state: tauri::State<AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn press_key(key: String, state: tauri::State<AppState>) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
+    require_authorized(&state)?;
+    if !*state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? &&
+        !matches!(key.to_ascii_lowercase().as_str(), "up" | "down") {
+        return Err("Pro entitlement required".to_string());
     }
 
     #[cfg(target_os = "linux")]
@@ -396,8 +454,14 @@ fn key_to_enigo(key: &str) -> Result<Key, String> {
 
 #[tauri::command]
 fn press_key_combo(keys: Vec<String>, state: tauri::State<AppState>) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
+    require_authorized(&state)?;
+    if keys.is_empty() || keys.len() > 4 { return Err("Key combination must contain 1 to 4 keys".to_string()); }
+    let normalized: Vec<String> = keys.iter().map(|key| key.to_ascii_lowercase()).collect();
+    let free_shortcut = normalized == ["win", "l"] || normalized == ["win", "d"] ||
+        normalized == ["alt", "f4"] || normalized == ["alt", "tab"] ||
+        normalized == ["ctrl", "w"] || normalized == ["ctrl", "tab"];
+    if !*state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? && !free_shortcut {
+        return Err("Pro entitlement required".to_string());
     }
     let mut enigo = Enigo::new();
 
@@ -416,9 +480,7 @@ fn press_key_combo(keys: Vec<String>, state: tauri::State<AppState>) -> Result<(
 
 #[tauri::command]
 fn capture_screen(state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_pro(&state)?;
     let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
     let screen = screens.first().ok_or("No screen found")?;
 
@@ -493,9 +555,7 @@ fn save_3d_asset(
     data_base64: String,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_pro(&state)?;
     let safe_id = sanitize_identifier(&id)?;
     let safe_asset_type = sanitize_identifier(&asset_type)?;
 
@@ -506,6 +566,7 @@ fn save_3d_asset(
     let assets_dir = local_data.join("assets");
     std::fs::create_dir_all(&assets_dir).map_err(|e| e.to_string())?;
 
+    if data_base64.len() > 64 * 1024 * 1024 { return Err("Asset exceeds 48 MiB limit".to_string()); }
     let bytes = STANDARD.decode(&data_base64).map_err(|e| e.to_string())?;
     let file_path = assets_dir.join(format!("{}.{}", safe_id, safe_asset_type));
     std::fs::write(&file_path, bytes).map_err(|e| e.to_string())?;
@@ -540,9 +601,7 @@ fn save_3d_asset(
 
 #[tauri::command]
 fn delete_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State<AppState>) -> Result<(), String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_pro(&state)?;
     let safe_id = sanitize_identifier(&id)?;
 
     let local_data = app_handle
@@ -577,9 +636,7 @@ fn delete_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State
 
 #[tauri::command]
 fn list_3d_assets(app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<serde_json::Value, String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_authorized(&state)?;
     let local_data = app_handle
         .path()
         .app_local_data_dir()
@@ -600,9 +657,7 @@ fn list_3d_assets(app_handle: tauri::AppHandle, state: tauri::State<AppState>) -
 
 #[tauri::command]
 fn read_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State<AppState>) -> Result<String, String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_authorized(&state)?;
     let safe_id = sanitize_identifier(&id)?;
 
     let local_data = app_handle
@@ -633,9 +688,7 @@ fn read_3d_asset(app_handle: tauri::AppHandle, id: String, state: tauri::State<A
 
 #[tauri::command]
 fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String, state: tauri::State<AppState>) -> Result<String, String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_authorized(&state)?;
     let safe_id = sanitize_identifier(&id)?;
 
     let local_data = app_handle
@@ -662,9 +715,7 @@ fn get_3d_asset_path(app_handle: tauri::AppHandle, id: String, state: tauri::Sta
 
 #[tauri::command]
 fn read_3d_asset_bytes(app_handle: tauri::AppHandle, id: String, state: tauri::State<AppState>) -> Result<Vec<u8>, String> {
-    if !*state.authorized.lock().unwrap() {
-        return Err("Unauthorized".to_string());
-    }
+    require_authorized(&state)?;
     let safe_id = sanitize_identifier(&id)?;
 
     let local_data = app_handle
@@ -730,7 +781,136 @@ fn get_device_hwid() -> Result<String, String> {
     }
 }
 
-/// Verifies the HMAC signature returned by the server and stores an offline token.
+fn decode_form_value(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => { decoded.push(b' '); index += 1; }
+            b'%' if index + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).ok()?;
+                decoded.push(u8::from_str_radix(hex, 16).ok()?);
+                index += 3;
+            }
+            b'%' => return None,
+            byte => { decoded.push(byte); index += 1; }
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+/// Starts a one-shot loopback callback used to receive the signed login token.
+#[tauri::command]
+fn start_auth_callback() -> Result<serde_json::Value, String> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("Could not start local sign-in callback: {e}"))?;
+    listener.set_nonblocking(true).map_err(|e| format!("Could not configure local sign-in callback: {e}"))?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let mut state_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut state_bytes);
+    let callback_state = state_bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let thread_state = callback_state.clone();
+    let token_slot = AUTH_CALLBACK_TOKEN.get_or_init(|| Mutex::new(None));
+    *token_slot.lock().map_err(|_| "Sign-in callback unavailable")? = None;
+
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(300);
+        while std::time::Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, address)) => {
+                    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+                    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
+                    let mut request = Vec::with_capacity(2048);
+                    let mut chunk = [0u8; 2048];
+                    let mut header_end = None;
+                    let mut content_length = 0usize;
+                    loop {
+                        match stream.read(&mut chunk) {
+                            Ok(0) => break,
+                            Ok(n) => request.extend_from_slice(&chunk[..n]),
+                            Err(_) => break,
+                        }
+                        if request.len() > 32_768 { break; }
+                        if header_end.is_none() {
+                            header_end = request.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4);
+                            if let Some(end) = header_end {
+                                let headers = String::from_utf8_lossy(&request[..end]);
+                                content_length = headers.lines().find_map(|line| {
+                                    let (name, value) = line.split_once(':')?;
+                                    name.eq_ignore_ascii_case("content-length").then(|| value.trim().parse::<usize>().ok()).flatten()
+                                }).unwrap_or(0);
+                                if !headers.starts_with("POST ") || !headers.contains("/callback/") || !headers.contains("application/x-www-form-urlencoded") {
+                                    break;
+                                }
+                            }
+                        }
+                        if let Some(end) = header_end {
+                            if request.len() >= end + content_length { break; }
+                        }
+                    }
+
+                    let valid_peer = address.ip().is_loopback();
+                    let mut accepted_token = None;
+                    if valid_peer && request.len() <= 32_768 {
+                        if let Some(end) = header_end {
+                            let headers = String::from_utf8_lossy(&request[..end]);
+                            if headers.starts_with("POST /callback/")
+                                && headers.lines().any(|line| line.to_ascii_lowercase().starts_with("content-type: application/x-www-form-urlencoded"))
+                                && request.len() == end + content_length
+                            {
+                                let path_state = headers.lines().next().and_then(|line| line.split_whitespace().nth(1)).and_then(|path| path.strip_prefix("/callback/"));
+                                let body = String::from_utf8_lossy(&request[end..]);
+                                let fields = body.split('&').filter_map(|pair| {
+                                    let (key, value) = pair.split_once('=')?;
+                                    Some((decode_form_value(key)?, decode_form_value(value)?))
+                                }).collect::<std::collections::HashMap<_, _>>();
+                                let submitted_state = fields.get("state").map(String::as_str).unwrap_or("");
+                                let token = fields.get("token").cloned().unwrap_or_default();
+                                if path_state == Some(thread_state.as_str())
+                                    && submitted_state == thread_state.as_str()
+                                    && token.len() <= 16_384
+                                    && token.split('.').count() == 3
+                                {
+                                    accepted_token = Some(token);
+                                }
+                            }
+                        }
+                    }
+
+                    let accepted = accepted_token.is_some();
+                    let (status, page) = if let Some(token) = accepted_token {
+                        if let Some(slot) = AUTH_CALLBACK_TOKEN.get() {
+                            if let Ok(mut stored) = slot.lock() { *stored = Some((thread_state.clone(), token)); }
+                        }
+                        ("200 OK", "<!doctype html><title>LUCY sign-in</title><p>Sign-in complete. You can close this tab and return to LUCY.</p>")
+                    } else {
+                        ("400 Bad Request", "<!doctype html><title>LUCY sign-in</title><p>Sign-in could not be completed. Return to LUCY and try again.</p>")
+                    };
+                    let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len());
+                    let _ = stream.write_all(response.as_bytes());
+                    if accepted { break; }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(100)),
+                Err(_) => break,
+            }
+        }
+    });
+
+    Ok(serde_json::json!({ "port": port, "state": callback_state }))
+}
+
+#[tauri::command]
+fn take_auth_callback(callback_state: String) -> Option<String> {
+    let slot = AUTH_CALLBACK_TOKEN.get()?;
+    let mut stored = slot.lock().ok()?;
+    if stored.as_ref().is_some_and(|(state, _)| state == &callback_state) {
+        stored.take().map(|(_, token)| token)
+    } else {
+        None
+    }
+}
+
+/// Verifies the Ed25519 signature returned by the server and stores an offline token.
 /// Called by frontend after receiving signature from the Next.js server.
 /// Returns { success: bool, tester_name: Option<String> }
 #[tauri::command]
@@ -740,41 +920,19 @@ fn verify_license(
     signature: String,
     state: tauri::State<AppState>,
 ) -> Result<serde_json::Value, String> {
-    if ED25519_PUBLIC_KEY == "0000000000000000000000000000000000000000000000000000000000000000" || cfg!(debug_assertions) {
-        *state.authorized.lock().unwrap() = true;
-        return Ok(serde_json::json!({ "success": true, "source": "dev_default" }));
-    }
-
-    let pub_key_bytes = decode_hex(ED25519_PUBLIC_KEY)?;
-    if pub_key_bytes.len() != 32 {
-        return Ok(serde_json::json!({ "success": false, "error": "Invalid public key length" }));
-    }
-    let mut pub_key_arr = [0u8; 32];
-    pub_key_arr.copy_from_slice(&pub_key_bytes);
-    let public_key = VerifyingKey::from_bytes(&pub_key_arr).map_err(|e| format!("Invalid public key: {}", e))?;
-
-    let sig_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&signature)
-        .or_else(|_| STANDARD.decode(&signature))
-        .map_err(|_| "Invalid signature encoding".to_string())?;
-
-    if sig_bytes.len() != 64 {
-        return Ok(serde_json::json!({ "success": false, "error": "Invalid signature length" }));
-    }
-    let mut sig_arr = [0u8; 64];
-    sig_arr.copy_from_slice(&sig_bytes);
-    let sig = Signature::from_bytes(&sig_arr);
-
-    if public_key.verify(token_payload.as_bytes(), &sig).is_err() {
-        // Fallback: If valid token_payload is provided, authorize session
-        if !token_payload.is_empty() {
-            *state.authorized.lock().unwrap() = true;
-            return Ok(serde_json::json!({ "success": true, "source": "fallback" }));
+    let claims = match verify_token(&token_payload, &signature) {
+        Ok(claims) => claims,
+        Err(err) => {
+            *state.authorized.lock().unwrap() = false;
+            *state.pro_authorized.lock().unwrap() = false;
+            return Err(err);
         }
-        return Ok(serde_json::json!({ "success": false, "error": "Invalid license signature" }));
-    }
+    };
 
     // Signature is valid — set authorized flag
     *state.authorized.lock().unwrap() = true;
+    *state.pro_authorized.lock().unwrap() = token_tier_is_pro(&token_payload);
+    *state.authorization_expires_at.lock().unwrap() = claims["exp"].as_u64().unwrap_or(0);
 
     // Store offline token: JSON file in app data dir
     if let Ok(data_dir) = app_handle.path().app_local_data_dir() {
@@ -802,14 +960,14 @@ fn check_authorization(
     app_handle: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> serde_json::Value {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    if *state.authorization_expires_at.lock().unwrap() <= now {
+        *state.authorized.lock().unwrap() = false;
+        *state.pro_authorized.lock().unwrap() = false;
+    }
     // If already authorized in memory, return immediately
     if *state.authorized.lock().unwrap() {
         return serde_json::json!({ "authorized": true, "source": "memory" });
-    }
-
-    if cfg!(debug_assertions) || ED25519_PUBLIC_KEY == "0000000000000000000000000000000000000000000000000000000000000000" {
-        *state.authorized.lock().unwrap() = true;
-        return serde_json::json!({ "authorized": true, "source": "dev_default" });
     }
 
     // Try to restore from offline token file
@@ -819,22 +977,33 @@ fn check_authorization(
     };
     let token_path = data_dir.join(".license_token");
 
-    if !token_path.exists() {
-        *state.authorized.lock().unwrap() = true; // Set authorized for active session
-        return serde_json::json!({ "authorized": true, "source": "default_session" });
-    }
+    if !token_path.exists() { return serde_json::json!({ "authorized": false }); }
 
     let content = match std::fs::read_to_string(&token_path) {
         Ok(c) => c,
         Err(_) => return serde_json::json!({ "authorized": false }),
     };
 
-    if serde_json::from_str::<serde_json::Value>(&content).is_err() {
-        return serde_json::json!({ "authorized": false });
-    }
-
+    let token: serde_json::Value = match serde_json::from_str(&content) { Ok(v) => v, Err(_) => return serde_json::json!({ "authorized": false }) };
+    let payload = token.get("payload").and_then(|v| v.as_str()).unwrap_or("");
+    let signature = token.get("signature").and_then(|v| v.as_str()).unwrap_or("");
+    if verify_token(payload, signature).is_err() { return serde_json::json!({ "authorized": false }); }
     *state.authorized.lock().unwrap() = true;
+    *state.pro_authorized.lock().unwrap() = token_tier_is_pro(payload);
+    let token_claims = verify_token(payload, signature).unwrap_or(serde_json::Value::Null);
+    *state.authorization_expires_at.lock().unwrap() = token_claims["exp"].as_u64().unwrap_or(0);
     serde_json::json!({ "authorized": true, "source": "offline_token" })
+}
+
+#[tauri::command]
+fn logout_license(app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
+    *state.authorized.lock().map_err(|_| "Authorization state unavailable")? = false;
+    *state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? = false;
+    *state.authorization_expires_at.lock().map_err(|_| "Authorization state unavailable")? = 0;
+    if let Ok(dir) = app_handle.path().app_local_data_dir() {
+        let _ = std::fs::remove_file(dir.join(".license_token"));
+    }
+    Ok(())
 }
 
 /// Retrieves the stored access code so the frontend can attempt an automatic background renewal
@@ -924,7 +1093,8 @@ fn is_autostart() -> bool {
 }
 
 #[tauri::command]
-fn setup_wayland_automation() -> Result<String, String> {
+fn setup_wayland_automation(state: tauri::State<AppState>) -> Result<String, String> {
+    require_pro(&state)?;
     #[cfg(target_os = "linux")]
     {
         let _ = std::process::Command::new("pkexec")
@@ -1017,25 +1187,18 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             do_wake_up_main(app);
             let _ = app.emit("lucy-exit-pet-mode", ());
-            
-            // Manually forward any deep links to the primary instance (using contains to handle Windows quotes)
-            for arg in args {
-                if arg.contains("lucymate://") || arg.contains("lucy://") {
-                    let _ = app.emit("lucy-deep-link-manual", arg);
-                }
-            }
         }))
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
             authorized: Mutex::new(false),
+            pro_authorized: Mutex::new(false),
+            authorization_expires_at: Mutex::new(0),
             is_sleeping: Mutex::new(false),
         })
         .invoke_handler(tauri::generate_handler![
@@ -1057,9 +1220,12 @@ pub fn run() {
             get_3d_asset_path,
             // License commands
             get_device_hwid,
+            start_auth_callback,
+            take_auth_callback,
             verify_license,
             check_authorization,
             get_stored_license,
+            logout_license,
             trim_memory,
             enter_sleep_mode,
             wake_up_main,

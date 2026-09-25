@@ -94,6 +94,11 @@ description = "Allows getting absolute paths of 3D assets"
 commands.allow = ["get_3d_asset_path"]
 
 [[permission]]
+identifier = "allow-read-3d-asset-bytes"
+description = "Allows reading stored 3D asset bytes"
+commands.allow = ["read_3d_asset_bytes"]
+
+[[permission]]
 identifier = "allow-get-device-hwid"
 description = "Allows retrieving the device hardware ID for license verification"
 commands.allow = ["get_device_hwid"]
@@ -104,9 +109,24 @@ description = "Allows verifying the license signature from the server"
 commands.allow = ["verify_license"]
 
 [[permission]]
+identifier = "allow-start-auth-callback"
+description = "Allows starting a one-shot loopback sign-in callback"
+commands.allow = ["start_auth_callback"]
+
+[[permission]]
+identifier = "allow-take-auth-callback"
+description = "Allows retrieving a token received by the loopback sign-in callback"
+commands.allow = ["take_auth_callback"]
+
+[[permission]]
 identifier = "allow-check-authorization"
 description = "Allows checking and restoring authorization state"
 commands.allow = ["check_authorization"]
+
+[[permission]]
+identifier = "allow-logout-license"
+description = "Allows clearing the current license authorization"
+commands.allow = ["logout_license"]
 
 [[permission]]
 identifier = "allow-trim-memory"

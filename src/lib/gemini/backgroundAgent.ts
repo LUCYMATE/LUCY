@@ -83,8 +83,7 @@ class BackgroundAgentService {
     }
 
     const apiKey = providedApiKey || 
-      localStorage.getItem('lucy_main_api_key') || 
-      (import.meta.env.VITE_GEMINI_API_KEY as string) || 
+      localStorage.getItem('lucy_main_api_key') ||
       '';
 
     if (!apiKey) {

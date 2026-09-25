@@ -22,7 +22,14 @@ export class VectorMemoryManager {
     try {
       const data = localStorage.getItem(this.STORAGE_KEY);
       if (data) {
-        this.memories = JSON.parse(data);
+        const parsed: unknown = JSON.parse(data);
+        this.memories = Array.isArray(parsed) ? parsed.filter((memory): memory is MemoryFact =>
+          !!memory && typeof memory.id === 'string' && memory.id.length <= 200 &&
+          typeof memory.text === 'string' && memory.text.length <= 10_000 &&
+          Number.isFinite(memory.createdAt) && Array.isArray(memory.embedding) &&
+          memory.embedding.length > 0 && memory.embedding.length <= 2048 &&
+          memory.embedding.every((value: unknown) => typeof value === 'number' && Number.isFinite(value))
+        ).slice(-500) : [];
       }
     } catch (e) {
       console.error('Failed to load vector memory:', e);
@@ -89,8 +96,8 @@ export class VectorMemoryManager {
   }
 
   public async saveFact(text: string, apiKey: string): Promise<{ success: boolean, error?: string }> {
-    if (!text) {
-      return { success: false, error: 'Fact text was empty' };
+    if (!text.trim() || text.length > 10_000) {
+      return { success: false, error: 'Fact text must contain 1 to 10,000 characters' };
     }
 
     const embeddingResult = await this.generateEmbedding(text, apiKey);
@@ -127,6 +134,7 @@ export class VectorMemoryManager {
       embedding,
       createdAt: Date.now()
     };
+    if (this.memories.length >= 500) this.memories.shift();
     this.memories.push(memory);
     this.saveToStorage();
     logger.add('success', 'Memory System', `Saved new fact: "${text}"`);

@@ -29,7 +29,26 @@ export class AudioRecorder {
         throw new Error('navigator.mediaDevices API is not available. Are you in a secure context?');
       }
       
-      const timeoutPromise = (ms: number, msg: string) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(msg)), ms));
+      const getUserMediaWithTimeout = (constraints: MediaStreamConstraints, ms: number) =>
+        new Promise<MediaStream>((resolve, reject) => {
+          let settled = false;
+          const timer = setTimeout(() => {
+            settled = true;
+            reject(new Error(`getUserMedia timed out after ${ms} ms`));
+          }, ms);
+          navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+            if (settled) {
+              stream.getTracks().forEach(track => track.stop());
+              return;
+            }
+            clearTimeout(timer);
+            resolve(stream);
+          }, error => {
+            if (settled) return;
+            clearTimeout(timer);
+            reject(error);
+          });
+        });
 
       const savedDeviceId = localStorage.getItem('lucy_mic_id');
       const audioConstraints: MediaTrackConstraints = {
@@ -41,17 +60,11 @@ export class AudioRecorder {
       };
 
       try {
-        this.stream = await Promise.race([
-          navigator.mediaDevices.getUserMedia({ audio: audioConstraints }),
-          timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
-        ]);
+        this.stream = await getUserMediaWithTimeout({ audio: audioConstraints }, 5000);
       } catch (err) {
         if (audioConstraints.deviceId) {
           logger.add('info', 'Mic Initialization', 'Failed with exact deviceId. Falling back to default microphone.');
-          this.stream = await Promise.race([
-            navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
-            timeoutPromise(5000, 'getUserMedia timed out after 5 seconds')
-          ]);
+          this.stream = await getUserMediaWithTimeout({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }, 5000);
         } else {
           throw err;
         }
@@ -59,10 +72,7 @@ export class AudioRecorder {
       
       this.audioContext = new AudioContext({ sampleRate: 16000, latencyHint: 'interactive' });
       
-      await Promise.race([
-        this.audioContext.audioWorklet.addModule('/audio-worklet.js'),
-        timeoutPromise(5000, 'audioWorklet.addModule timed out after 5 seconds')
-      ]);
+        await this.audioContext.audioWorklet.addModule('/audio-worklet.js');
       
       this.source = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();
@@ -109,6 +119,7 @@ export class AudioRecorder {
         await this.audioContext.resume();
       }
     } catch (error) {
+      this.stop();
       logger.add('error', 'Mic Error', String(error));
       console.error('Error starting audio recorder:', error);
       throw error;

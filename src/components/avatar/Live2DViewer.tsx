@@ -70,6 +70,7 @@ export function Live2DViewer() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const modelRef = useRef<InstanceType<typeof Live2DModel> | null>(null);
+  const appLifecycleRef = useRef(0);
   const hitboxRef = useRef<HTMLDivElement>(null);
   const baseScaleRef = useRef(1);
 
@@ -315,17 +316,23 @@ export function Live2DViewer() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    let app: PIXI.Application | null = null;
+    const lifecycle = ++appLifecycleRef.current;
+    let app = appRef.current;
     try {
-      app = new PIXI.Application({
-        view: canvas,
-        resizeTo: window,
-        backgroundAlpha: 0,
-        antialias: false, // Disables 4x MSAA renderbuffers, saving ~100MB+ GPU RAM
-        autoDensity: true,
-        powerPreference: 'low-power',
-        resolution: Math.min(window.devicePixelRatio || 1, 1.25), // Caps canvas framebuffer on high-DPI screens
-      });
+      // React StrictMode replays Effects in development. Reuse the same renderer
+      // during that replay instead of destroying and re-binding its WebGL canvas.
+      if (!app) {
+        app = new PIXI.Application({
+          view: canvas,
+          resizeTo: window,
+          backgroundAlpha: 0,
+          antialias: false, // Disables 4x MSAA renderbuffers, saving ~100MB+ GPU RAM
+          autoDensity: true,
+          powerPreference: 'low-power',
+          resolution: Math.min(window.devicePixelRatio || 1, 1.25), // Caps canvas framebuffer on high-DPI screens
+        });
+        appRef.current = app;
+      }
       // Set initial maxFPS cap to prevent runaway CPU loops
       app.ticker.maxFPS = 30;
       try {
@@ -344,11 +351,11 @@ export function Live2DViewer() {
         });
       } catch (_) {}
 
-      appRef.current = app;
       setIsAppReady(true);
     } catch (e) {
       console.error('[Live2DViewer] Failed to initialize PIXI Application:', e);
-      setLoadError('Failed to initialize WebGL');
+      setLoadError(`Failed to initialize WebGL: ${e instanceof Error ? e.message : String(e)}`);
+      setIsLoading(false);
     }
 
     // Background Inactivity Throttling: Pause ticker when minimized or tab/window hidden
@@ -364,15 +371,21 @@ export function Live2DViewer() {
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      setIsAppReady(false);
-      if (appRef.current) {
+      // Defer destruction one microtask. StrictMode immediately re-runs setup;
+      // the next setup increments the lifecycle and cancels this simulated teardown.
+      queueMicrotask(() => {
+        if (appLifecycleRef.current !== lifecycle || !app || appRef.current !== app) return;
         try {
-          appRef.current.stop();
+          app.stop();
           PIXI.utils.clearTextureCache();
-          appRef.current.destroy(false, { children: true, texture: true, baseTexture: true });
-        } catch (_) {}
-        appRef.current = null;
-      }
+          app.destroy(false, { children: true, texture: true, baseTexture: true });
+        } catch (e) {
+          console.warn('[Live2DViewer] Renderer cleanup failed:', e);
+        } finally {
+          appRef.current = null;
+          modelRef.current = null;
+        }
+      });
     };
   }, []);
 

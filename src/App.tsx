@@ -4,11 +4,9 @@ import { SecondaryWindow } from './components/layout/SecondaryWindow';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { getCurrentWindow, cursorPosition } from '@tauri-apps/api/window';
 import { useAvatarState } from './lib/store/avatarState';
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { userAuth } from './lib/auth/userAuth';
 import { emitCrossWindow, listenCrossWindow } from './lib/events/crossWindowEventBus';
-
-const LICENSE_SERVER_URL = 'https://lucymate.vercel.app';
+import { isTauriApp } from './lib/system/tauriBridge';
 
 const safe = async (p: Promise<any>) => {
   try { await p; } catch (e) { console.warn('Tauri API error:', e); }
@@ -18,87 +16,14 @@ function MainApp() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [licenseStatus, setLicenseStatus] = useState<'checking' | 'locked' | 'authorized'>('checking');
   const [hasApiKey, setHasApiKey] = useState(() =>
-    !!localStorage.getItem('lucy_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY
+    !!localStorage.getItem('lucy_main_api_key')
   );
 
   const windowReadyRef = useRef(false);
 
-  // Deep Link listener
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    const setupDeepLink = async () => {
-      try {
-        const handleLink = async (url: string) => {
-          // Handle multiple deep link formats
-          let token: string | null = null;
-          let state: string | null = null;
-          try {
-            const urlObj = new URL(url);
-            token = urlObj.searchParams.get('token') || urlObj.searchParams.get('t');
-            state = urlObj.searchParams.get('state');
-          } catch (_) {}
-
-          if (!token) {
-            const matchToken = url.match(/[?#&/]?token=([^&\s]+)/);
-            if (matchToken) token = decodeURIComponent(matchToken[1]);
-            const matchState = url.match(/[?#&/]?state=([^&\s]+)/);
-            if (matchState) state = decodeURIComponent(matchState[1]);
-          }
-
-          if (token) {
-            const expectedState = localStorage.getItem('lucy_auth_state');
-            if (expectedState && state && state !== expectedState) {
-              console.warn('[DeepLink] State mismatch. Expected:', expectedState, 'Got:', state);
-              window.dispatchEvent(new CustomEvent('lucy-auth-error', { detail: 'Security mismatch. Please try signing in again.' }));
-              return;
-            }
-            localStorage.removeItem('lucy_auth_state');
-            console.log('[DeepLink] Received token, parsing...');
-            const success = await userAuth.parseAndSetToken(token);
-            if (success) {
-              const session = userAuth.getSession();
-              if (session && session.status !== 'revoked') {
-                setLicenseStatus('authorized');
-                try { await getCurrentWindow().setAlwaysOnTop(true); } catch (_) {}
-              } else {
-                setLicenseStatus('locked');
-              }
-            } else {
-              window.dispatchEvent(new CustomEvent('lucy-auth-error', { detail: 'Sign-in verification failed. Please try again.' }));
-            }
-          }
-        };
-
-        // Listen for the official deep link plugin (works on first instance)
-        unlisten = await onOpenUrl(async (urls) => {
-          for (const url of urls) await handleLink(url);
-        });
-
-        // Listen for the manual event emitted by the single-instance plugin (works when a second instance was spawned)
-        const { listen } = await import('@tauri-apps/api/event');
-        const unlistenEvent = await listen<string>('lucy-deep-link-manual', (e) => {
-          handleLink(e.payload);
-        });
-        
-        // Ensure both unlisteners are called
-        const originalUnlisten = unlisten;
-        unlisten = () => {
-            if (originalUnlisten) originalUnlisten();
-            unlistenEvent();
-        };
-
-      } catch (e) {
-        console.warn('Deep link setup failed', e);
-      }
-    };
-    setupDeepLink();
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, []);
-
   // Early boot check to show the window if launched manually
   useEffect(() => {
+    if (!isTauriApp()) return;
     const bootCheck = async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
@@ -118,6 +43,11 @@ function MainApp() {
   }, []);
 
   const setupMainWindow = useCallback(async (isAutostart = false) => {
+    if (!isTauriApp()) {
+      windowReadyRef.current = true;
+      window.dispatchEvent(new CustomEvent('lucy-force-init'));
+      return;
+    }
     try {
       const win = getCurrentWindow();
       
@@ -141,26 +71,30 @@ function MainApp() {
     if (licenseStatus === 'authorized') {
       const initWindow = async () => {
         let isAutostart = false;
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          isAutostart = await invoke<boolean>('is_autostart');
-        } catch(e) {}
-        
-        try {
-          const autostartPlugin = await import('@tauri-apps/plugin-autostart');
-          const autostartEnabled = await autostartPlugin.isEnabled();
-          if (!autostartEnabled) {
-            await autostartPlugin.enable();
+        if (isTauriApp()) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            isAutostart = await invoke<boolean>('is_autostart');
+          } catch(e) {}
+
+          try {
+            const autostartPlugin = await import('@tauri-apps/plugin-autostart');
+            const autostartEnabled = await autostartPlugin.isEnabled();
+            if (!autostartEnabled) {
+              await autostartPlugin.enable();
+            }
+          } catch (e) {
+            console.warn('autostart check failed', e);
           }
-        } catch (e) {
-          console.warn('autostart check failed', e);
-        }
 
-        if (isAutostart) {
-          useAvatarState.getState().setIsSleepMode(true);
-        }
+          if (isAutostart) {
+            useAvatarState.getState().setIsSleepMode(true);
+          }
 
-        await setupMainWindow(isAutostart);
+          await setupMainWindow(isAutostart);
+        } else {
+          await setupMainWindow(false);
+        }
 
         setIsInitializing(false);
 
@@ -176,20 +110,26 @@ function MainApp() {
 
   // ─── Session Verification (Concurrency Enforcement) ────────────────────────
   useEffect(() => {
-    // 1. Listen for global session changes (e.g. from refreshStatus or deep links)
+    // Listen for global session changes from sign-in or a server refresh.
     const unsub = userAuth.subscribe((session) => {
       if (!session || session.status === 'revoked') {
         console.warn('[App] Session revoked or cleared. Locking app.');
         setLicenseStatus('locked');
         // Restore window so they can see AuthGate
-        const win = getCurrentWindow();
-        win.unmaximize().catch(() => {});
-        win.show().catch(() => {});
-        win.setSkipTaskbar(false).catch(() => {});
-        import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
-          win.setSize(new LogicalSize(1000, 700)).catch(() => {});
-          win.center().catch(() => {});
-        }).catch(() => {});
+        if (isTauriApp()) {
+          try {
+            const win = getCurrentWindow();
+            win.unmaximize().catch(() => {});
+            win.show().catch(() => {});
+            win.setSkipTaskbar(false).catch(() => {});
+            import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
+              win.setSize(new LogicalSize(1000, 700)).catch(() => {});
+              win.center().catch(() => {});
+            }).catch(() => {});
+          } catch (e) {
+            console.warn('[App] Failed to restore window on lock:', e);
+          }
+        }
       }
     });
 
@@ -212,7 +152,7 @@ function MainApp() {
   // ─── API key listener ─────────────────────────────────────────────────────
   useEffect(() => {
     const checkKey = () =>
-      setHasApiKey(!!localStorage.getItem('lucy_main_api_key') || !!import.meta.env.VITE_GEMINI_API_KEY);
+      setHasApiKey(!!localStorage.getItem('lucy_main_api_key'));
     window.addEventListener('storage', checkKey);
     const unsubKey = listenCrossWindow('lucy-api-key-saved', checkKey);
     return () => {
@@ -224,6 +164,7 @@ function MainApp() {
   // ─── Cursor passthrough ──────────────────────────────────────────
 
   useEffect(() => {
+    if (!isTauriApp()) return;
     let active = true;
     let lastIgnore = true;
     const win = getCurrentWindow();

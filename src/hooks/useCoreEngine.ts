@@ -315,7 +315,7 @@ export function useCoreEngine() {
     logger.add('info', 'System Boot', `Initializing ${BOT_NAME}OS and Gemini connection...`);
     setInitialized(true);
 
-    const apiKey = localStorage.getItem('lucy_main_api_key') || import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+    const apiKey = localStorage.getItem('lucy_main_api_key') || undefined;
     const altApiKey = localStorage.getItem('lucy_alt_api_key') || undefined;
     
     if (!apiKey) {
