@@ -2,12 +2,11 @@ import { LucyOS } from './components/layout/LucyOS';
 import { AuthGate } from './components/AuthGate';
 import { SecondaryWindow } from './components/layout/SecondaryWindow';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { cursorPosition } from '@tauri-apps/api/window';
+import { getCurrentWindow, cursorPosition } from '@tauri-apps/api/window';
 import { useAvatarState } from './lib/store/avatarState';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { userAuth } from './lib/auth/userAuth';
 import { emitCrossWindow, listenCrossWindow } from './lib/events/crossWindowEventBus';
-import { getSafeCurrentWindow, isTauriReady } from './lib/system/tauriBridge';
 
 const LICENSE_SERVER_URL = 'https://lucymate.vercel.app';
 
@@ -60,7 +59,7 @@ function MainApp() {
               const session = userAuth.getSession();
               if (session && session.status !== 'revoked') {
                 setLicenseStatus('authorized');
-                try { await getSafeCurrentWindow()?.setAlwaysOnTop(true); } catch (_) {}
+                try { await getCurrentWindow().setAlwaysOnTop(true); } catch (_) {}
               } else {
                 setLicenseStatus('locked');
               }
@@ -101,12 +100,10 @@ function MainApp() {
   // Early boot check to show the window if launched manually
   useEffect(() => {
     const bootCheck = async () => {
-      if (!isTauriReady()) return;
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const isAutostart = await invoke<boolean>('is_autostart');
-        const win = getSafeCurrentWindow();
-        if (!win) return;
+        const win = getCurrentWindow();
         await safe(win.setIgnoreCursorEvents(true));
         
         if (!isAutostart) {
@@ -121,10 +118,8 @@ function MainApp() {
   }, []);
 
   const setupMainWindow = useCallback(async (isAutostart = false) => {
-    if (!isTauriReady()) return;
     try {
-      const win = getSafeCurrentWindow();
-      if (!win) return;
+      const win = getCurrentWindow();
       
       await safe(win.setAlwaysOnTop(true)); // Force restore alwaysOnTop
       await safe(win.maximize());
@@ -187,16 +182,14 @@ function MainApp() {
         console.warn('[App] Session revoked or cleared. Locking app.');
         setLicenseStatus('locked');
         // Restore window so they can see AuthGate
-        const win = getSafeCurrentWindow();
-        if (win) {
-          win.unmaximize().catch(() => {});
-          win.show().catch(() => {});
-          win.setSkipTaskbar(false).catch(() => {});
-          import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
-            win.setSize(new LogicalSize(1000, 700)).catch(() => {});
-            win.center().catch(() => {});
-          }).catch(() => {});
-        }
+        const win = getCurrentWindow();
+        win.unmaximize().catch(() => {});
+        win.show().catch(() => {});
+        win.setSkipTaskbar(false).catch(() => {});
+        import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
+          win.setSize(new LogicalSize(1000, 700)).catch(() => {});
+          win.center().catch(() => {});
+        }).catch(() => {});
       }
     });
 
@@ -231,11 +224,9 @@ function MainApp() {
   // ─── Cursor passthrough ──────────────────────────────────────────
 
   useEffect(() => {
-    if (!isTauriReady()) return;
     let active = true;
     let lastIgnore = true;
-    const win = getSafeCurrentWindow();
-    if (!win) return;
+    const win = getCurrentWindow();
     let cachedWinPos = { x: 0, y: 0 };
     let cachedFactor = 1;
     let cacheAge = 999; // Set high so it instantly grabs the true window position on first run
@@ -311,12 +302,10 @@ function MainApp() {
       lastIgnore = false; // Force re-evaluation
 
       // Ensure the window gets restored and maximized properly
-      const win = getSafeCurrentWindow();
-      if (win) {
-        win.setAlwaysOnTop(true).catch(() => {});
-        win.maximize().catch(() => {});
-        win.show().catch(() => {});
-      }
+      const win = getCurrentWindow();
+      win.setAlwaysOnTop(true).catch(() => {});
+      win.maximize().catch(() => {});
+      win.show().catch(() => {});
 
       // Force DOM repaint to fix Windows WebView2 blank screen bug after memory trim on wake
       document.body.style.backgroundColor = 'rgba(0,0,0,0.01)';

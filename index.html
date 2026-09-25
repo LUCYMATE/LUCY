@@ -14,14 +14,6 @@
         overflow: hidden;
       }
     </style>
-    <script>
-      window.addEventListener('error', function (e) {
-        console.error('[Pre-Boot Window Error]', e.error || e.message, e);
-      });
-      window.addEventListener('unhandledrejection', function (e) {
-        console.error('[Pre-Boot Unhandled Rejection]', e.reason);
-      });
-    </script>
   </head>
   <body>
     <script>
