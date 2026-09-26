@@ -1311,54 +1311,24 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
 }
 
 fn do_wake_up_main(app_handle: &tauri::AppHandle) {
-    let mut was_sleeping = false;
     if let Some(state) = app_handle.try_state::<AppState>() {
         let mut is_sleeping = state.is_sleeping.lock().unwrap();
-        if *is_sleeping {
-            was_sleeping = true;
-            *is_sleeping = false;
-        }
+        *is_sleeping = false;
     }
     
     if let Some(win) = app_handle.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();
-        
-        if was_sleeping {
-            // Delay interacting with the WebView2 API to ensure it has fully resumed 
-            // from OS-level suspension (caused by trim_memory), otherwise it throws 0x8007139F.
-            // We give it 300ms to safely resume before hitting it with eval.
-            let win_clone = win.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(300));
-                let w = win_clone.clone();
-                let _ = win_clone.run_on_main_thread(move || {
-                    let _ = w.set_ignore_cursor_events(true);
-                    let _ = w.eval("window.dispatchEvent(new CustomEvent('lucy-wake-up'));");
-                });
-            });
-        }
+        let _ = win.set_always_on_top(true);
     }
+    
+    // Broadcast clean native Tauri event to all windows
+    let _ = app_handle.emit("lucy-wake-up", ());
 }
 
 #[tauri::command]
 fn enter_sleep_mode(_app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
     *state.is_sleeping.lock().unwrap() = true;
-    // We intentionally do NOT hide the window here anymore to prevent the Windows WebView2 
-    // white-screen flash when waking up. The frontend will hide all UI elements and become 
-    // fully transparent, and the cursor events are already ignored.
-    // if let Some(win) = app_handle.get_webview_window("main") {
-    //     let _ = win.hide();
-    // }
-    
-    #[cfg(target_os = "windows")]
-    {
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(1500));
-            trim_memory_internal();
-        });
-    }
-
     Ok(())
 }
 
@@ -1370,7 +1340,7 @@ fn wake_up_main(app_handle: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn is_autostart() -> bool {
-    std::env::args().any(|arg| arg == "--autostart")
+    std::env::args().any(|arg| arg.contains("autostart") || arg == "-a")
 }
 
 #[tauri::command]
@@ -1466,6 +1436,8 @@ fn get_desktop_rectangles() -> Vec<DesktopRect> {
 pub fn run() {
     // Single instance is handled by tauri-plugin-single-instance
 
+    let is_autostart_boot = std::env::args().any(|arg| arg.contains("autostart") || arg == "-a");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -1480,7 +1452,7 @@ pub fn run() {
             authorized: Mutex::new(false),
             pro_authorized: Mutex::new(false),
             authorization_expires_at: Mutex::new(0),
-            is_sleeping: Mutex::new(false),
+            is_sleeping: Mutex::new(is_autostart_boot),
         })
         // Keep phone networking out of application startup. The listener is bound only
         // after the user opens Phone Link and requests pairing data.
@@ -1600,12 +1572,7 @@ pub fn run() {
                         do_wake_up_main(app.app_handle());
                     }
                     "hide" => {
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-sleep'));");
-                            // We intentionally do not call win.hide() here. The frontend will 
-                            // become transparent and ignore mouse events. Hiding the window 
-                            // causes WebView2 to suspend, which kills the SpeechRecognition wake word.
-                        }
+                        let _ = app.emit("lucy-sleep", ());
                     }
                     "refresh" => {
                         if let Some(win) = app.get_webview_window("main") {
@@ -1614,10 +1581,10 @@ pub fn run() {
                     }
                     "options" => {
                         if let Some(win) = app.get_webview_window("main") {
-                            win.show().unwrap();
-                            win.set_focus().unwrap();
-                            let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-open-settings'));");
+                            let _ = win.show();
+                            let _ = win.set_focus();
                         }
+                        let _ = app.emit("lucy-open-settings", ());
                     }
                     _ => {}
                 })
@@ -1634,9 +1601,7 @@ pub fn run() {
                         if is_sleeping {
                             do_wake_up_main(app);
                         } else {
-                            if let Some(win) = app.get_webview_window("main") {
-                                let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-sleep'));");
-                            }
+                            let _ = app.emit("lucy-sleep", ());
                         }
                     }
                     _ => {}
@@ -1645,7 +1610,7 @@ pub fn run() {
 
             // Only show the window on manual launch — autostart keeps it hidden
             // so it enters sleep/pet mode without a visible transparent overlay.
-            let is_autostart = std::env::args().any(|arg| arg == "--autostart");
+            let is_autostart = std::env::args().any(|arg| arg.contains("autostart") || arg == "-a");
             if !is_autostart {
                 if let Some(win) = app.get_webview_window("main") {
                     win.show().ok();

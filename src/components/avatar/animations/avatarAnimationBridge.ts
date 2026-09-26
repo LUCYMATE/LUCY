@@ -1,4 +1,5 @@
 import { BasePose, Emotion } from './core';
+import { getActiveAudioPlayer } from '../../../lib/audio/audio-player';
 
 /**
  * AvatarAnimationBridge
@@ -137,8 +138,9 @@ export class AvatarAnimationBridge {
 
     // ── Speech Cadence & Expressive Hand Gesturing ───────────────────────────
     if (isSpeaking) {
-      // Mouth opening with dual harmonic audio simulation
-      tMouthOpen = Math.min(1.0, Math.max(0, Math.sin(t * 15.0) * 1.2 + Math.sin(t * 8.5) * 0.5));
+      // Audio-reactive mouth opening driven by real-time speech volume from Web Audio FFT
+      const audioVol = getActiveAudioPlayer()?.getSpeechVolume() ?? 0;
+      tMouthOpen = audioVol > 0.02 ? audioVol : Math.min(0.6, Math.max(0, Math.sin(t * 14.0) * 0.7));
 
       // Conversational Phrasing (~2.8 second phrase cycles)
       const phraseProgress = (t % 2.8) / 2.8;

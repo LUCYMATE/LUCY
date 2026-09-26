@@ -1,3 +1,8 @@
+let activeAudioPlayer: AudioPlayer | null = null;
+export function getActiveAudioPlayer(): AudioPlayer | null {
+  return activeAudioPlayer;
+}
+
 // Audio output from Gemini Live is 24kHz, 16-bit PCM, little-endian
 // Per docs: "Audio output always uses a sample rate of 24kHz"
 export class AudioPlayer {
@@ -8,11 +13,14 @@ export class AudioPlayer {
   private muted = false;
   private activeSources: AudioBufferSourceNode[] = [];
   private hasAttachedGesture = false;
+  private freqData: Uint8Array | null = null;
 
   start() {
-    this.audioContext = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' }); // 24kHz — Gemini output rate with low-latency WASAPI buffer
+    activeAudioPlayer = this;
+    this.audioContext = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' });
     this.analyser = this.audioContext.createAnalyser();
     this.analyser.fftSize = 256;
+    this.analyser.smoothingTimeConstant = 0.4;
     
     this.gainNode = this.audioContext.createGain();
     this.muted = localStorage.getItem('lucy_muted') === 'true';
@@ -24,16 +32,12 @@ export class AudioPlayer {
     
     this.nextPlayTime = this.audioContext.currentTime;
 
-    // VERY IMPORTANT: Browsers block AudioContext playback until the user interacts with the page.
-    // If the Tauri backend wasn't fully restarted, the autoplay flag might not apply.
-    // We attach a one-time global listener to resume the context on the very first click/touch.
     if (!this.hasAttachedGesture && typeof window !== 'undefined') {
       this.hasAttachedGesture = true;
       const resumeAudio = () => {
         if (this.audioContext && this.audioContext.state === 'suspended') {
           this.audioContext.resume().catch(() => {});
         }
-        // Once resumed, we don't need these listeners anymore
         window.removeEventListener('pointerdown', resumeAudio);
         window.removeEventListener('keydown', resumeAudio);
       };
@@ -44,6 +48,27 @@ export class AudioPlayer {
 
   getAnalyser(): AnalyserNode | null {
     return this.analyser;
+  }
+
+  /**
+   * Returns normalized real-time vocal volume (0.0 to 1.0) derived from Web Audio FFT
+   */
+  getSpeechVolume(): number {
+    if (!this.analyser || !this.isPlaying() || this.muted) return 0;
+    if (!this.freqData || this.freqData.length !== this.analyser.frequencyBinCount) {
+      this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
+    }
+    this.analyser.getByteFrequencyData(this.freqData);
+
+    // Vocal formant frequency band (approx 200Hz to 3200Hz)
+    let sum = 0;
+    const startBin = 2;
+    const endBin = Math.min(32, this.freqData.length);
+    for (let i = startBin; i < endBin; i++) {
+      sum += this.freqData[i];
+    }
+    const avg = sum / (endBin - startBin);
+    return Math.min(1.0, Math.max(0, (avg / 120.0)));
   }
 
   setMuted(muted: boolean) {
@@ -79,13 +104,18 @@ export class AudioPlayer {
 
     // Decode base64 → binary bytes
     const binary = atob(pcmBase64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
+    // Align to even byte length for 16-bit PCM chunks (prevents RangeError on odd byte chunks)
+    const byteLen = binary.length - (binary.length % 2);
+    if (byteLen === 0) return 0;
+
+    const bufferArray = new ArrayBuffer(byteLen);
+    const bytes = new Uint8Array(bufferArray);
+    for (let i = 0; i < byteLen; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
 
     // Convert 16-bit PCM (little-endian Int16) → Float32
-    const int16 = new Int16Array(bytes.buffer);
+    const int16 = new Int16Array(bufferArray);
     const float32 = new Float32Array(int16.length);
     for (let i = 0; i < int16.length; i++) {
       float32[i] = int16[i] / 32768.0;
@@ -132,6 +162,9 @@ export class AudioPlayer {
 
   stop() {
     this.stopCurrentPlayback();
+    if (activeAudioPlayer === this) {
+      activeAudioPlayer = null;
+    }
     if (this.audioContext) {
       this.audioContext.close();
       this.audioContext = null;

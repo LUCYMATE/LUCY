@@ -158,7 +158,7 @@ class LucyLinkService {
 
     // 4. Lucy Sleep Mode / Wake
     if (p.includes('sleep') && (p.includes('pc') || p.includes('lucy') || p.includes('computer'))) {
-      window.dispatchEvent(new CustomEvent('lucy-sleep'));
+      emitCrossWindow('lucy-sleep');
       return 'Put Lucy Companion on PC into sleep mode.';
     }
 

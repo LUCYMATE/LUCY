@@ -115,6 +115,7 @@ export const useAvatarState = create<AvatarState>((set) => ({
           updates.basePose = state.anchor ? 'sit' : 'stand';
         }
         updates.preSpeakingState = null;
+        updates.isWalking = false;
       }
       return updates;
     }),

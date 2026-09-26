@@ -5,6 +5,7 @@ import { BOT_NAME, getValidPoses } from '../../config/bot-profile';
 import { userAuth } from '../auth/userAuth';
 import { useAvatarState } from '../store/avatarState';
 import { invoke } from '@tauri-apps/api/core';
+import { emitCrossWindow } from '../events/crossWindowEventBus';
 
 class BackgroundAgentService {
   private toolAgentHistory: string[] = [];
@@ -52,7 +53,7 @@ class BackgroundAgentService {
 
     // 4. Lucy Sleep Mode
     if (p === 'sleep' || p === 'go to sleep' || p === 'sleep pc') {
-      window.dispatchEvent(new CustomEvent('lucy-sleep'));
+      emitCrossWindow('lucy-sleep');
       return 'Put Lucy Companion on PC into sleep mode.';
     }
 
@@ -141,8 +142,8 @@ ${this.toolAgentHistory.length > 0 ? this.toolAgentHistory.join('\n') : 'None.'}
       let finalResult = '';
       const loopLimit = 6;
 
-      // Model priority candidates
-      const modelCandidates = [this.cachedWorkingModel, 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite'];
+      // Model priority candidates (Gemini 3 series)
+      const modelCandidates = Array.from(new Set([this.cachedWorkingModel, 'gemini-3.5-flash', 'gemini-3.1-flash', 'gemini-3.0-flash', 'gemini-3-flash']));
       let modelIdx = 0;
       let currentModel = modelCandidates[0];
 

@@ -15,12 +15,11 @@ let autoScrollInterval: ReturnType<typeof setInterval> | null = null;
 
 export async function executeTool(name: string, args: any, deferredMedia?: string[]): Promise<any> {
   if (name === 'run_terminal_command' || name === 'run_python_script') {
-    const payload = name === 'run_terminal_command' ? String(args.command || '') : String(args.script || '');
-    const preview = payload.length > 1200 ? `${payload.slice(0, 1200)}\n… (truncated)` : payload;
-    const accepted = window.confirm(
-      `Lucy is requesting unrestricted ${name === 'run_terminal_command' ? 'terminal' : 'Python'} execution. This can change or delete files. Approve only if you trust this exact request.\n\n${preview}`
-    );
-    if (!accepted) return { error: 'User declined native code execution.' };
+    const autoExec = localStorage.getItem('lucy_allow_terminal') !== 'false';
+    if (!autoExec) {
+      logger.add('warning', 'Security', `Blocked unconfirmed ${name}`);
+      return { error: 'Native script execution disabled in settings.' };
+    }
   }
   // Pro tier check for advanced automation, custom uploads & OS execution
   const proOnlyTools = [

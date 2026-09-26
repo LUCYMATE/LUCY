@@ -79,18 +79,46 @@ export class VectorMemoryManager {
   }
 
   private async generateEmbedding(text: string, apiKey: string): Promise<number[] | string> {
+    const ai = new GoogleGenAI({ apiKey });
+
+    // 1. Primary: gemini-embedding-2 (multimodal native embedding)
     try {
-      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.embedContent({
         model: 'gemini-embedding-2',
+        contents: text,
+      });
+      if (response.embeddings && response.embeddings.length > 0 && response.embeddings[0].values) {
+        return response.embeddings[0].values;
+      }
+    } catch (err: any) {
+      console.warn('[VectorMemory] gemini-embedding-2 attempt failed, trying text-embedding-004 fallback:', err?.message || err);
+    }
+
+    // 2. Resilient fallback: text-embedding-004
+    try {
+      const response = await ai.models.embedContent({
+        model: 'text-embedding-004',
         contents: text
       });
-      if (response.embeddings && response.embeddings.length > 0) {
-        return response.embeddings[0].values || 'Embedding values array is empty';
+      if (response.embeddings && response.embeddings.length > 0 && response.embeddings[0].values) {
+        return response.embeddings[0].values;
+      }
+    } catch (err: any) {
+      console.warn('[VectorMemory] text-embedding-004 fallback failed, trying gemini-embedding-001:', err?.message || err);
+    }
+
+    // 3. Fallback: gemini-embedding-001
+    try {
+      const response = await ai.models.embedContent({
+        model: 'gemini-embedding-001',
+        contents: text
+      });
+      if (response.embeddings && response.embeddings.length > 0 && response.embeddings[0].values) {
+        return response.embeddings[0].values;
       }
       return 'No embeddings returned from Gemini';
     } catch (err: any) {
-      console.error('Failed to generate embedding:', err);
+      console.error('Failed to generate embedding fallback:', err);
       return err.message || String(err);
     }
   }

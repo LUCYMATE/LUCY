@@ -96,8 +96,8 @@ export class GeminiLive {
       const activeKey = this.currentlyUsingAlt && this.altApiKey ? this.altApiKey : apiKey;
       let ai = new GoogleGenAI({ apiKey: activeKey });
 
-      // DO NOT REPLACE: Using latest Gemini 3 model suite as requested
-      const savedModel = 'gemini-3.1-flash-live-preview';
+      // Gemini 3 Flash Live model suite
+      const savedModel = localStorage.getItem('lucy_model') || 'gemini-3.1-flash-live-preview';
       const savedVoice = localStorage.getItem('lucy_voice') || 'Aoede';
 
       const now = new Date();

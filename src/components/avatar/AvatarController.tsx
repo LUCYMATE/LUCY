@@ -165,24 +165,6 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
     }
   }, [basePose]);
 
-  // Speech-Completion Pose Stopper: When avatar finishes talking, immediately stop action & performance poses
-  const prevSpeakingRef = useRef(isSpeaking);
-  useEffect(() => {
-    const wasSpeaking = prevSpeakingRef.current;
-    prevSpeakingRef.current = isSpeaking;
-
-    if (wasSpeaking && !isSpeaking) {
-      const s = useAvatarState.getState();
-      const p = (s.basePose || '').toLowerCase();
-      // If currently dancing, blowing kiss, pointing, caressing, or talking, return to calm idle immediately
-      if (/dynamic-talk|lean|dance|kiss|point|caress/i.test(p)) {
-        s.setBasePose(s.anchor ? 'sit' : 'stand');
-      }
-      s.setPreSpeakingState(null);
-      s.setIsWalking(false);
-    }
-  }, [isSpeaking]);
-
   // Screen Edge Peeking Coordinator (Positions avatar at screen edge when peeking)
   useEffect(() => {
     const s = useAvatarState.getState();

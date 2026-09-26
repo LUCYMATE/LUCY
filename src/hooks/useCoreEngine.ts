@@ -26,6 +26,9 @@ export function useCoreEngine() {
   const dummyMicStreamRef = useRef<MediaStream | null>(null);
   const speechRecognitionRef = useRef<any>(null);
   const speechWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isWakingUpRef = useRef(false);
+  const initSystemRef = useRef<(isWakeUp?: boolean, autoMic?: boolean) => void>(() => {});
+  const startWakeWordListenerRef = useRef<() => void>(() => {});
 
   const startWakeWordListener = useCallback(() => {
     if (!useAvatarState.getState().isSleepMode) return;
@@ -61,9 +64,10 @@ export function useCoreEngine() {
       sr.continuous = false; // Prevent memory leak: when true, event.results grows indefinitely until RAM maxes out
       sr.interimResults = true;
       sr.maxAlternatives = 5; // Check top 5 alternatives to catch low-confidence whispers
-      sr.lang = 'en-IN';
+      sr.lang = localStorage.getItem('lucy_language') || navigator.language || 'en-US';
 
       sr.onresult = (event: any) => {
+        if (isWakingUpRef.current) return;
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
           for (let j = 0; j < result.length; j++) {
@@ -71,6 +75,7 @@ export function useCoreEngine() {
             const regexStr = `\\b(wake\\s*up\\s*lucy|lucy\\s*wake\\s*up|wakeup\\s*lucy|lucy\\s*wakeup|wake\\s*up|wakeup|wake|woke\\s*up|lucy|luci|lucie|loosey|losey|lusi|lusee|look\\s*see|lucian|lucia|losie|loucy|loosy|lusy|hey\\s*lucy|hello\\s*lucy|hi\\s*lucy|ok\\s*lucy|okay\\s*lucy)\\b`;
             const match = text.match(new RegExp(regexStr, 'i'));
             if (match) {
+              isWakingUpRef.current = true;
               const afterWakeWord = text.substring(match.index + match[0].length).trim();
               if (afterWakeWord.length > 2) {
                 sessionStorage.setItem('lucy_pending_query', afterWakeWord);
@@ -79,15 +84,20 @@ export function useCoreEngine() {
               sr.onend = null;
               sr.onerror = null;
               try { sr.stop(); } catch (_) {}
+
+              // Cleanly release dummy mic stream so hardware track is open for AudioRecorder
+              if (dummyMicStreamRef.current) {
+                try {
+                  dummyMicStreamRef.current.getTracks().forEach(t => t.stop());
+                } catch (_) {}
+                dummyMicStreamRef.current = null;
+              }
+
               emitCrossWindow('lucy-wake-up');
               import('@tauri-apps/api/core').then(({ invoke }) => {
-                const tryWake = (retries = 20) => {
-                  invoke('wake_up_main').catch((err) => {
-                    console.warn("IPC Wake Failed, retrying...", err);
-                    if (retries > 0) setTimeout(() => tryWake(retries - 1), 250);
-                  });
-                };
-                tryWake();
+                invoke('wake_up_main').catch((err) => {
+                  console.warn("IPC Wake Failed:", err);
+                });
               }).catch(() => {});
               return;
             }
@@ -550,74 +560,88 @@ export function useCoreEngine() {
   }, []);
 
   useEffect(() => {
-    const handleSleep = () => {
-      useAvatarState.getState().setIsSleepMode(true);
-      geminiRef.current?.disconnect();
-      playerRef.current?.stopCurrentPlayback();
-      playerRef.current?.stop();
-      setListening(false);
-      setSpeaking(false);
-      setThinking(false);
-      setIsMicOn(false);
+      initSystemRef.current = initSystem;
+      startWakeWordListenerRef.current = startWakeWordListener;
 
-      recorderRef.current?.stop();
+      const handleSleep = () => {
+        useAvatarState.getState().setIsSleepMode(true);
+        isWakingUpRef.current = false;
+        geminiRef.current?.disconnect();
+        playerRef.current?.stopCurrentPlayback();
+        playerRef.current?.stop();
+        setListening(false);
+        setSpeaking(false);
+        setThinking(false);
+        setIsMicOn(false);
 
-      // Request a dummy audio stream to keep the Windows microphone icon stationary 
-      // and prevent it from flashing when SpeechRecognition restarts
-      navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false } })
-        .then(stream => { dummyMicStreamRef.current = stream; })
-        .catch(() => {});
+        recorderRef.current?.stop();
 
-      startWakeWordListener();
-      logger.add('info', 'Sleep Mode', 'Entering low-RAM sleep mode... Say "Lucy" or "Wake up" to wake me.');
-      import('@tauri-apps/api/core').then(({ invoke }) => {
-        invoke('enter_sleep_mode');
-      });
-    };
+        // Request a dummy audio stream to keep the Windows microphone icon stationary 
+        // and prevent it from flashing when SpeechRecognition restarts
+        navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false } })
+          .then(stream => { dummyMicStreamRef.current = stream; })
+          .catch(() => {});
 
-    let wakeUpTimeout: ReturnType<typeof setTimeout> | null = null;
-    const handleWakeUp = () => {
-      useAvatarState.getState().setIsSleepMode(false);
+        startWakeWordListenerRef.current();
+        logger.add('info', 'Sleep Mode', 'Entering low-RAM sleep mode... Say "Lucy" or "Wake up" to wake me.');
+        import('@tauri-apps/api/core').then(({ invoke }) => {
+          invoke('enter_sleep_mode');
+        });
+      };
 
-      if (speechRecognitionRef.current) {
-        speechRecognitionRef.current.onend = null;
-        speechRecognitionRef.current.onerror = null;
-        try { speechRecognitionRef.current.stop(); } catch(e) {}
-      }
+      let wakeUpTimeout: ReturnType<typeof setTimeout> | null = null;
+      const handleWakeUp = () => {
+        useAvatarState.getState().setIsSleepMode(false);
 
-      if (speechWatchdogRef.current) {
-        clearInterval(speechWatchdogRef.current);
-        speechWatchdogRef.current = null;
-      }
+        if (speechRecognitionRef.current) {
+          speechRecognitionRef.current.onend = null;
+          speechRecognitionRef.current.onerror = null;
+          try { speechRecognitionRef.current.stop(); } catch(e) {}
+          speechRecognitionRef.current = null;
+        }
 
-      if (wakeUpTimeout) clearTimeout(wakeUpTimeout);
-      
-      if (dummyMicStreamRef.current) {
-        dummyMicStreamRef.current.getTracks().forEach(t => t.stop());
-        dummyMicStreamRef.current = null;
-      }
-      
-      wakeUpTimeout = setTimeout(() => initSystem(true), 500);
-    };
+        if (speechWatchdogRef.current) {
+          clearInterval(speechWatchdogRef.current);
+          speechWatchdogRef.current = null;
+        }
 
-    const unsubSleep = listenCrossWindow('lucy-sleep', handleSleep);
-    const unsubWake = listenCrossWindow('lucy-wake-up', handleWakeUp);
+        if (wakeUpTimeout) clearTimeout(wakeUpTimeout);
+        
+        if (dummyMicStreamRef.current) {
+          try {
+            dummyMicStreamRef.current.getTracks().forEach(t => t.stop());
+          } catch (_) {}
+          dummyMicStreamRef.current = null;
+        }
+        
+        wakeUpTimeout = setTimeout(() => {
+          initSystemRef.current(true);
+          setTimeout(() => {
+            isWakingUpRef.current = false;
+          }, 1500);
+        }, 350);
+      };
 
-    return () => {
-      unsubSleep();
-      unsubWake();
-      stopSpeakingTimer();
-      geminiRef.current?.disconnect();
-      recorderRef.current?.stop();
-      playerRef.current?.stop();
-      if (speechRecognitionRef.current) {
-        try { speechRecognitionRef.current.stop(); } catch (_) {}
-      }
-      if (dummyMicStreamRef.current) {
-        dummyMicStreamRef.current.getTracks().forEach(t => t.stop());
-      }
-    };
-  }, [initSystem, setListening, setSpeaking, setThinking, setIsMicOn, startWakeWordListener]);
+      const unsubSleep = listenCrossWindow('lucy-sleep', handleSleep);
+      const unsubWake = listenCrossWindow('lucy-wake-up', handleWakeUp);
+
+      return () => {
+        unsubSleep();
+        unsubWake();
+        stopSpeakingTimer();
+        geminiRef.current?.disconnect();
+        recorderRef.current?.stop();
+        playerRef.current?.stop();
+        if (speechRecognitionRef.current) {
+          try { speechRecognitionRef.current.stop(); } catch (_) {}
+        }
+        if (dummyMicStreamRef.current) {
+          try {
+            dummyMicStreamRef.current.getTracks().forEach(t => t.stop());
+          } catch (_) {}
+        }
+      };
+    }, []);
 
   return { initialized };
 }
