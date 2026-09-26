@@ -53,7 +53,7 @@ export function useCoreEngine() {
       const SpeechGrammarList = (window as any).SpeechGrammarList || (window as any).webkitSpeechGrammarList;
       if (SpeechGrammarList) {
         const speechRecognitionList = new SpeechGrammarList();
-        const grammar = '#JSGF V1.0; grammar lucy; public <lucy> = wake up | lucy | loosey | losey | lusi | hey lucy ;';
+        const grammar = '#JSGF V1.0; grammar lucy; public <lucy> = wake up | wakeup | wake up lucy | lucy wake up | lucy | hello lucy | hey lucy | hi lucy | loosey | losey | lusi ;';
         speechRecognitionList.addFromString(grammar, 1);
         sr.grammars = speechRecognitionList;
       }
@@ -68,7 +68,7 @@ export function useCoreEngine() {
           const result = event.results[i];
           for (let j = 0; j < result.length; j++) {
             const text = result[j].transcript.toLowerCase();
-            const regexStr = `\\b(wake\\s*up|wakeup|wake|woke\\s*up|lucy|luci|lucie|loosey|losey|lusi|lusee|look\\s*see|lucian|lucia|losie|loucy|loosy|lusy|hey\\s*lucy|hello\\s*lucy|hi\\s*lucy|ok\\s*lucy|okay\\s*lucy|wake\\s*up\\s*lucy)\\b`;
+            const regexStr = `\\b(wake\\s*up\\s*lucy|lucy\\s*wake\\s*up|wakeup\\s*lucy|lucy\\s*wakeup|wake\\s*up|wakeup|wake|woke\\s*up|lucy|luci|lucie|loosey|losey|lusi|lusee|look\\s*see|lucian|lucia|losie|loucy|loosy|lusy|hey\\s*lucy|hello\\s*lucy|hi\\s*lucy|ok\\s*lucy|okay\\s*lucy)\\b`;
             const match = text.match(new RegExp(regexStr, 'i'));
             if (match) {
               const afterWakeWord = text.substring(match.index + match[0].length).trim();
@@ -106,6 +106,7 @@ export function useCoreEngine() {
         if (event.error === 'no-speech') {
           setTimeout(restart, 50);
         } else {
+          logger.add('warning', 'Wake Word', `Speech recognition error: ${event.error || 'unknown'}`);
           setTimeout(restart, 2000);
         }
       };

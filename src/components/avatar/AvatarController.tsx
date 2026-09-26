@@ -8,12 +8,34 @@ import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
 import { BasePose } from './animations/core';
 import { DesktopRect } from '../../lib/store/avatarState';
+import { listenCrossWindow } from '../../lib/events/crossWindowEventBus';
+import { AVATAR_CONFIGURATION_CHANGED, type AvatarConfigurationChange } from '../../lib/store/avatarConfiguration';
 
 interface AvatarControllerProps {
   onLoad?: () => void;
 }
 
 export function AvatarController({ onLoad }: AvatarControllerProps) {
+  // Settings runs in another WebView, so its Zustand store is not the renderer's store.
+  useEffect(() => listenCrossWindow<AvatarConfigurationChange>(AVATAR_CONFIGURATION_CHANGED, (change) => {
+    const updates: Partial<ReturnType<typeof useAvatarState.getState>> = {};
+
+    if (change.avatarEngine === 'vrm' || change.avatarEngine === 'live2d') {
+      updates.avatarEngine = change.avatarEngine;
+      localStorage.setItem('lucy_avatar_engine', change.avatarEngine);
+    }
+    if (typeof change.selectedLive2dModel === 'string' && change.selectedLive2dModel.trim()) {
+      updates.selectedLive2dModel = change.selectedLive2dModel;
+      localStorage.setItem('lucy_live2d_model', change.selectedLive2dModel);
+    }
+    if (typeof change.avatarSize === 'number' && Number.isFinite(change.avatarSize)) {
+      const size = Math.max(50, Math.min(200, Math.round(change.avatarSize)));
+      localStorage.setItem('lucy_avatar_size', String(size));
+      updates.avatarScale = size / 100;
+    }
+    if (Object.keys(updates).length > 0) useAvatarState.setState(updates);
+  }), []);
+
   const {
     isSpeaking,
     isThinking,

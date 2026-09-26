@@ -10,6 +10,7 @@ import { checkAppUpdate, downloadUpdate, AppUpdateInfo } from '../../lib/system/
 import { openExternalUrl } from '../../lib/system/tauriBridge';
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 import { LIVE2D_MODELS } from '../avatar/AvatarContextMenu';
+import { AVATAR_CONFIGURATION_CHANGED, type AvatarConfigurationChange } from '../../lib/store/avatarConfiguration';
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'link' | 'api' | 'shortcuts' | 'assets' | 'personalized' | 'about'>('general');
@@ -93,7 +94,25 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     const loadMemories = () => setMemories(vectorMemory.getMemories());
     loadMemories();
     const unsubMemory = listenCrossWindow('lucy-memory-updated', loadMemories);
-    return () => unsubMemory();
+    const unsubAvatarConfiguration = listenCrossWindow<AvatarConfigurationChange>(AVATAR_CONFIGURATION_CHANGED, (change) => {
+      const avatarState = useAvatarState.getState();
+      if (change.avatarEngine === 'vrm' || change.avatarEngine === 'live2d') {
+        avatarState.setAvatarEngine(change.avatarEngine);
+      }
+      if (typeof change.selectedLive2dModel === 'string' && change.selectedLive2dModel.trim()) {
+        avatarState.setSelectedLive2dModel(change.selectedLive2dModel);
+      }
+      if (typeof change.avatarSize === 'number' && Number.isFinite(change.avatarSize)) {
+        const size = Math.max(50, Math.min(200, Math.round(change.avatarSize)));
+        setAvatarSize(size);
+        localStorage.setItem('lucy_avatar_size', String(size));
+        avatarState.setAvatarScale(size / 100);
+      }
+    });
+    return () => {
+      unsubMemory();
+      unsubAvatarConfiguration();
+    };
   }, []);
 
   const handleMicChange = (val: string) => {
@@ -118,9 +137,11 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   };
 
   const handleAvatarSizeChange = (val: number) => {
-    setAvatarSize(val);
-    localStorage.setItem('lucy_avatar_size', val.toString());
-    useAvatarState.getState().setAvatarScale(val / 100);
+    const size = Math.max(50, Math.min(200, Math.round(val)));
+    setAvatarSize(size);
+    localStorage.setItem('lucy_avatar_size', String(size));
+    useAvatarState.getState().setAvatarScale(size / 100);
+    emitCrossWindow(AVATAR_CONFIGURATION_CHANGED, { avatarSize: size });
     logger.add('success', 'Settings', 'Avatar size changed');
     emitCrossWindow('lucy-settings-changed');
   };
@@ -498,6 +519,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     type="button"
                     onClick={() => {
                       setAvatarEngine('vrm');
+                      emitCrossWindow(AVATAR_CONFIGURATION_CHANGED, { avatarEngine: 'vrm' });
                       emitCrossWindow('lucy-settings-changed');
                     }}
                     className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
@@ -513,6 +535,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                     type="button"
                     onClick={() => {
                       setAvatarEngine('live2d');
+                      emitCrossWindow(AVATAR_CONFIGURATION_CHANGED, { avatarEngine: 'live2d' });
                       emitCrossWindow('lucy-settings-changed');
                     }}
                     className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
@@ -537,7 +560,12 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                             key={m.id}
                             type="button"
                             onClick={() => {
+                              setAvatarEngine('live2d');
                               setSelectedLive2dModel(m.id);
+                              emitCrossWindow(AVATAR_CONFIGURATION_CHANGED, {
+                                avatarEngine: 'live2d',
+                                selectedLive2dModel: m.id,
+                              });
                               emitCrossWindow('lucy-settings-changed');
                             }}
                             className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all cursor-pointer ${

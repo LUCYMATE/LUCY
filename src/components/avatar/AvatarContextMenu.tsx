@@ -3,6 +3,7 @@ import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
 import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft, LogOut, Sparkles } from 'lucide-react';
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
+import { AVATAR_CONFIGURATION_CHANGED } from '../../lib/store/avatarConfiguration';
 
 export const LIVE2D_MODELS = [
   { id: 'icy', name: 'Icy', icon: '❄️', desc: 'Ice Cheongsam' },
@@ -45,6 +46,7 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
   const setSize = (pct: number) => {
     localStorage.setItem('lucy_avatar_size', pct.toString());
     setAvatarScale(pct / 100);
+    emitCrossWindow(AVATAR_CONFIGURATION_CHANGED, { avatarSize: pct });
     emitCrossWindow('lucy-settings-changed');
   };
 
@@ -283,6 +285,7 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
             <button
               onClick={() => {
                 setAvatarEngine('vrm');
+                emitCrossWindow(AVATAR_CONFIGURATION_CHANGED, { avatarEngine: 'vrm' });
                 emitCrossWindow('lucy-settings-changed');
               }}
               className={`flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer group ${
@@ -314,6 +317,10 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
                   onClick={() => {
                     setAvatarEngine('live2d');
                     setSelectedLive2dModel(m.id);
+                    emitCrossWindow(AVATAR_CONFIGURATION_CHANGED, {
+                      avatarEngine: 'live2d',
+                      selectedLive2dModel: m.id,
+                    });
                     emitCrossWindow('lucy-settings-changed');
                   }}
                   className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-all cursor-pointer group ${

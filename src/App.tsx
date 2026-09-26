@@ -251,7 +251,7 @@ function MainApp() {
       // Force DOM repaint to fix Windows WebView2 blank screen bug after memory trim on wake
       document.body.style.backgroundColor = 'rgba(0,0,0,0.01)';
       setTimeout(() => {
-        document.body.style.backgroundColor = 'transparent';
+        document.body.style.backgroundColor = 'rgba(0, 0, 0, 0.005)';
       }, 10);
 
       // Resume the cursor-passthrough loop now that the avatar UI is back.
@@ -299,7 +299,7 @@ function MainApp() {
   }, [licenseStatus]);
 
   return (
-    <div className="h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col bg-transparent">
+    <div className="h-screen w-screen relative overflow-hidden text-white font-sans flex flex-col" style={{ backgroundColor: 'rgba(0, 0, 0, 0.005)' }}>
 
       {!hasApiKey && licenseStatus === 'authorized' && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[9999] bg-pink-500/90 text-white px-6 py-3 rounded-full shadow-[0_0_20px_rgba(236,72,153,0.5)] border border-pink-400 font-bold flex items-center gap-2 animate-bounce pointer-events-auto">
