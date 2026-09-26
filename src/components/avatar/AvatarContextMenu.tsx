@@ -25,6 +25,7 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
     setAvatarEngine,
     selectedLive2dModel,
     setSelectedLive2dModel,
+    isSleepMode,
   } = useAvatarState(useShallow(s => ({
     isAvatarLocked: s.isAvatarLocked,
     setIsAvatarLocked: s.setIsAvatarLocked,
@@ -35,7 +36,19 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
     setAvatarEngine: s.setAvatarEngine,
     selectedLive2dModel: s.selectedLive2dModel,
     setSelectedLive2dModel: s.setSelectedLive2dModel,
+    isSleepMode: s.isSleepMode,
   })));
+
+  useEffect(() => {
+    const unsub = listenCrossWindow('lucy-sleep', () => {
+      onClose();
+    });
+    return () => unsub();
+  }, [onClose]);
+
+  if (isSleepMode) {
+    return null;
+  }
 
   const [showSizeSlider, setShowSizeSlider] = useState(false);
   const [showSubMenu, setShowSubMenu] = useState(false);
@@ -107,6 +120,7 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
 
   const sleepApp = async () => {
     try {
+      onClose();
       useAvatarState.getState().setIsSleepMode(true);
       emitCrossWindow('lucy-sleep');
     } catch (e) {

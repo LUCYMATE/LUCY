@@ -7,6 +7,7 @@ import { useEngineStore } from '../../lib/store/engineStore';
 import { useShallow } from 'zustand/react/shallow';
 import { AvatarContextMenu } from './AvatarContextMenu';
 import { animationBridge } from './animations/avatarAnimationBridge';
+import { listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 const ZOOM = 250;
 
@@ -308,7 +309,15 @@ export function Live2DViewer() {
       setContextMenu(null);
     };
     window.addEventListener('pointerdown', handleCloseMenu);
-    return () => window.removeEventListener('pointerdown', handleCloseMenu);
+    const unsubEvent = listenCrossWindow('lucy-sleep', () => setContextMenu(null));
+    const unsubStore = useAvatarState.subscribe((s) => {
+      if (s.isSleepMode) setContextMenu(null);
+    });
+    return () => {
+      window.removeEventListener('pointerdown', handleCloseMenu);
+      unsubEvent();
+      unsubStore();
+    };
   }, []);
 
   // 1. Initialize PIXI.Application once per component lifecycle
@@ -358,19 +367,21 @@ export function Live2DViewer() {
       setIsLoading(false);
     }
 
-    // Background Inactivity Throttling: Pause ticker when minimized or tab/window hidden
-    const handleVisibilityChange = () => {
+    // Background Inactivity Throttling: Pause ticker when minimized, hidden, or in sleep mode
+    const updateTickerState = () => {
       if (!appRef.current) return;
-      if (document.hidden) {
+      if (document.hidden || useAvatarState.getState().isSleepMode) {
         appRef.current.ticker.stop();
       } else {
         appRef.current.ticker.start();
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', updateTickerState);
+    const unsubSleep = useAvatarState.subscribe(updateTickerState);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      unsubSleep();
+      document.removeEventListener('visibilitychange', updateTickerState);
       // Defer destruction one microtask. StrictMode immediately re-runs setup;
       // the next setup increments the lifecycle and cancels this simulated teardown.
       queueMicrotask(() => {
@@ -660,7 +671,7 @@ export function Live2DViewer() {
       )}
 
       {/* Radial Context Menu */}
-      {contextMenu &&
+      {!useAvatarState.getState().isSleepMode && contextMenu &&
         createPortal(
           <AvatarContextMenu
             x={contextMenu.x}

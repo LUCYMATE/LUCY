@@ -48,6 +48,7 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
     isDragging,
     isAvatarLocked,
     avatarEngine,
+    isSleepMode,
   } = useAvatarState(useShallow(s => ({
     isSpeaking: s.isSpeaking,
     isThinking: s.isThinking,
@@ -60,6 +61,7 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
     isDragging: s.isDragging,
     isAvatarLocked: s.isAvatarLocked,
     avatarEngine: s.avatarEngine,
+    isSleepMode: s.isSleepMode,
   })));
 
   // Desktop Rectangles Polling
@@ -226,7 +228,10 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
 
   return createPortal(
     <>
-      <div className="fixed inset-0 pointer-events-none z-[50]">
+      <div
+        className={`fixed inset-0 pointer-events-none z-[50] ${isSleepMode ? 'hidden' : ''}`}
+        style={{ display: isSleepMode ? 'none' : 'block' }}
+      >
         <AvatarErrorBoundary key={avatarEngine}>
           {avatarEngine === 'live2d' ? <Live2DViewer /> : <Avatar3D />}
         </AvatarErrorBoundary>

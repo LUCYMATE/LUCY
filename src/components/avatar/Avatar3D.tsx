@@ -36,8 +36,8 @@ function FpsLimiter() {
     let frameId = 0;
 
     const loop = (time: number) => {
-      // Zero WebGL rendering when window is minimized or hidden
-      if (typeof document !== 'undefined' && document.hidden) {
+      // Zero WebGL rendering when window is minimized, hidden, or in sleep mode
+      if ((typeof document !== 'undefined' && document.hidden) || useAvatarState.getState().isSleepMode) {
         frameId = requestAnimationFrame(loop);
         return;
       }
@@ -539,7 +539,15 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
       setContextMenu(null);
     };
     window.addEventListener('pointerdown', handleClick);
-    return () => window.removeEventListener('pointerdown', handleClick);
+    const unsubEvent = listenCrossWindow('lucy-sleep', () => setContextMenu(null));
+    const unsubStore = useAvatarState.subscribe((s) => {
+      if (s.isSleepMode) setContextMenu(null);
+    });
+    return () => {
+      window.removeEventListener('pointerdown', handleClick);
+      unsubEvent();
+      unsubStore();
+    };
   }, []);
 
   const isCurrentlySitting = basePose === 'sit' && !isWalking;
@@ -590,7 +598,7 @@ function DragHitboxes({ avatarScale }: { avatarScale: number }) {
         className="cursor-grab active:cursor-grabbing pointer-events-auto"
         style={getHandleStyle(y_feet, 180, 100)}
       />
-      {contextMenu && createPortal(
+      {!useAvatarState.getState().isSleepMode && contextMenu && createPortal(
         <AvatarContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} />,
         document.body
       )}

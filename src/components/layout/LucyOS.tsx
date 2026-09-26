@@ -161,9 +161,15 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
     const handleOpenLogs = () => openTab('logs');
     
     const handleSleep = () => {
-      import('@tauri-apps/api/webviewWindow').then(({ WebviewWindow }) => {
-        WebviewWindow.getByLabel('settings').then(w => w?.close());
-      });
+      import('@tauri-apps/api/webviewWindow').then(({ getAllWebviewWindows }) => {
+        getAllWebviewWindows().then(windows => {
+          windows.forEach(w => {
+            if (w.label !== 'main') {
+              w.close().catch(() => {});
+            }
+          });
+        }).catch(() => {});
+      }).catch(() => {});
     };
 
     const handleWakeUp = () => {
@@ -261,7 +267,7 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
   return (
     <div className="flex h-full w-full relative min-h-0 p-0 max-w-none">
       {!isSleepMode && <SystemIndicators />}
-      {!isSleepMode && <AvatarController />}
+      <AvatarController />
     </div>
   );
 }

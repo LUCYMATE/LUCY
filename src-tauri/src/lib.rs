@@ -1329,6 +1329,10 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
 #[tauri::command]
 fn enter_sleep_mode(_app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
     *state.is_sleeping.lock().unwrap() = true;
+    #[cfg(target_os = "windows")]
+    {
+        trim_memory_internal();
+    }
     Ok(())
 }
 
@@ -1564,6 +1568,7 @@ pub fn run() {
             }
             
             let _tray = tray_builder
+                .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
                         app.exit(0);
@@ -1580,29 +1585,8 @@ pub fn run() {
                         }
                     }
                     "options" => {
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.set_focus();
-                        }
+                        // Open secondary settings/options window directly without waking or showing the main avatar
                         let _ = app.emit("lucy-open-settings", ());
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| match event {
-                    TrayIconEvent::Click {
-                        button: TrayMouseButton::Left,
-                        ..
-                    } => {
-                        let app = tray.app_handle();
-                        let is_sleeping = if let Some(state) = app.try_state::<AppState>() {
-                            *state.is_sleeping.lock().unwrap()
-                        } else { false };
-                        
-                        if is_sleeping {
-                            do_wake_up_main(app);
-                        } else {
-                            let _ = app.emit("lucy-sleep", ());
-                        }
                     }
                     _ => {}
                 })

@@ -60,8 +60,14 @@ export class GeminiLive {
 
   async connect(apiKey: string, altApiKey?: string, isAutoRetry = false, useAltKey = false) {
     if (!rateLimiter.isAllowed('gemini_connect', RATE_LIMITS.GEMINI_CONNECT)) {
-      logger.add('error', 'Rate Limit', 'Connection attempts throttled. Please wait before retrying.');
-      this.setState('disconnected', 'Rate limit exceeded for connection attempts');
+      logger.add('warning', 'Rate Limit', 'Connection attempts throttled. Retrying shortly...');
+      if (!isAutoRetry) {
+        setTimeout(() => {
+          this.connect(apiKey, altApiKey, false, useAltKey);
+        }, 1000);
+      } else {
+        this.setState('disconnected', 'Rate limit exceeded for connection attempts');
+      }
       return;
     }
 
