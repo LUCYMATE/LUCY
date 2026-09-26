@@ -884,9 +884,288 @@ fn start_auth_callback() -> Result<serde_json::Value, String> {
                         if let Some(slot) = AUTH_CALLBACK_TOKEN.get() {
                             if let Ok(mut stored) = slot.lock() { *stored = Some((thread_state.clone(), token)); }
                         }
-                        ("200 OK", "<!doctype html><title>LUCY sign-in</title><p>Sign-in complete. You can close this tab and return to LUCY.</p>")
+                        ("200 OK", r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>Sign-in complete · LUCY</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #fff5f8; --card: #fff; --ink: #1e1926; --muted: #716879;
+      --line: rgba(244,63,142,.16); --pink: #f43f8e; --violet: #8b5cf6;
+      --soft: #fff0f6; --green: #0c9b6a; --green-soft: #e9fbf3;
+      --shadow: 0 30px 100px rgba(74,35,83,.16);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #15121e; --card: #211a2d; --ink: #fbf8ff; --muted: #c6bdcf;
+        --line: rgba(244,63,142,.22); --soft: #302238; --green: #53d6a2;
+        --green-soft: #18352f; --shadow: 0 30px 100px rgba(0,0,0,.44);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 30px;
+      color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: radial-gradient(ellipse at 9% 5%, rgba(244,63,142,.19), transparent 34%),
+                  radial-gradient(ellipse at 95% 95%, rgba(139,92,246,.2), transparent 38%), var(--page);
+    }
+    .shell {
+      width: min(100%, 960px); overflow: hidden; border: 1px solid var(--line);
+      border-radius: 30px; background: var(--card); box-shadow: var(--shadow);
+      animation: arrive .5s cubic-bezier(.2,.8,.2,1) both;
+    }
+    .topbar {
+      min-height: 76px; padding: 0 34px; display: flex; align-items: center;
+      justify-content: space-between; border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 850; letter-spacing: .19em; }
+    .brand-mark {
+      width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px;
+      color: #fff; letter-spacing: 0; background: linear-gradient(135deg,var(--pink),var(--violet));
+      box-shadow: 0 6px 18px rgba(185,58,158,.24);
+    }
+    .secure-label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .secure-dot { width: 8px; height: 8px; border-radius: 50%; background: #13b981; box-shadow: 0 0 0 4px rgba(19,185,129,.12); }
+    .content { display: grid; grid-template-columns: 1.12fr .88fr; }
+    .hero { padding: 58px 58px 48px; }
+    .eyebrow { margin: 0 0 20px; color: var(--pink); font-size: 10px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
+    .success-mark {
+      position: relative; width: 78px; height: 78px; display: grid; place-items: center;
+      margin: 0 0 28px; border: 1px solid rgba(19,185,129,.22); border-radius: 25px;
+      color: var(--green); background: var(--green-soft); font-size: 39px; font-weight: 500;
+      box-shadow: 0 12px 34px rgba(19,185,129,.11);
+    }
+    .success-mark::after { position: absolute; inset: -8px; border: 1px solid rgba(19,185,129,.12); border-radius: 31px; content: ""; }
+    h1 { max-width: 510px; margin: 0; font-size: clamp(36px,6vw,56px); line-height: 1.04; letter-spacing: -.055em; }
+    h1 span { color: transparent; background: linear-gradient(100deg,var(--pink),var(--violet)); background-clip: text; -webkit-background-clip: text; }
+    .description { max-width: 440px; margin: 18px 0 30px; color: var(--muted); font-size: 15px; line-height: 1.8; }
+    .close-button {
+      width: min(100%, 310px); min-height: 52px; display: inline-flex; align-items: center;
+      justify-content: center; gap: 10px; border: 0; border-radius: 15px; color: #fff;
+      background: linear-gradient(110deg,var(--pink),var(--violet)); box-shadow: 0 10px 26px rgba(176,61,164,.25);
+      font: inherit; font-size: 14px; font-weight: 800; cursor: pointer;
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .close-button:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(176,61,164,.33); }
+    .close-button:focus-visible { outline: 3px solid rgba(139,92,246,.5); outline-offset: 3px; }
+    .close-button svg { width: 17px; height: 17px; }
+    .close-hint { max-width: 330px; min-height: 34px; margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .details { padding: 42px 38px; border-left: 1px solid var(--line); background: linear-gradient(150deg, color-mix(in srgb,var(--soft) 64%,transparent), transparent 80%); }
+    .details-heading { margin: 0 0 8px; font-size: 14px; font-weight: 850; }
+    .details-copy { margin: 0 0 26px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .timeline { display: grid; gap: 0; }
+    .timeline-item { position: relative; display: grid; grid-template-columns: 34px 1fr; gap: 13px; min-height: 76px; }
+    .timeline-item:not(:last-child)::before { position: absolute; top: 31px; bottom: -1px; left: 16px; width: 1px; background: var(--line); content: ""; }
+    .timeline-icon { z-index: 1; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid rgba(19,185,129,.2); border-radius: 11px; color: var(--green); background: var(--green-soft); font-size: 14px; font-weight: 800; }
+    .timeline-title { margin: 2px 0 4px; font-size: 12px; font-weight: 800; }
+    .timeline-copy { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .privacy { display: flex; align-items: flex-start; gap: 10px; margin-top: 13px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; color: var(--muted); background: color-mix(in srgb,var(--card) 72%,transparent); font-size: 10px; line-height: 1.55; }
+    .privacy svg { width: 15px; height: 15px; flex: none; color: var(--green); }
+    .footer { min-height: 48px; display: flex; align-items: center; justify-content: center; padding: 10px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; letter-spacing: .025em; }
+    @keyframes arrive { from { opacity: 0; transform: translateY(12px) scale(.99); } to { opacity: 1; transform: none; } }
+    @media (max-width: 700px) {
+      body { padding: 16px; }
+      .shell { border-radius: 23px; }
+      .topbar { min-height: 64px; padding: 0 21px; }
+      .content { grid-template-columns: 1fr; }
+      .hero { padding: 38px 25px 25px; }
+      .details { padding: 27px 25px 30px; border-top: 1px solid var(--line); border-left: 0; }
+      .success-mark { width: 68px; height: 68px; border-radius: 22px; font-size: 34px; }
+      .close-button { width: 100%; }
+      .secure-label { font-size: 0; gap: 0; }
+      .secure-dot { width: 9px; height: 9px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="shell" role="status" aria-live="polite">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>LUCY</span></div>
+      <div class="secure-label"><span class="secure-dot" aria-hidden="true"></span>Secure sign-in</div>
+    </header>
+    <div class="content">
+      <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">Desktop sign-in complete</p>
+        <div class="success-mark" aria-hidden="true">✓</div>
+        <h1 id="page-title">You’re in.<br><span>Welcome to LUCY.</span></h1>
+        <p class="description">Your account has been verified and connected to the LUCY desktop app. You can safely close this browser tab and continue in LUCY.</p>
+        <button class="close-button" id="close-tab" type="button">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Close this tab
+        </button>
+        <p class="close-hint" id="close-hint">If your browser prevents the tab from closing, you can close it manually. Your sign-in is already complete.</p>
+      </section>
+      <aside class="details" aria-label="Sign-in details">
+        <h2 class="details-heading">You’re ready to go</h2>
+        <p class="details-copy">The secure handoff is complete. Here’s what just happened:</p>
+        <div class="timeline">
+          <div class="timeline-item">
+            <span class="timeline-icon" aria-hidden="true">✓</span>
+            <div><h3 class="timeline-title">Identity verified</h3><p class="timeline-copy">Your sign-in provider confirmed your account.</p></div>
+          </div>
+          <div class="timeline-item">
+            <span class="timeline-icon" aria-hidden="true">✓</span>
+            <div><h3 class="timeline-title">LUCY connected</h3><p class="timeline-copy">Your secure session was handed back to the desktop app.</p></div>
+          </div>
+          <div class="timeline-item">
+            <span class="timeline-icon" aria-hidden="true">3</span>
+            <div><h3 class="timeline-title">Return to the app</h3><p class="timeline-copy">Switch back to LUCY to finish setting up your companion.</p></div>
+          </div>
+        </div>
+        <div class="privacy">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 10V7a6 6 0 0 1 12 0v3m-13 0h14v11H5V10Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Your session token was sent directly to LUCY over a private local connection. It is not shown on this page.</span>
+        </div>
+      </aside>
+    </div>
+    <footer class="footer">LUCY · Your AI companion, ready when you are</footer>
+  </main>
+  <script>
+    document.getElementById('close-tab').addEventListener('click', function () {
+      window.close();
+      setTimeout(function () {
+        document.getElementById('close-hint').textContent = 'Your browser blocked automatic closing. Please close this tab manually; your sign-in is complete.';
+        document.getElementById('close-tab').textContent = 'Close this tab manually';
+      }, 250);
+    });
+  </script>
+</body>
+</html>"#)
                     } else {
-                        ("400 Bad Request", "<!doctype html><title>LUCY sign-in</title><p>Sign-in could not be completed. Return to LUCY and try again.</p>")
+                        ("400 Bad Request", r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>Sign-in needs another try · LUCY</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #fff5f8; --card: #fff; --ink: #1e1926; --muted: #716879;
+      --line: rgba(244,63,142,.16); --pink: #f43f8e; --violet: #8b5cf6;
+      --soft: #fff0f6; --warn: #b66b09; --warn-soft: #fff4df;
+      --shadow: 0 30px 100px rgba(74,35,83,.16);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #15121e; --card: #211a2d; --ink: #fbf8ff; --muted: #c6bdcf;
+        --line: rgba(244,63,142,.22); --soft: #302238; --warn: #ffd27a;
+        --warn-soft: #3a2d1b; --shadow: 0 30px 100px rgba(0,0,0,.44);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 30px;
+      color: var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: radial-gradient(ellipse at 9% 5%, rgba(244,63,142,.19), transparent 34%),
+                  radial-gradient(ellipse at 95% 95%, rgba(139,92,246,.2), transparent 38%), var(--page);
+    }
+    .shell { width: min(100%,960px); overflow: hidden; border: 1px solid var(--line); border-radius: 30px; background: var(--card); box-shadow: var(--shadow); animation: arrive .5s cubic-bezier(.2,.8,.2,1) both; }
+    .topbar { min-height: 76px; padding: 0 34px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 850; letter-spacing: .19em; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; color: #fff; letter-spacing: 0; background: linear-gradient(135deg,var(--pink),var(--violet)); box-shadow: 0 6px 18px rgba(185,58,158,.24); }
+    .secure-label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .secure-dot { width: 8px; height: 8px; border-radius: 50%; background: #13b981; box-shadow: 0 0 0 4px rgba(19,185,129,.12); }
+    .content { display: grid; grid-template-columns: 1.12fr .88fr; }
+    .hero { padding: 58px 58px 48px; }
+    .eyebrow { margin: 0 0 20px; color: var(--pink); font-size: 10px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
+    .issue-mark { width: 78px; height: 78px; display: grid; place-items: center; margin: 0 0 28px; border: 1px solid rgba(230,159,55,.25); border-radius: 25px; color: var(--warn); background: var(--warn-soft); font-size: 36px; font-weight: 750; box-shadow: 0 12px 34px rgba(230,159,55,.1); }
+    h1 { max-width: 510px; margin: 0; font-size: clamp(36px,6vw,54px); line-height: 1.05; letter-spacing: -.055em; }
+    h1 span { color: transparent; background: linear-gradient(100deg,var(--pink),var(--violet)); background-clip: text; -webkit-background-clip: text; }
+    .description { max-width: 440px; margin: 18px 0 28px; color: var(--muted); font-size: 15px; line-height: 1.8; }
+    .close-button { width: min(100%,310px); min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 15px; color: #fff; background: linear-gradient(110deg,var(--pink),var(--violet)); box-shadow: 0 10px 26px rgba(176,61,164,.25); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; transition: transform .18s ease,box-shadow .18s ease; }
+    .close-button:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(176,61,164,.33); }
+    .close-button:focus-visible { outline: 3px solid rgba(139,92,246,.5); outline-offset: 3px; }
+    .close-button svg { width: 17px; height: 17px; }
+    .close-hint { max-width: 330px; min-height: 34px; margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .details { padding: 42px 38px; border-left: 1px solid var(--line); background: linear-gradient(150deg,color-mix(in srgb,var(--soft) 64%,transparent),transparent 80%); }
+    .details-heading { margin: 0 0 8px; font-size: 14px; font-weight: 850; }
+    .details-copy { margin: 0 0 26px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .timeline { display: grid; }
+    .timeline-item { position: relative; display: grid; grid-template-columns: 34px 1fr; gap: 13px; min-height: 76px; }
+    .timeline-item:not(:last-child)::before { position: absolute; top: 31px; bottom: -1px; left: 16px; width: 1px; background: var(--line); content: ""; }
+    .timeline-icon { z-index: 1; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 11px; color: var(--pink); background: var(--soft); font-size: 13px; font-weight: 800; }
+    .timeline-title { margin: 2px 0 4px; font-size: 12px; font-weight: 800; }
+    .timeline-copy { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .tip { display: flex; align-items: flex-start; gap: 10px; margin-top: 13px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; color: var(--muted); background: color-mix(in srgb,var(--card) 72%,transparent); font-size: 10px; line-height: 1.6; }
+    .tip strong { color: var(--ink); }
+    .footer { min-height: 48px; display: flex; align-items: center; justify-content: center; padding: 10px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; letter-spacing: .025em; }
+    @keyframes arrive { from { opacity: 0; transform: translateY(12px) scale(.99); } to { opacity: 1; transform: none; } }
+    @media (max-width: 700px) {
+      body { padding: 16px; } .shell { border-radius: 23px; }
+      .topbar { min-height: 64px; padding: 0 21px; }
+      .content { grid-template-columns: 1fr; }
+      .hero { padding: 38px 25px 25px; }
+      .details { padding: 27px 25px 30px; border-top: 1px solid var(--line); border-left: 0; }
+      .issue-mark { width: 68px; height: 68px; border-radius: 22px; font-size: 32px; }
+      .close-button { width: 100%; }
+      .secure-label { font-size: 0; gap: 0; }
+      .secure-dot { width: 9px; height: 9px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="shell" role="alert">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>LUCY</span></div>
+      <div class="secure-label"><span class="secure-dot" aria-hidden="true"></span>Secure sign-in</div>
+    </header>
+    <div class="content">
+      <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">One more step</p>
+        <div class="issue-mark" aria-hidden="true">!</div>
+        <h1 id="page-title">Let’s get you <span>signed in.</span></h1>
+        <p class="description">The secure sign-in handoff to the LUCY desktop app didn’t finish. Your account is safe; just start sign-in again from LUCY.</p>
+        <button class="close-button" id="close-tab" type="button">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Close this tab
+        </button>
+        <p class="close-hint" id="close-hint">Return to LUCY and choose Sign in to safely try again.</p>
+      </section>
+      <aside class="details" aria-label="How to continue">
+        <h2 class="details-heading">What to do next</h2>
+        <p class="details-copy">This handoff could not be matched to the sign-in request.</p>
+        <div class="timeline">
+          <div class="timeline-item">
+            <span class="timeline-icon" aria-hidden="true">1</span>
+            <div><h3 class="timeline-title">Switch back to LUCY</h3><p class="timeline-copy">The desktop app is still open and ready.</p></div>
+          </div>
+          <div class="timeline-item">
+            <span class="timeline-icon" aria-hidden="true">2</span>
+            <div><h3 class="timeline-title">Start sign-in again</h3><p class="timeline-copy">Use the Sign in button in the app to open a fresh secure link.</p></div>
+          </div>
+          <div class="timeline-item">
+            <span class="timeline-icon" aria-hidden="true">3</span>
+            <div><h3 class="timeline-title">Keep the new tab open</h3><p class="timeline-copy">Let the browser return you to LUCY before closing the tab.</p></div>
+          </div>
+        </div>
+        <div class="tip"><span aria-hidden="true">ⓘ</span><span><strong>No account changes were made.</strong> You can retry safely. If this keeps happening, restart LUCY and begin a new sign-in.</span></div>
+      </aside>
+    </div>
+    <footer class="footer">LUCY · Your AI companion, ready when you are</footer>
+  </main>
+  <script>
+    document.getElementById('close-tab').addEventListener('click', function () {
+      window.close();
+      setTimeout(function () {
+        document.getElementById('close-hint').textContent = 'Your browser blocked automatic closing. Close this tab manually, then return to LUCY to retry.';
+        document.getElementById('close-tab').textContent = 'Close this tab manually';
+      }, 250);
+    });
+  </script>
+</body>
+</html>"#)
                     };
                     let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len());
                     let _ = stream.write_all(response.as_bytes());
