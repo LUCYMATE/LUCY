@@ -26,6 +26,8 @@ export function useCoreEngine() {
 
   const speechRecognitionRef = useRef<any>(null);
   const speechWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wakeRequestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLoggedWakeStartRef = useRef(false);
   const isWakingUpRef = useRef(false);
   const initSystemRef = useRef<(isWakeUp?: boolean, autoMic?: boolean) => void>(() => {});
   const startWakeWordListenerRef = useRef<() => void>(() => {});
@@ -90,15 +92,37 @@ export function useCoreEngine() {
               sr.onerror = null;
               try { sr.stop(); } catch (_) {}
               speechRecognitionRef.current = null;
+              if (wakeRequestTimeoutRef.current) clearTimeout(wakeRequestTimeoutRef.current);
+              wakeRequestTimeoutRef.current = setTimeout(() => {
+                wakeRequestTimeoutRef.current = null;
+                if (useAvatarState.getState().isSleepMode) {
+                  isWakingUpRef.current = false;
+                  logger.add('warning', 'Wake Word', 'Wake request timed out; restarting the voice listener.');
+                  startWakeWordListenerRef.current();
+                }
+              }, 5000);
               import('@tauri-apps/api/core').then(({ invoke }) => {
                 const tryWake = (retries = 20) => {
                   invoke('wake_up_main').catch((err) => {
                     console.warn('IPC Wake Failed, retrying...', err);
-                    if (retries > 0) setTimeout(() => tryWake(retries - 1), 250);
+                    if (retries > 0) {
+                      setTimeout(() => tryWake(retries - 1), 250);
+                    } else if (useAvatarState.getState().isSleepMode) {
+                      if (wakeRequestTimeoutRef.current) clearTimeout(wakeRequestTimeoutRef.current);
+                      wakeRequestTimeoutRef.current = null;
+                      isWakingUpRef.current = false;
+                      startWakeWordListenerRef.current();
+                    }
                   });
                 };
                 tryWake();
-              }).catch((err) => console.warn('Unable to load native wake command:', err));
+              }).catch((err) => {
+                console.warn('Unable to load native wake command:', err);
+                if (wakeRequestTimeoutRef.current) clearTimeout(wakeRequestTimeoutRef.current);
+                wakeRequestTimeoutRef.current = null;
+                isWakingUpRef.current = false;
+                startWakeWordListenerRef.current();
+              });
               return;
             }
           }
@@ -123,6 +147,12 @@ export function useCoreEngine() {
         }
         restart(event.error === 'no-speech' ? 50 : 1000);
       };
+      sr.onstart = () => {
+        if (!hasLoggedWakeStartRef.current) {
+          hasLoggedWakeStartRef.current = true;
+          logger.add('success', 'Wake Word', 'Microphone speech-recognition session started.');
+        }
+      };
       sr.onend = () => restart(50);
 
       if (speechWatchdogRef.current) clearInterval(speechWatchdogRef.current);
@@ -138,7 +168,7 @@ export function useCoreEngine() {
 
       speechRecognitionRef.current = sr;
       sr.start();
-      logger.add('info', 'Wake Word', 'Voice listener is actively waiting for "Lucy"...');
+      logger.add('info', 'Wake Word', 'Starting the voice wake listener.');
     } catch (e: any) {
       console.warn('[WakeWord] Speech recognition start error:', e);
       speechRecognitionRef.current = null;
@@ -498,7 +528,9 @@ export function useCoreEngine() {
         audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false }
       })
         .then(stream => { dummyMicStreamRef.current = stream; })
-        .catch(() => {});
+        .catch(error => {
+          logger.add('warning', 'Wake Word', `Could not keep the microphone stream open: ${error?.name || error}`);
+        });
 
       import('@tauri-apps/api/core').then(({ invoke }) => {
         invoke('enter_sleep_mode');
@@ -591,7 +623,9 @@ export function useCoreEngine() {
             } else {
               stream.getTracks().forEach(track => track.stop());
             }
-          }).catch(() => {});
+          }).catch(error => {
+            logger.add('warning', 'Wake Word', `Could not keep the microphone stream open: ${error?.name || error}`);
+          });
         }
 
         startWakeWordListenerRef.current();
@@ -611,6 +645,10 @@ export function useCoreEngine() {
         lastWakeUpTime = now;
 
         useAvatarState.getState().setIsSleepMode(false);
+        if (wakeRequestTimeoutRef.current) {
+          clearTimeout(wakeRequestTimeoutRef.current);
+          wakeRequestTimeoutRef.current = null;
+        }
 
         if (speechRecognitionRef.current) {
           speechRecognitionRef.current.onend = null;
@@ -653,6 +691,7 @@ export function useCoreEngine() {
           speechRecognitionRef.current = null;
         }
         if (speechWatchdogRef.current) clearInterval(speechWatchdogRef.current);
+        if (wakeRequestTimeoutRef.current) clearTimeout(wakeRequestTimeoutRef.current);
         if (dummyMicStreamRef.current) {
           dummyMicStreamRef.current.getTracks().forEach(track => track.stop());
           dummyMicStreamRef.current = null;

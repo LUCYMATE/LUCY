@@ -1310,7 +1310,7 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
     serde_json::json!({ "success": false })
 }
 
-fn do_wake_up_main(app_handle: &tauri::AppHandle) {
+fn do_wake_up_main(app_handle: &tauri::AppHandle, force_frontend_wake: bool) {
     let mut was_sleeping = false;
     if let Some(state) = app_handle.try_state::<AppState>() {
         let mut is_sleeping = state.is_sleeping.lock().unwrap();
@@ -1322,15 +1322,18 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle) {
         let _ = win.show();
         let _ = win.set_focus();
 
-        if was_sleeping {
+        if was_sleeping || force_frontend_wake {
             // WebView2 needs time to resume after Windows trims the working set.
-            // Defer the frontend wake event until the main WebView is ready.
+            // Use Tauri's event transport as well as the local DOM fallback. A
+            // single eval can be dropped while a trimmed WebView2 renderer resumes.
             let win_clone = win.clone();
+            let app_clone = app_handle.clone();
             std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(300));
+                std::thread::sleep(std::time::Duration::from_millis(600));
                 let win_on_main = win_clone.clone();
                 let _ = win_clone.run_on_main_thread(move || {
                     let _ = win_on_main.set_always_on_top(true);
+                    let _ = app_clone.emit_to("main", "lucy-wake-up", ());
                     let _ = win_on_main.eval("window.dispatchEvent(new CustomEvent('lucy-wake-up'));");
                 });
             });
@@ -1371,7 +1374,9 @@ fn enter_sleep_mode(app_handle: tauri::AppHandle, state: tauri::State<AppState>)
 
 #[tauri::command]
 fn wake_up_main(app_handle: tauri::AppHandle) -> Result<(), String> {
-    do_wake_up_main(&app_handle);
+    // Frontend wake requests must always release the renderer's sleep state,
+    // even if native sleep bookkeeping was lost during a startup race.
+    do_wake_up_main(&app_handle, true);
     Ok(())
 }
 
@@ -1481,7 +1486,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            do_wake_up_main(app);
+            do_wake_up_main(app, false);
             let _ = app.emit("lucy-exit-pet-mode", ());
         }))
         .manage(AppState {
@@ -1550,7 +1555,7 @@ pub fn run() {
                     .with_handler(move |app, shortcut, event| {
                         if event.state == ShortcutState::Pressed {
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyX) {
-                                do_wake_up_main(app);
+                                do_wake_up_main(app, false);
                                 let _ = app.emit("lucy-exit-pet-mode", ());
                             }
                             if shortcut.matches(cmd_modifier | Modifiers::ALT, Code::KeyS) {
@@ -1607,7 +1612,7 @@ pub fn run() {
                         app.exit(0);
                     }
                     "show" => {
-                        do_wake_up_main(app.app_handle());
+                        do_wake_up_main(app.app_handle(), false);
                     }
                     "hide" => {
                         if let Some(win) = app.get_webview_window("main") {
