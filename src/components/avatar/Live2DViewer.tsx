@@ -67,18 +67,23 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export function Live2DViewer() {
+export function Live2DViewer({ onReady }: { onReady?: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const modelRef = useRef<InstanceType<typeof Live2DModel> | null>(null);
   const appLifecycleRef = useRef(0);
   const hitboxRef = useRef<HTMLDivElement>(null);
   const baseScaleRef = useRef(1);
+  const initialWorldPositionRef = useRef(useAvatarState.getState().worldPosition);
 
   const [isAppReady, setIsAppReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    onReady?.();
+  }, [onReady]);
 
   // Smoothed animation parameter values for natural transitions across bridge
   const animValuesRef = useRef<Record<string, number>>({
@@ -649,26 +654,24 @@ export function Live2DViewer() {
       )}
 
       {/* Draggable Hitbox over the avatar - zero React re-renders for ultra-low CPU */}
-      {!isLoading && (
-        <div
-          ref={hitboxRef}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onContextMenu={handleContextMenu}
-          className="fixed cursor-grab active:cursor-grabbing pointer-events-auto z-[60]"
-          style={{
-            left: 0,
-            top: 0,
-            width: 200,
-            height: 380,
-            borderRadius: '24px',
-            willChange: 'left, top',
-          }}
-          title={`${selectedLive2dModel.toUpperCase()} (Live2D) - Drag to move, Tap to interact, Right-click for menu`}
-        />
-      )}
+      <div
+        ref={hitboxRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onContextMenu={handleContextMenu}
+        className="fixed cursor-grab active:cursor-grabbing pointer-events-auto z-[60]"
+        style={{
+          left: `calc(50% + ${initialWorldPositionRef.current.x * ZOOM - 100 * avatarScale}px)`,
+          top: `calc(50% - ${initialWorldPositionRef.current.y * ZOOM + 370 * avatarScale}px)`,
+          width: 200 * avatarScale,
+          height: 380 * avatarScale,
+          borderRadius: '24px',
+          willChange: 'left, top',
+        }}
+        title={`${selectedLive2dModel.toUpperCase()} (Live2D) - Drag to move, Tap to interact, Right-click for menu`}
+      />
 
       {/* Radial Context Menu */}
       {!useAvatarState.getState().isSleepMode && contextMenu &&

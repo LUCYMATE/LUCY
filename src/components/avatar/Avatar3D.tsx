@@ -171,7 +171,7 @@ const _lerpTarget = new THREE.Vector3();
 // We moved DragHitboxes outside the Canvas to fix the Tauri transparent click-through system.
 
 
-function SceneManager() {
+function SceneManager({ onReady }: { onReady?: () => void }) {
   const {
     isSpeaking, isThinking, isListening, basePose, isWalking, emotion,
     worldPosition, targetPosition, isDragging, avatarScale, setTargetPosition
@@ -388,25 +388,27 @@ function SceneManager() {
           <FlyingKisses active={basePose === 'flying-kiss'} />
 
           {modelUrl && (
-            <VrmModel
-              url={modelUrl}
-              reloadKey={vrmReloadKey}
-              isSpeaking={isSpeaking}
-              isThinking={isThinking}
-              isListening={isListening}
-              basePose={basePose}
-              isWalking={isWalking}
-              emotion={emotion}
-              moveDirection={internalMoveDir}
-              isSitting={isCurrentlySitting}
-            />
+            <Suspense fallback={<AvatarLoader />}>
+              <VrmModel
+                url={modelUrl}
+                reloadKey={vrmReloadKey}
+                isSpeaking={isSpeaking}
+                isThinking={isThinking}
+                isListening={isListening}
+                basePose={basePose}
+                isWalking={isWalking}
+                emotion={emotion}
+                moveDirection={internalMoveDir}
+                isSitting={isCurrentlySitting}
+              />
+            </Suspense>
           )}
         </group>
       </group>
 
       <Html center zIndexRange={[100, 0]}>
         <div className="pointer-events-none relative" style={{ width: 0, height: 0 }}>
-          <DragHitboxes avatarScale={avatarScale} />
+          <DragHitboxes avatarScale={avatarScale} onReady={onReady} />
         </div>
       </Html>
     </group>
@@ -415,10 +417,14 @@ function SceneManager() {
 
 
 
-function DragHitboxes({ avatarScale }: { avatarScale: number }) {
+function DragHitboxes({ avatarScale, onReady }: { avatarScale: number; onReady?: () => void }) {
   const { basePose, isWalking } = useAvatarState(useShallow(s => ({ basePose: s.basePose, isWalking: s.isWalking })));
   const cursorTargetRef = useRef<{ x: number, y: number, z: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
+
+  useEffect(() => {
+    onReady?.();
+  }, [onReady]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -637,7 +643,7 @@ function AvatarLoader() {
   );
 }
 
-export function Avatar3D() {
+export function Avatar3D({ onReady }: { onReady?: () => void }) {
   // Clear VRM from RAM immediately when Avatar3D unmounts (e.g. switching to Live2D)
   useEffect(() => {
     return () => {
@@ -665,11 +671,9 @@ export function Avatar3D() {
         <FpsLimiter />
         <OrthographicCamera makeDefault position={[0, 0, 5]} zoom={ZOOM} />
 
-        <Suspense fallback={<AvatarLoader />}>
-          <ambientLight intensity={0.8} color="#ffffff" />
-          <directionalLight position={[0, 2, 2]} intensity={1} color="#ffffff" />
-          <SceneManager />
-        </Suspense>
+        <ambientLight intensity={0.8} color="#ffffff" />
+        <directionalLight position={[0, 2, 2]} intensity={1} color="#ffffff" />
+        <SceneManager onReady={onReady} />
       </Canvas>
     </div>
   );

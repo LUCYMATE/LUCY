@@ -124,6 +124,7 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
 
   useEffect(() => {
     const openTab = async (tab: string) => {
+      if (useAvatarState.getState().isSleepMode) return;
       try {
         const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
         const existing = await WebviewWindow.getByLabel('settings');
@@ -179,7 +180,9 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
     const handleToggleSleep = () => {
       const isSleep = useAvatarState.getState().isSleepMode;
       if (isSleep) {
-        emitCrossWindow('lucy-wake-up');
+        import('@tauri-apps/api/core').then(({ invoke }) => {
+          invoke('wake_up_main').catch(err => console.warn('Failed to wake main window:', err));
+        });
       } else {
         emitCrossWindow('lucy-sleep');
       }

@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
-import { SettingsPage } from '../settings/SettingsPage';
-import { Chat } from '../chat/Chat';
-import { SystemLogs } from './SystemLogs';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { CalendarClock, Trash2, Clock, X, Sliders, LayoutDashboard, ListTodo, Minus, Square, Copy, Terminal } from 'lucide-react';
-import { getScheduledTasks, cancelScheduledTaskById, ScheduledTask } from '../../lib/gemini/gemini-live';
+import { getScheduledTasks, cancelScheduledTaskById, type ScheduledTask } from '../../lib/gemini/scheduler';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useChatStore } from '../../lib/store/chatStore';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { LogEntry } from '../../lib/store/logger';
 import { listenCrossWindow, emitCrossWindow } from '../../lib/events/crossWindowEventBus';
+
+const SettingsPage = lazy(() => import('../settings/SettingsPage').then(module => ({ default: module.SettingsPage })));
+const Chat = lazy(() => import('../chat/Chat').then(module => ({ default: module.Chat })));
+const SystemLogs = lazy(() => import('./SystemLogs').then(module => ({ default: module.SystemLogs })));
 
 export function SecondaryWindow() {
   const [activeTab, setActiveTab] = useState<'settings' | 'dashboard' | 'tasks'>('dashboard');
@@ -237,26 +238,32 @@ export function SecondaryWindow() {
       <div className="flex-1 relative overflow-hidden flex select-text">
         {activeTab === 'settings' && (
           <div className="w-full h-full relative overflow-y-auto">
-            <SettingsPage onClose={closeSelf} />
+            <Suspense fallback={<div className="w-full h-full bg-[#FFF5F8]" />}>
+              <SettingsPage onClose={closeSelf} />
+            </Suspense>
           </div>
         )}
         {activeTab === 'dashboard' && (
           <div className="flex w-full h-full">
             <div className="flex-1 h-full relative min-w-0">
-              <Chat isVisible={true} onCloseChat={closeSelf} isSecondaryWindow={true} />
+              <Suspense fallback={<div className="w-full h-full bg-[#FFF5F8]" />}>
+                <Chat isVisible={true} onCloseChat={closeSelf} isSecondaryWindow={true} />
+              </Suspense>
             </div>
             {showLogs && (
               <div className="w-[360px] h-full border-l border-[#FCE7F3] relative shrink-0">
-                <SystemLogs
-                  isVisible={true}
-                  onClose={() => setShowLogs(false)}
-                  logs={logs}
-                  cpu={stats.cpu}
-                  memory={stats.memory}
-                  latency={stats.latency}
-                  isTauri={true}
-                  isSecondaryWindow={true}
-                />
+                <Suspense fallback={<div className="w-full h-full bg-[#FFF5F8]" />}>
+                  <SystemLogs
+                    isVisible={true}
+                    onClose={() => setShowLogs(false)}
+                    logs={logs}
+                    cpu={stats.cpu}
+                    memory={stats.memory}
+                    latency={stats.latency}
+                    isTauri={true}
+                    isSecondaryWindow={true}
+                  />
+                </Suspense>
               </div>
             )}
           </div>

@@ -9,8 +9,8 @@ import { userAuth } from '../../lib/auth/userAuth';
 import { checkAppUpdate, downloadUpdate, AppUpdateInfo } from '../../lib/system/updateChecker';
 import { openExternalUrl } from '../../lib/system/tauriBridge';
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
-import { LIVE2D_MODELS } from '../avatar/AvatarContextMenu';
 import { AVATAR_CONFIGURATION_CHANGED, type AvatarConfigurationChange } from '../../lib/store/avatarConfiguration';
+import { LIVE2D_MODELS } from '../../config/live2d-models';
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'link' | 'api' | 'shortcuts' | 'assets' | 'personalized' | 'about'>('general');

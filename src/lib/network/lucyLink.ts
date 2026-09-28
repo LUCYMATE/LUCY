@@ -79,7 +79,9 @@ class LucyLinkService {
         const p = prompt.toLowerCase().trim();
         if (useAvatarState.getState().isSleepMode && !p.includes('sleep')) {
           logger.add('info', 'LucyLink', 'Waking PC Lucy for a delegated phone task');
-          emitCrossWindow('lucy-wake-up');
+          await invoke('wake_up_main').catch(err => {
+            logger.add('warning', 'LucyLink', `Could not wake main window: ${String(err)}`);
+          });
         }
 
         try {

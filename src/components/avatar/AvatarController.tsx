@@ -1,8 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 // @ts-ignore
 import { createPortal } from 'react-dom';
-import { Avatar3D } from './Avatar3D';
-import { Live2DViewer } from './Live2DViewer';
 import { AvatarErrorBoundary } from './AvatarErrorBoundary';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
@@ -11,11 +9,35 @@ import { DesktopRect } from '../../lib/store/avatarState';
 import { listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 import { AVATAR_CONFIGURATION_CHANGED, type AvatarConfigurationChange } from '../../lib/store/avatarConfiguration';
 
+const Avatar3D = lazy(() => import('./Avatar3D').then(module => ({ default: module.Avatar3D })));
+let live2dCorePromise: Promise<void> | null = null;
+const Live2DViewer = lazy(async () => {
+  if (!(window as any).Live2DCubismCore) {
+    if (!live2dCorePromise) {
+      live2dCorePromise = new Promise<void>((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = '/live2d/core/live2dcubismcore.min.js';
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => {
+          live2dCorePromise = null;
+          reject(new Error('Could not load the Live2D runtime.'));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    await live2dCorePromise;
+  }
+  const module = await import('./Live2DViewer');
+  return { default: module.Live2DViewer };
+});
+
 interface AvatarControllerProps {
   onLoad?: () => void;
 }
 
 export function AvatarController({ onLoad }: AvatarControllerProps) {
+  const [readyEngine, setReadyEngine] = useState<string | null>(null);
   // Settings runs in another WebView, so its Zustand store is not the renderer's store.
   useEffect(() => listenCrossWindow<AvatarConfigurationChange>(AVATAR_CONFIGURATION_CHANGED, (change) => {
     const updates: Partial<ReturnType<typeof useAvatarState.getState>> = {};
@@ -63,6 +85,11 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
     avatarEngine: s.avatarEngine,
     isSleepMode: s.isSleepMode,
   })));
+
+  const markRendererReady = useCallback(() => {
+    setReadyEngine(avatarEngine);
+    onLoad?.();
+  }, [avatarEngine, onLoad]);
 
   // Desktop Rectangles Polling
   useEffect(() => {
@@ -233,10 +260,92 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
         style={{ display: isSleepMode ? 'none' : 'block' }}
       >
         <AvatarErrorBoundary key={avatarEngine}>
-          {avatarEngine === 'live2d' ? <Live2DViewer /> : <Avatar3D />}
+          <Suspense fallback={null}>
+            {avatarEngine === 'live2d'
+              ? <Live2DViewer onReady={markRendererReady} />
+              : <Avatar3D onReady={markRendererReady} />}
+          </Suspense>
         </AvatarErrorBoundary>
+        {readyEngine !== avatarEngine && <AvatarEngineFallback />}
       </div>
     </>,
     document.body
+  );
+}
+
+function AvatarEngineFallback() {
+  const { avatarScale, worldPosition, setIsDragging, setWorldPosition, setTargetPosition, setDragOffset, setBasePose, setIsWalking } =
+    useAvatarState(useShallow(s => ({
+      avatarScale: s.avatarScale,
+      worldPosition: s.worldPosition,
+      setIsDragging: s.setIsDragging,
+      setWorldPosition: s.setWorldPosition,
+      setTargetPosition: s.setTargetPosition,
+      setDragOffset: s.setDragOffset,
+      setBasePose: s.setBasePose,
+      setIsWalking: s.setIsWalking,
+    })));
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; worldX: number; worldY: number } | null>(null);
+  const width = 210 * avatarScale;
+  const height = 420 * avatarScale;
+
+  useEffect(() => () => {
+    if (dragRef.current) {
+      setIsDragging(false);
+      setDragOffset({ x: 0, y: 0 });
+    }
+  }, [setDragOffset, setIsDragging]);
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      worldX: worldPosition.x,
+      worldY: worldPosition.y,
+    };
+    setIsDragging(true);
+    setBasePose('stand');
+    setIsWalking(false);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const x = Math.max(-window.innerWidth / 500, Math.min(window.innerWidth / 500, drag.worldX + (event.clientX - drag.startX) / 250));
+    const y = Math.max(-window.innerHeight / 500, Math.min(window.innerHeight / 500, drag.worldY - (event.clientY - drag.startY) / 250));
+    const position = { x, y, z: 0 };
+    setWorldPosition(position);
+    setTargetPosition(position);
+    setDragOffset({ x: (event.clientX - drag.startX) / 250, y: -(event.clientY - drag.startY) / 250 });
+  };
+
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setIsDragging(false);
+    setDragOffset({ x: 0, y: 0 });
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch (_) {}
+  };
+
+  return (
+    <div
+      aria-label="Avatar loading; drag to move"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      className="fixed pointer-events-auto cursor-grab active:cursor-grabbing z-[60]"
+      style={{
+        left: `calc(50% + ${worldPosition.x * 250 - width / 2}px)`,
+        top: `calc(50% - ${worldPosition.y * 250 + height * 0.88}px)`,
+        width,
+        height,
+        opacity: 0,
+        touchAction: 'none',
+      }}
+    />
   );
 }

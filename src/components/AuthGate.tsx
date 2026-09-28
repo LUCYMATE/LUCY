@@ -22,22 +22,6 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       } else {
         setAuthError(null);
       }
-      if (isTauriApp()) {
-        import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-          try {
-            const win = getCurrentWindow();
-            win.setAlwaysOnTop(false).catch(() => { });
-            win.setIgnoreCursorEvents(false).catch(() => { });
-            win.unmaximize().catch(() => { });
-            win.setSkipTaskbar(false).catch(() => { });
-            win.show().catch(() => { });
-            import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
-              win.setSize(new LogicalSize(1000, 700)).catch(() => { });
-              win.center().catch(() => { });
-            }).catch(() => { });
-          } catch (_) {}
-        }).catch(() => { });
-      }
     }
   }, [onAuthorized]);
 
@@ -74,8 +58,6 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
               win.setAlwaysOnTop(false).catch(() => { });
               win.setIgnoreCursorEvents(false).catch(() => { });
               win.unmaximize().catch(() => { });
-              win.setSkipTaskbar(false).catch(() => { });
-              win.show().catch(() => { });
               import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
                 win.setSize(new LogicalSize(1000, 700)).catch(() => { });
                 win.center().catch(() => { });

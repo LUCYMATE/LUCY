@@ -1311,27 +1311,60 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
 }
 
 fn do_wake_up_main(app_handle: &tauri::AppHandle) {
+    let mut was_sleeping = false;
     if let Some(state) = app_handle.try_state::<AppState>() {
         let mut is_sleeping = state.is_sleeping.lock().unwrap();
+        was_sleeping = *is_sleeping;
         *is_sleeping = false;
     }
     
     if let Some(win) = app_handle.get_webview_window("main") {
         let _ = win.show();
         let _ = win.set_focus();
-        let _ = win.set_always_on_top(true);
+
+        if was_sleeping {
+            // WebView2 needs time to resume after Windows trims the working set.
+            // Defer the frontend wake event until the main WebView is ready.
+            let win_clone = win.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                let win_on_main = win_clone.clone();
+                let _ = win_clone.run_on_main_thread(move || {
+                    let _ = win_on_main.set_always_on_top(true);
+                    let _ = win_on_main.eval("window.dispatchEvent(new CustomEvent('lucy-wake-up'));");
+                });
+            });
+        } else {
+            let _ = win.set_always_on_top(true);
+        }
     }
-    
-    // Broadcast clean native Tauri event to all windows
-    let _ = app_handle.emit("lucy-wake-up", ());
 }
 
 #[tauri::command]
-fn enter_sleep_mode(_app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
+fn enter_sleep_mode(app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
     *state.is_sleeping.lock().unwrap() = true;
+
+    // Sleep mode owns only the main webview. Close any dashboard/chat window
+    // before trimming memory; LucyOS can recreate it on demand after wake.
+    for (label, window) in app_handle.webview_windows() {
+        if label != "main" {
+            let _ = window.close();
+        }
+    }
+
     #[cfg(target_os = "windows")]
     {
-        trim_memory_internal();
+        // Let the recognizer and frontend settle before asking Windows to trim memory.
+        let app_handle = app_handle.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            if let Some(state) = app_handle.try_state::<AppState>() {
+                let still_sleeping = { *state.is_sleeping.lock().unwrap() };
+                if still_sleeping {
+                    trim_memory_internal();
+                }
+            }
+        });
     }
     Ok(())
 }
@@ -1577,7 +1610,9 @@ pub fn run() {
                         do_wake_up_main(app.app_handle());
                     }
                     "hide" => {
-                        let _ = app.emit("lucy-sleep", ());
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.eval("window.dispatchEvent(new CustomEvent('lucy-sleep'));");
+                        }
                     }
                     "refresh" => {
                         if let Some(win) = app.get_webview_window("main") {

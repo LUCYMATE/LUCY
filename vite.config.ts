@@ -30,10 +30,21 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'three-vendor': ['three', '@react-three/fiber', '@react-three/drei', '@pixiv/three-vrm'],
-          'genai-vendor': ['@google/genai']
+        manualChunks(id) {
+          const modulePath = id.replace(/\\/g, '/');
+          if (!modulePath.includes('/node_modules/')) return;
+
+          // Keep shared state outside the 3D renderer chunk. Both renderer and
+          // secondary-window stores use Zustand, but only the main window needs Three.
+          if (/\/node_modules\/zustand\//.test(modulePath)) {
+            return 'state-vendor';
+          }
+          if (/\/node_modules\/(react|react-dom|react-reconciler|scheduler|use-sync-external-store)\//.test(modulePath)) {
+            return 'react-vendor';
+          }
+          if (modulePath.includes('/node_modules/@google/genai/')) {
+            return 'genai-vendor';
+          }
         }
       }
     }

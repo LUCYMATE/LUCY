@@ -4,15 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { X, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft, LogOut, Sparkles } from 'lucide-react';
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 import { AVATAR_CONFIGURATION_CHANGED } from '../../lib/store/avatarConfiguration';
-
-export const LIVE2D_MODELS = [
-  { id: 'icy', name: 'Icy', icon: '❄️', desc: 'Ice Cheongsam' },
-  { id: 'rozen', name: 'Rozen', icon: '🌹', desc: 'Maiden Doll' },
-  { id: 'shiroko', name: 'Shiroko', icon: '🐺', desc: 'Blue Archive' },
-  { id: 'maya', name: 'Maya', icon: '🐱', desc: 'Catgirl Maid' },
-  { id: 'friday', name: 'Friday', icon: '🎀', desc: 'Haru Assistant' },
-  { id: 'venom', name: 'Venom', icon: '🖤', desc: 'Natori Companion' },
-];
+import { LIVE2D_MODELS } from '../../config/live2d-models';
 
 export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
   const {

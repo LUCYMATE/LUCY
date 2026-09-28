@@ -367,7 +367,9 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
                 if (/\b(wake\s*up|wakeup|lucy|hey\s*lucy|hello\s*lucy|wake\s*up\s*lucy)\b/i.test(inputText)) {
                   if (useAvatarState.getState().isSleepMode) {
                     logger.add('success', 'Wake Word', `Detected wake word: "${inputText}"! Waking up system...`);
-                    emitCrossWindow('lucy-wake-up');
+                    import('@tauri-apps/api/core').then(({ invoke }) => {
+                      invoke('wake_up_main').catch(err => logger.add('warning', 'Wake Word', `Native wake failed: ${String(err)}`));
+                    });
                   }
                 }
               }
