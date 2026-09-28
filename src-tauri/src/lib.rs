@@ -4,7 +4,7 @@ use screenshots::Screen;
 use std::sync::Mutex;
 use sysinfo::System;
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton as TrayMouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tauri_plugin_opener::OpenerExt;

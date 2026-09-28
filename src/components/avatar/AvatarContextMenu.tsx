@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { useShallow } from 'zustand/react/shallow';
-import { X, Lock, Unlock, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft, LogOut, Sparkles } from 'lucide-react';
+import { X, Mic, MicOff, Settings, MessageCircle, Maximize2, Power, CalendarClock, Trash2, Clock, Terminal, Layers, ChevronLeft, LogOut, Sparkles } from 'lucide-react';
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 import { AVATAR_CONFIGURATION_CHANGED } from '../../lib/store/avatarConfiguration';
 
@@ -16,8 +16,6 @@ export const LIVE2D_MODELS = [
 
 export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
   const {
-    isAvatarLocked,
-    setIsAvatarLocked,
     avatarScale,
     setAvatarScale,
     isMicOn,
@@ -27,8 +25,6 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
     setSelectedLive2dModel,
     isSleepMode,
   } = useAvatarState(useShallow(s => ({
-    isAvatarLocked: s.isAvatarLocked,
-    setIsAvatarLocked: s.setIsAvatarLocked,
     avatarScale: s.avatarScale,
     setAvatarScale: s.setAvatarScale,
     isMicOn: s.isMicOn,
@@ -63,19 +59,6 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
     emitCrossWindow('lucy-settings-changed');
   };
 
-  const handleLockAvatar = () => {
-    const val = !isAvatarLocked;
-    setIsAvatarLocked(val);
-    const s = useAvatarState.getState();
-    if (val) {
-      s.setLockedPosition({ ...s.worldPosition });
-    } else {
-      s.setLockedPosition(null);
-    }
-    localStorage.setItem('lucy_avatar_locked', String(val));
-    emitCrossWindow('lucy-settings-changed');
-    onClose();
-  };
 
   const handleMicToggle = async () => {
     emitCrossWindow('lucy-toggle-mic');
@@ -157,7 +140,6 @@ export function AvatarContextMenu({ x, y, onClose }: { x: number; y: number; onC
       },
       label: 'Size',
     },
-    { id: 'lock', icon: isAvatarLocked ? <Lock className="w-5 h-5 text-yellow-400" /> : <Unlock className="w-5 h-5 text-white/50" />, action: handleLockAvatar, label: 'Lock' },
     {
       id: 'apps',
       icon: <Layers className="w-5 h-5 text-blue-400" />,

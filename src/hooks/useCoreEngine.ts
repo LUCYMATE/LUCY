@@ -18,6 +18,7 @@ export function useCoreEngine() {
   const geminiRef = useRef<GeminiLive | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
+  const dummyMicStreamRef = useRef<MediaStream | null>(null);
   const modelBubbleIdRef = useRef<string>('');
   const speakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -246,11 +247,7 @@ export function useCoreEngine() {
     } else {
       isMicPendingRef.current = true;
       try {
-        playerRef.current?.stopCurrentPlayback();
-        setSpeaking(false);
-        stopSpeakingTimer();
         try { recorderRef.current?.stop(); } catch (e) {}
-        try { geminiRef.current?.endTurn(); } catch (e) {}
 
         // Stop any dummy mic tracks so Windows OS microphone indicator disappears immediately
         if (dummyMicStreamRef.current) {
