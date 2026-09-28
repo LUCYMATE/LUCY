@@ -11,6 +11,7 @@ import { openExternalUrl } from '../../lib/system/tauriBridge';
 import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindowEventBus';
 import { AVATAR_CONFIGURATION_CHANGED, type AvatarConfigurationChange } from '../../lib/store/avatarConfiguration';
 import { LIVE2D_MODELS } from '../../config/live2d-models';
+import { invoke } from '@tauri-apps/api/core';
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'link' | 'api' | 'shortcuts' | 'assets' | 'personalized' | 'about'>('general');
@@ -31,7 +32,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [memories, setMemories] = useState<MemoryFact[]>([]);
   
-  const [micId, setMicId] = useState(localStorage.getItem('lucy_mic_id') || '');
+  const [micId, setMicId] = useState(localStorage.getItem('lucy_mic_id') || 'default');
   const [micBoost, setMicBoost] = useState(() => {
     const val = localStorage.getItem('lucy_mic_boost');
     return val ? parseFloat(val) : 2.0;
@@ -84,12 +85,29 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [tavilyApiKey, setTavilyApiKey] = useState(localStorage.getItem('lucy_tavily_api_key') || '');
 
   useEffect(() => {
-    navigator.mediaDevices?.getUserMedia?.({ audio: true }).then((stream) => {
-      stream.getTracks().forEach(t => t.stop());
-      navigator.mediaDevices.enumerateDevices().then(d => setDevices(d));
-    }).catch(() => {
-      navigator.mediaDevices?.enumerateDevices?.().then(d => setDevices(d)).catch(() => {});
-    });
+    const loadInputDevices = async () => {
+      try {
+        const microphones = await invoke<Array<{ id: string; label: string }>>('list_native_microphones');
+        const cameras = await navigator.mediaDevices?.enumerateDevices?.() || [];
+        const nativeMicDevices = microphones.map((device) => ({
+          deviceId: device.id,
+          groupId: 'native-audio',
+          kind: 'audioinput' as MediaDeviceKind,
+          label: device.label,
+          toJSON: () => ({ deviceId: device.id, kind: 'audioinput', label: device.label }),
+        } as MediaDeviceInfo));
+        setDevices([...nativeMicDevices, ...cameras.filter(device => device.kind === 'videoinput')]);
+        setMicId((current) => {
+          if (current === 'default' || microphones.some(device => device.id === current)) return current;
+          localStorage.setItem('lucy_mic_id', 'default');
+          return 'default';
+        });
+      } catch (error) {
+        logger.add('warning', 'Microphone', `Could not enumerate native microphone devices: ${String(error)}`);
+        navigator.mediaDevices?.enumerateDevices?.().then(items => setDevices(items.filter(device => device.kind === 'videoinput'))).catch(() => {});
+      }
+    };
+    void loadInputDevices();
     
     const loadMemories = () => setMemories(vectorMemory.getMemories());
     loadMemories();

@@ -4,10 +4,8 @@
 fn main() {
     #[cfg(target_os = "windows")]
     {
-        // Match Soltini's WebView2 media behavior: allow the app's local
-        // SpeechRecognition/getUserMedia wake listener to obtain microphone
-        // access while Lucy is transparent and asleep, when a permission UI
-        // could not be presented interactively. Also allow app audio playback.
+        // Allow the Tauri app's audio output to start without waiting for a
+        // browser gesture. Microphone capture itself is owned by the native app.
         let existing = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
         let flags = [
             "--use-fake-ui-for-media-stream",

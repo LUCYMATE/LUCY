@@ -43,6 +43,7 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
   }, []);
 
   const statsRef = useRef({ cpu, memory, latency });
+  const secondaryWindowOpeningRef = useRef(false);
   useEffect(() => {
     statsRef.current = { cpu, memory, latency };
   }, [cpu, memory, latency]);
@@ -124,35 +125,18 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
 
   useEffect(() => {
     const openTab = async (tab: string) => {
-      if (useAvatarState.getState().isSleepMode) return;
+      // Dashboard actions are allowed while the avatar is asleep. Sleep keeps
+      // only the main avatar window alive; a deliberate menu action can open
+      // the dashboard without waking the avatar.
+      if (secondaryWindowOpeningRef.current) return;
+      secondaryWindowOpeningRef.current = true;
       try {
-        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-        const existing = await WebviewWindow.getByLabel('settings');
-        if (existing) {
-          await existing.unminimize().catch(() => {});
-          await existing.show().catch(() => {});
-          await existing.setFocus().catch(() => {});
-          await emitCrossWindow('lucy-switch-tab', tab);
-          return;
-        }
-        const win = new WebviewWindow('settings', {
-          url: `index.html#settings?tab=${tab}`,
-          title: 'LUCY Dashboard',
-          width: 960,
-          height: 640,
-          x: 200,
-          y: 200,
-          resizable: true,
-          decorations: false,
-          // The secondary dashboard/settings window is a normal content window.
-          // Keeping it opaque prevents a renderer error from exposing the desktop.
-          transparent: false
-        });
-        win.once('tauri://error', (e) => {
-          console.warn('Failed to open settings window:', e);
-        });
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('open_dashboard_window_command', { tab });
       } catch (e) {
         console.warn('Failed to open settings window', e);
+      } finally {
+        secondaryWindowOpeningRef.current = false;
       }
     };
 
@@ -161,18 +145,6 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
     const handleOpenChat = () => openTab('dashboard');
     const handleOpenLogs = () => openTab('logs');
     
-    const handleSleep = () => {
-      import('@tauri-apps/api/webviewWindow').then(({ getAllWebviewWindows }) => {
-        getAllWebviewWindows().then(windows => {
-          windows.forEach(w => {
-            if (w.label !== 'main') {
-              w.close().catch(() => {});
-            }
-          });
-        }).catch(() => {});
-      }).catch(() => {});
-    };
-
     const handleWakeUp = () => {
       useAvatarState.getState().setIsSleepMode(false);
     };
@@ -194,7 +166,6 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
       listenCrossWindow('lucy-open-tasks', handleOpenTasks),
       listenCrossWindow('lucy-open-chat', handleOpenChat),
       listenCrossWindow('lucy-open-logs', handleOpenLogs),
-      listenCrossWindow('lucy-sleep', handleSleep),
       listenCrossWindow('lucy-wake-up', handleWakeUp)
     ];
 

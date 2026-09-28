@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use sysinfo::System;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
@@ -16,6 +16,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 mod lucy_link;
+mod native_audio;
 
 static AUTH_CALLBACK_TOKEN: OnceLock<Mutex<Option<(String, String)>>> = OnceLock::new();
 
@@ -1380,6 +1381,42 @@ fn wake_up_main(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn open_dashboard_window(app_handle: &tauri::AppHandle, tab: &str) -> Result<(), String> {
+    let tab = match tab {
+        "dashboard" | "chat" => "dashboard",
+        "settings" | "tasks" | "logs" => tab,
+        _ => "dashboard",
+    };
+
+    if let Some(window) = app_handle.get_webview_window("settings") {
+        window.unminimize().map_err(|e| format!("Could not restore dashboard window: {e}"))?;
+        window.show().map_err(|e| format!("Could not show dashboard window: {e}"))?;
+        window.set_always_on_top(true).map_err(|e| format!("Could not set dashboard window always on top: {e}"))?;
+        window.set_focus().map_err(|e| format!("Could not focus dashboard window: {e}"))?;
+        app_handle.emit("lucy-switch-tab", tab.to_string()).map_err(|e| format!("Could not switch dashboard tab: {e}"))?;
+        return Ok(());
+    }
+
+    let url = WebviewUrl::App(format!("index.html#settings?tab={tab}").into());
+    WebviewWindowBuilder::new(app_handle, "settings", url)
+        .title("LUCY Dashboard")
+        .inner_size(960.0, 640.0)
+        .position(200.0, 200.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(false)
+        .always_on_top(true)
+        .visible(true)
+        .build()
+        .map(|_| ())
+        .map_err(|e| format!("Could not create dashboard window: {e}"))
+}
+
+#[tauri::command]
+async fn open_dashboard_window_command(app_handle: tauri::AppHandle, tab: String) -> Result<(), String> {
+    open_dashboard_window(&app_handle, &tab)
+}
+
 #[tauri::command]
 fn is_autostart() -> bool {
     std::env::args().any(|arg| arg.contains("autostart") || arg == "-a")
@@ -1496,11 +1533,18 @@ pub fn run() {
             authorization_expires_at: Mutex::new(0),
             is_sleeping: Mutex::new(is_autostart_boot),
         })
+        .manage(native_audio::NativeAudioState::new())
         // Keep phone networking out of application startup. The listener is bound only
         // after the user opens Phone Link and requests pairing data.
         .manage(std::sync::Arc::new(tokio::sync::Mutex::new(lucy_link::LucyLinkState::new())))
         .invoke_handler(tauri::generate_handler![
             get_system_stats,
+            native_audio::list_native_microphones,
+            native_audio::start_native_mic,
+            native_audio::stop_native_mic,
+            native_audio::set_native_mic_boost,
+            native_audio::start_native_wake_listener,
+            native_audio::stop_native_wake_listener,
             open_external_url,
             move_and_click_mouse,
             scroll_mouse,
@@ -1527,6 +1571,7 @@ pub fn run() {
             trim_memory,
             enter_sleep_mode,
             wake_up_main,
+            open_dashboard_window_command,
             is_autostart,
             setup_wayland_automation,
             exit_app,
@@ -1625,8 +1670,12 @@ pub fn run() {
                         }
                     }
                     "options" => {
-                        // Open secondary settings/options window directly without waking or showing the main avatar
-                        let _ = app.emit("lucy-open-settings", ());
+                        let app_handle = app.app_handle().clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(error) = open_dashboard_window(&app_handle, "settings") {
+                                eprintln!("Failed to open tray Settings window: {error}");
+                            }
+                        });
                     }
                     _ => {}
                 })

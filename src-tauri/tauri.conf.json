@@ -21,8 +21,7 @@
                                     "decorations":  false,
                                     "transparent":  true,
                                     "alwaysOnTop":  true,
-                                    "visible":  false,
-                                    "additionalBrowserArgs":  "--use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required"
+                                    "visible":  false
                                 }
                             ],
                 "security":  {

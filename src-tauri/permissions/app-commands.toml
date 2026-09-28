@@ -1,4 +1,9 @@
 [[permission]]
+identifier = "allow-open-dashboard-window-command"
+description = "Allows opening the dashboard window and waking the main avatar"
+commands.allow = ["open_dashboard_window_command"]
+
+[[permission]]
 identifier = "allow-start-native-mic"
 description = "Allows starting native microphone capture"
 commands.allow = ["start_native_mic"]
@@ -7,6 +12,26 @@ commands.allow = ["start_native_mic"]
 identifier = "allow-stop-native-mic"
 description = "Allows stopping native microphone capture"
 commands.allow = ["stop_native_mic"]
+
+[[permission]]
+identifier = "allow-start-native-wake-listener"
+description = "Allows starting native sleep-mode speech recognition"
+commands.allow = ["start_native_wake_listener"]
+
+[[permission]]
+identifier = "allow-stop-native-wake-listener"
+description = "Allows stopping native sleep-mode speech recognition"
+commands.allow = ["stop_native_wake_listener"]
+
+[[permission]]
+identifier = "allow-set-native-mic-boost"
+description = "Allows updating native microphone gain"
+commands.allow = ["set_native_mic_boost"]
+
+[[permission]]
+identifier = "allow-list-native-microphones"
+description = "Allows listing native microphone devices"
+commands.allow = ["list_native_microphones"]
 
 [[permission]]
 identifier = "allow-check-microphone-permission"
