@@ -40,17 +40,6 @@ function trackAndCheckDuplicate(id: string): boolean {
  * Envelopes each payload with a unique ID to prevent double execution in the emitter window.
  */
 export async function emitCrossWindow<T = any>(event: string, payload?: T): Promise<void> {
-  const isSleepWakeEvent = event === 'lucy-sleep' || event === 'lucy-wake-up';
-  if (isSleepWakeEvent && isTauriApp()) {
-    try {
-      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      if (getCurrentWebviewWindow().label !== 'main') return;
-    } catch (e) {
-      console.warn(`[crossWindowEventBus] Could not verify main window for "${event}":`, e);
-      return;
-    }
-  }
-
   const eventId = `${WINDOW_INSTANCE_ID}:${++sequenceCounter}:${Date.now()}`;
   const envelope: CrossWindowEventEnvelope<T> = {
     __crossWindowBus: true,
@@ -65,10 +54,6 @@ export async function emitCrossWindow<T = any>(event: string, payload?: T): Prom
   } catch (e) {
     console.warn(`[crossWindowEventBus] Failed to dispatch DOM event "${event}":`, e);
   }
-
-  // Sleep/wake transitions belong to the main webview only. Wake requests must
-  // go through the native main-window command, which restores that window first.
-  if (isSleepWakeEvent) return;
 
   // If running inside Tauri, emit globally to all windows
   if (isTauriApp()) {

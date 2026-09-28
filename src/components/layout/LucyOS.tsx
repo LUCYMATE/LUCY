@@ -152,6 +152,8 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
     const handleToggleSleep = () => {
       const isSleep = useAvatarState.getState().isSleepMode;
       if (isSleep) {
+        useAvatarState.getState().setIsSleepMode(false);
+        emitCrossWindow('lucy-wake-up');
         import('@tauri-apps/api/core').then(({ invoke }) => {
           invoke('wake_up_main').catch(err => console.warn('Failed to wake main window:', err));
         });

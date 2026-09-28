@@ -248,6 +248,7 @@ export default function MainApp() {
       win.setAlwaysOnTop(true).catch(() => {});
       win.maximize().catch(() => {});
       win.show().catch(() => {});
+      win.setIgnoreCursorEvents(false).catch(() => {});
 
       // Force DOM repaint to fix Windows WebView2 blank screen bug after memory trim on wake
       document.body.style.backgroundColor = 'rgba(0,0,0,0.01)';
