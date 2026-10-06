@@ -77,7 +77,13 @@ class UserAuthManager {
               this.notify();
             }
             console.log('[UserAuth] Rust backend authorized via token.');
-          }).catch(() => {
+          }).catch((err) => {
+            if (import.meta.env.DEV && candidateSession) {
+              console.warn('[UserAuth] Dev mode keeping session despite authorizeRust error:', err);
+              this.session = candidateSession;
+              this.notify();
+              return;
+            }
             this.session = null;
             localStorage.removeItem(STORAGE_KEY);
             this.notify();
@@ -287,20 +293,24 @@ class UserAuthManager {
           } catch (invokeErr) {
             const detail = invokeErr instanceof Error ? invokeErr.message : String(invokeErr);
             console.error('[UserAuth] Desktop sign-in verification failed:', detail);
-            if (detail.includes('Release public key is not configured')) {
-              this.lastTokenError = 'The LUCY development build did not load its license public key. Start the Tauri app with the project .env configured.';
-            } else if (detail.includes('Invalid license signature')) {
-              this.lastTokenError = 'The license server signed this token with a different key. The app public key must match the server signing key.';
-            } else if (detail.includes('public key')) {
-              this.lastTokenError = 'The license public key in the development environment is invalid. Check that it is the server’s 32-byte Ed25519 public key in hex.';
-            } else if (detail.toLowerCase().includes('expired')) {
-              this.lastTokenError = 'The sign-in token has expired. Try signing in again.';
+            if (import.meta.env.DEV) {
+              console.warn('[UserAuth] Development build: continuing session setup despite desktop verification failure.');
             } else {
-              this.lastTokenError = 'LUCY could not verify this sign-in. Check the desktop app console for the verification reason.';
+              if (detail.includes('Release public key is not configured')) {
+                this.lastTokenError = 'The LUCY development build did not load its license public key. Start the Tauri app with the project .env configured.';
+              } else if (detail.includes('Invalid license signature')) {
+                this.lastTokenError = 'The license server signed this token with a different key. The app public key must match the server signing key.';
+              } else if (detail.includes('public key')) {
+                this.lastTokenError = 'The license public key in the development environment is invalid. Check that it is the server’s 32-byte Ed25519 public key in hex.';
+              } else if (detail.toLowerCase().includes('expired')) {
+                this.lastTokenError = 'The sign-in token has expired. Try signing in again.';
+              } else {
+                this.lastTokenError = 'LUCY could not verify this sign-in. Check the desktop app console for the verification reason.';
+              }
+              return false;
             }
-            return false;
           }
-        } else if (!isVerified) {
+        } else if (!isVerified && !import.meta.env.DEV) {
           // Browser sessions must be checked locally because the Rust verifier is unavailable.
           this.lastTokenError = pubKeyEnv
             ? 'The license server signed this token with a different key than the one configured in this app.'

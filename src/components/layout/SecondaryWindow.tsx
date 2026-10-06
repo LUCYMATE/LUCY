@@ -27,6 +27,7 @@ export function SecondaryWindow() {
     let unlistenResize: (() => void) | undefined;
     try {
       const win = getCurrentWebviewWindow();
+      win.setAlwaysOnTop(false).catch(() => {});
       win.isMaximized().then(setIsMaximized).catch(() => {});
       win.onResized(() => {
         win.isMaximized().then(setIsMaximized).catch(() => {});
