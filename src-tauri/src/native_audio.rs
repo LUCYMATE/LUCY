@@ -269,7 +269,10 @@ fn start_wake_worker(
         .lock()
         .map_err(|_| "Wake listener state is unavailable")?;
     if let Some(worker) = slot.as_ref() {
-        if !worker.thread.is_finished() && !test_mode && !worker.test_mode {
+        if !worker.stop.load(std::sync::atomic::Ordering::SeqCst)
+            && !worker.thread.is_finished()
+            && worker.test_mode == test_mode
+        {
             return Ok(());
         }
     }
@@ -279,10 +282,11 @@ fn start_wake_worker(
     }
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let worker_stop = stop.clone();
+    let boost = state.boost.clone();
     let thread = std::thread::Builder::new()
         .name("lucy-native-wake".into())
         .spawn(move || {
-            run_native_wake_listener(app, worker_stop, device_id, test_mode);
+            run_native_wake_listener(app, worker_stop, device_id, test_mode, boost);
         })
         .map_err(|e| format!("Could not start wake listener: {e}"))?;
     *slot = Some(WakeWorker { stop, thread, test_mode });
@@ -366,34 +370,11 @@ fn run_native_wake_listener(
     stop: Arc<std::sync::atomic::AtomicBool>,
     preferred_id: Option<String>,
     test_mode: bool,
+    boost: Arc<AtomicU32>,
 ) {
     use std::time::Duration;
 
     let result = (|| -> Result<(), String> {
-        let lucy_path = wake_model_path(&app, "lucy")?;
-        let hey_lucy_path = wake_model_path(&app, "hey_lucy")?;
-        use tract_core::model::IntoRunnable;
-        use tract_core::prelude::{
-            multithread::{self, Executor},
-            Framework,
-        };
-        use tract_onnx::prelude::{tvec, InferenceModelExt, IntoTensor};
-
-        multithread::set_default_executor(Executor::SingleThread);
-        let mut models = Vec::new();
-        for (phrase, path) in [("Lucy", &lucy_path), ("Hey Lucy", &hey_lucy_path)] {
-            let model = tract_onnx::onnx()
-                .model_for_path(path)
-                .map_err(|e| format!("Could not read {phrase} wake model: {e}"))?
-                .into_optimized()
-                .map_err(|e| format!("Could not optimize {phrase} wake model: {e}"))?
-                .into_runnable()
-                .map_err(|e| format!("Could not prepare {phrase} wake model: {e}"))?;
-            models.push((phrase, model));
-        }
-        // Both phrase classifiers reuse one mel/embedding frontend to reduce RAM and CPU.
-        let mut audio_features = AudioFeaturesTract::create_default();
-
         let host = cpal::default_host();
         let preferred = preferred_id
             .as_deref()
@@ -420,7 +401,7 @@ fn run_native_wake_listener(
             return Err("Microphone reported zero audio channels or invalid sample rate.".to_string());
         }
 
-        let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<f32>>(32);
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<f32>>(256);
 
         let error_app = app.clone();
         let error_stop = stop.clone();
@@ -432,14 +413,17 @@ fn run_native_wake_listener(
             );
         };
 
+        let gain = boost.clone();
         macro_rules! build_stream {
             ($sample:ty) => {{
                 let sender = sender.clone();
+                let gain = gain.clone();
                 device
                     .build_input_stream(
                         &config,
                         move |data: &[$sample], _| {
                             use cpal::Sample;
+                            let current_gain = f32::from_bits(gain.load(Ordering::Relaxed)).clamp(1.0, 5.0);
                             let mut chunk = Vec::with_capacity(data.len() / channels);
                             for frame in data.chunks(channels) {
                                 if frame.is_empty() {
@@ -450,7 +434,8 @@ fn run_native_wake_listener(
                                     .map(|sample| sample.to_sample::<f32>())
                                     .sum::<f32>()
                                     / frame.len() as f32;
-                                chunk.push(mono);
+                                let amplified = (mono * current_gain).clamp(-1.0, 1.0);
+                                chunk.push(amplified);
                             }
                             let _ = sender.try_send(chunk);
                         },
@@ -486,8 +471,33 @@ fn run_native_wake_listener(
             "native-wake-status",
             format!("listening on selected microphone ({input_rate} Hz input)"),
         );
+
+        // Prepare wake-word neural models
+        let lucy_path = wake_model_path(&app, "lucy")?;
+        let hey_lucy_path = wake_model_path(&app, "hey_lucy")?;
+        use tract_core::model::IntoRunnable;
+        use tract_core::prelude::{
+            multithread::{self, Executor},
+            Framework,
+        };
+        use tract_onnx::prelude::{tvec, InferenceModelExt, IntoTensor};
+
+        multithread::set_default_executor(Executor::SingleThread);
+        let mut models = Vec::new();
+        for (phrase, path) in [("Lucy", &lucy_path), ("Hey Lucy", &hey_lucy_path)] {
+            let model = tract_onnx::onnx()
+                .model_for_path(path)
+                .map_err(|e| format!("Could not read {phrase} wake model: {e}"))?
+                .into_optimized()
+                .map_err(|e| format!("Could not optimize {phrase} wake model: {e}"))?
+                .into_runnable()
+                .map_err(|e| format!("Could not prepare {phrase} wake model: {e}"))?;
+            models.push((phrase, model));
+        }
+        let mut audio_features = AudioFeaturesTract::create_default();
+
         let mut resampler = MonoResampler16k::new(input_rate);
-        let mut mono_16k_buffer = Vec::<f32>::with_capacity(2560);
+        let mut mono_16k_buffer = Vec::<f32>::with_capacity(32000);
         let mut score_history = [
             std::collections::VecDeque::<f32>::with_capacity(12),
             std::collections::VecDeque::<f32>::with_capacity(12),
@@ -505,6 +515,10 @@ fn run_native_wake_listener(
             }
 
             while mono_16k_buffer.len() >= 1280 {
+                if mono_16k_buffer.len() > 32_000 {
+                    mono_16k_buffer.drain(..mono_16k_buffer.len() - 32_000);
+                }
+
                 let mono: Vec<f32> = mono_16k_buffer.drain(..1280).collect();
                 let features = audio_features
                     .get_audio_features(&mono)
@@ -528,41 +542,43 @@ fn run_native_wake_listener(
                         .as_slice()
                         .and_then(|values| values.first().copied())
                         .unwrap_or(0.0);
+
                     let history = &mut score_history[index];
                     history.push_back(score);
-                    if history.len() > 12 {
+                    if history.len() > 8 {
                         history.pop_front();
                     }
-                    let positives = history
-                        .iter()
-                        .filter(|value| **value > 0.50)
-                        .copied()
-                        .collect::<Vec<_>>();
-                    let average = if positives.len() >= 2 {
-                        positives.iter().sum::<f32>() / positives.len() as f32
+
+                    let recent_len = history.len().min(3);
+                    let recent_avg = if recent_len > 0 {
+                        history.iter().rev().take(recent_len).sum::<f32>() / recent_len as f32
                     } else {
                         0.0
                     };
+                    let smoothed = score.max(recent_avg);
+
                     if test_mode {
                         let _ = app.emit(
                             "native-wake-test-score",
-                            serde_json::json!({ "phrase": phrase, "score": score, "smoothed": average }),
+                            serde_json::json!({ "phrase": phrase, "score": score, "smoothed": smoothed }),
                         );
                     }
-                    if average > 0.50
+
+                    let is_detected = (score >= 0.45 || smoothed >= 0.35)
                         && last_detection.map_or(true, |last: std::time::Instant| {
                             last.elapsed() > Duration::from_secs(2)
-                        })
-                    {
+                        });
+
+                    if is_detected {
                         last_detection = Some(std::time::Instant::now());
                         if test_mode {
                             let _ = app.emit("native-wake-test-detected", phrase.to_string());
-                            last_detection = Some(std::time::Instant::now());
                         } else {
                             stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                            crate::do_wake_up_main(&app, true);
                             let _ = app.emit("native-wake-detected", phrase.to_string());
+                            break;
                         }
-                        break;
                     }
                 }
             }

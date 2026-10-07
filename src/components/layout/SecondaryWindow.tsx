@@ -98,12 +98,23 @@ export function SecondaryWindow() {
           });
         }
       }).then(u => unlisteners.push(u));
+
+      listen('lucy-sleep', () => {
+        closeSelf();
+      }).then(u => unlisteners.push(u));
       
       // Request initial sync from main window
       emit('lucy-request-sync');
     });
 
-    return () => unlisteners.forEach(u => u && u());
+    const unsubCrossSleep = listenCrossWindow('lucy-sleep', () => {
+      closeSelf();
+    });
+
+    return () => {
+      unsubCrossSleep();
+      unlisteners.forEach(u => u && u());
+    };
   }, []);
 
   const handleMinimize = () => {

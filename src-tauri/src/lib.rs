@@ -1337,7 +1337,7 @@ fn get_stored_license(app_handle: tauri::AppHandle) -> serde_json::Value {
     serde_json::json!({ "success": false })
 }
 
-fn do_wake_up_main(app_handle: &tauri::AppHandle, _force_frontend_wake: bool) {
+pub(crate) fn do_wake_up_main(app_handle: &tauri::AppHandle, _force_frontend_wake: bool) {
     if let Some(state) = app_handle.try_state::<AppState>() {
         let mut is_sleeping = state.is_sleeping.lock().unwrap();
         *is_sleeping = false;
@@ -1371,11 +1371,14 @@ fn do_wake_up_main(app_handle: &tauri::AppHandle, _force_frontend_wake: bool) {
 fn enter_sleep_mode(app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
     *state.is_sleeping.lock().unwrap() = true;
 
-    // Sleep mode owns only the main webview. Close any dashboard/chat window
-    // before trimming memory; LucyOS can recreate it on demand after wake.
+    // Notify all windows and secondary webviews of sleep mode
+    let _ = app_handle.emit("lucy-sleep", ());
+
+    // Sleep mode owns only the main webview. Forcefully destroy any dashboard/chat window
+    // so no secondary windows linger on screen; LucyOS will recreate it on demand.
     for (label, window) in app_handle.webview_windows() {
         if label != "main" {
-            let _ = window.close();
+            let _ = window.destroy();
         }
     }
 
