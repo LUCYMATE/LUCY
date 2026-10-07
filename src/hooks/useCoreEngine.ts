@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { GeminiLive } from '../lib/gemini/gemini-live';
 import { AudioRecorder } from '../lib/audio/audio-recorder';
-import { NativeWakeBridge } from '../lib/audio/native-wake-bridge';
 import { AudioPlayer } from '../lib/audio/audio-player';
 import { logger } from '../lib/store/logger';
 import { useAvatarState } from '../lib/store/avatarState';
@@ -27,11 +26,6 @@ export function useCoreEngine() {
 
   const wakeRequestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeWakeActiveRef = useRef(false);
-  const wakeStartingRef = useRef(false);
-  const speechRecognitionRef = useRef<any>(null);
-  const wakeBridgeRef = useRef<NativeWakeBridge | null>(null);
-  const wakeRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dummyMicStreamRef = useRef<MediaStream | null>(null);
   const isWakingUpRef = useRef(false);
   const initSystemRef = useRef<(isWakeUp?: boolean, autoMic?: boolean) => void>(() => {});
   const startWakeWordListenerRef = useRef<() => void>(() => {});
@@ -40,25 +34,11 @@ export function useCoreEngine() {
     if (!useAvatarState.getState().isSleepMode || isWakingUpRef.current) return;
     isWakingUpRef.current = true;
     nativeWakeActiveRef.current = false;
-    wakeStartingRef.current = false;
-    if (wakeRestartTimerRef.current) {
-      clearTimeout(wakeRestartTimerRef.current);
-      wakeRestartTimerRef.current = null;
-    }
     const matcher = /\b(wake\s*up\s*lucy|lucy\s*wake\s*up|wakeup\s*lucy|lucy\s*wakeup|wake\s*up|wakeup|wake|woke\s*up|lucy|luci|lucie|loosey|losey|lusi|lusee|look\s*see|lucian|lucia|losie|loucy|loosy|lusy|hey\s*lucy|hello\s*lucy|hi\s*lucy|ok\s*lucy|okay\s*lucy)\b/i;
     const match = text.match(matcher);
     const pendingQuery = match ? text.slice((match.index || 0) + match[0].length).trim() : '';
     if (pendingQuery.length > 2) sessionStorage.setItem('lucy_pending_query', pendingQuery);
     logger.add('success', 'Wake Word', `Detected: "${text}"`);
-    if (speechRecognitionRef.current) {
-      speechRecognitionRef.current.onend = null;
-      speechRecognitionRef.current.onerror = null;
-      try { speechRecognitionRef.current.stop(); } catch {}
-      speechRecognitionRef.current = null;
-    }
-    const bridge = wakeBridgeRef.current;
-    wakeBridgeRef.current = null;
-    void bridge?.stop().catch(() => {});
     void invoke('stop_native_wake_listener').catch(() => {});
     if (wakeRequestTimeoutRef.current) clearTimeout(wakeRequestTimeoutRef.current);
     wakeRequestTimeoutRef.current = setTimeout(() => {
@@ -84,103 +64,16 @@ export function useCoreEngine() {
 
   const startWakeWordListener = useCallback(() => {
     if (!useAvatarState.getState().isSleepMode || isWakingUpRef.current) return;
-    
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      const existing = speechRecognitionRef.current;
-      if (existing) {
-        try {
-          existing.start();
-          return;
-        } catch (e: any) {
-          if (e?.name === 'InvalidStateError') return;
-          try { existing.abort(); } catch {}
-          speechRecognitionRef.current = null;
-        }
-      }
-
-      try {
-        const sr = new SpeechRecognition();
-        const SpeechGrammarList = (window as any).SpeechGrammarList || (window as any).webkitSpeechGrammarList;
-        if (SpeechGrammarList) {
-          try {
-            const grammarList = new SpeechGrammarList();
-            grammarList.addFromString(
-              '#JSGF V1.0; grammar lucy; public <lucy> = wake up | lucy | hey lucy | hello lucy | wake up lucy ;',
-              1
-            );
-            sr.grammars = grammarList;
-          } catch {}
-        }
-
-        sr.continuous = false;
-        sr.interimResults = true;
-        sr.maxAlternatives = 5;
-        sr.lang = localStorage.getItem('lucy_language') || 'en-IN';
-
-        sr.onresult = (event: any) => {
-          if (isWakingUpRef.current) return;
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const result = event.results[i];
-            for (let j = 0; j < result.length; j++) {
-              const text = String(result[j].transcript || '').trim();
-              if (/\b(wake\s*up\s*lucy|lucy\s*wake\s*up|wakeup\s*lucy|lucy\s*wakeup|wake\s*up|wakeup|wake|woke\s*up|lucy|luci|lucie|loosey|losey|lusi|lusee|look\s*see|lucian|lucia|losie|loucy|loosy|lusy|hey\s*lucy|hello\s*lucy|hi\s*lucy|ok\s*lucy|okay\s*lucy)\b/i.test(text)) {
-                requestWake(text);
-                return;
-              }
-            }
-          }
-        };
-
-        const restart = (delay = 50) => {
-          if (useAvatarState.getState().isSleepMode && !isWakingUpRef.current) {
-            if (wakeRestartTimerRef.current) clearTimeout(wakeRestartTimerRef.current);
-            wakeRestartTimerRef.current = setTimeout(() => {
-              wakeRestartTimerRef.current = null;
-              if (useAvatarState.getState().isSleepMode && !isWakingUpRef.current) {
-                try {
-                  sr.start();
-                } catch (e: any) {
-                  if (e?.name !== 'InvalidStateError') {
-                    startWakeWordListenerRef.current();
-                  }
-                }
-              }
-            }, delay);
-          }
-        };
-
-        sr.onerror = (event: any) => {
-          if (event.error !== 'no-speech' && event.error !== 'aborted') {
-            logger.add('warning', 'Wake Word', `Speech listener: ${event.error || 'unknown'}`);
-          }
-          restart(event.error === 'no-speech' ? 50 : 1000);
-        };
-
-        sr.onend = () => {
-          restart(50);
-        };
-
-        speechRecognitionRef.current = sr;
-        sr.start();
-        logger.add('info', 'Wake Word', 'Voice wake listener active. Say "Lucy" or "Wake up" to wake me.');
-        return;
-      } catch (e: any) {
-        console.warn('[WakeWord] Web Speech recognition start error:', e);
-        speechRecognitionRef.current = null;
-      }
-    }
-
-    // Windows native recognition fallback
-    if (!nativeWakeActiveRef.current) {
-      nativeWakeActiveRef.current = true;
-      invoke('start_native_wake_listener').catch((error) => {
-        nativeWakeActiveRef.current = false;
-        logger.add('warning', 'Wake Word', `Native recognition fallback unavailable: ${String(error)}`);
-      });
-    }
-  }, [requestWake]);
+    if (nativeWakeActiveRef.current) return;
+    nativeWakeActiveRef.current = true;
+    const deviceId = localStorage.getItem('lucy_mic_id') || 'default';
+    invoke('start_native_wake_listener', { deviceId }).then(() => {
+      logger.add('info', 'Wake Word', 'Starting the local Rust wake-word detector.');
+    }).catch((error) => {
+      nativeWakeActiveRef.current = false;
+      logger.add('error', 'Wake Word', `Could not start local detector: ${String(error)}`);
+    });
+  }, []);
 
   const isMicPendingRef = useRef(false);
   const lastToggleTimeRef = useRef<number>(0);
@@ -513,17 +406,6 @@ export function useCoreEngine() {
     if (useAvatarState.getState().isSleepMode) {
       setInitialized(true);
       logger.add('info', 'Sleep Mode', 'Started directly into sleep mode (Autostart).');
-      if (!dummyMicStreamRef.current) {
-        navigator.mediaDevices?.getUserMedia?.({
-          audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false }
-        }).then(stream => {
-          if (useAvatarState.getState().isSleepMode) {
-            dummyMicStreamRef.current = stream;
-          } else {
-            stream.getTracks().forEach(track => track.stop());
-          }
-        }).catch(() => {});
-      }
       setTimeout(() => {
         startWakeWordListenerRef.current();
         invoke('enter_sleep_mode');
@@ -537,15 +419,24 @@ export function useCoreEngine() {
   useEffect(() => {
     let unlistenWake: UnlistenFn | null = null;
     let unlistenWakeError: UnlistenFn | null = null;
+    let unlistenWakeStatus: UnlistenFn | null = null;
     let disposed = false;
     void listen<string>('native-wake-detected', ({ payload }) => {
       requestWake(payload);
     }).then((unlisten) => {
       if (disposed) unlisten(); else unlistenWake = unlisten;
     });
+    void listen<string>('native-wake-status', ({ payload }) => {
+      if (payload.startsWith('listening')) {
+        logger.add('success', 'Wake Word', `Local detector active: ${payload}`);
+      } else if (payload.includes('unavailable')) {
+        logger.add('warning', 'Wake Word', payload);
+      }
+    }).then((unlisten) => {
+      if (disposed) unlisten(); else unlistenWakeStatus = unlisten;
+    });
     void listen<string>('native-wake-error', ({ payload }) => {
       nativeWakeActiveRef.current = false;
-      wakeStartingRef.current = false;
       logger.add('error', 'Wake Word', payload);
       if (useAvatarState.getState().isSleepMode && !isWakingUpRef.current) {
         setTimeout(() => startWakeWordListenerRef.current(), 5000);
@@ -557,6 +448,7 @@ export function useCoreEngine() {
       disposed = true;
       unlistenWake?.();
       unlistenWakeError?.();
+      unlistenWakeStatus?.();
     };
   }, [requestWake]);
 
@@ -632,36 +524,7 @@ export function useCoreEngine() {
 
         await recorderRef.current?.stopAndWait();
         nativeWakeActiveRef.current = false;
-        wakeStartingRef.current = false;
-        if (wakeRestartTimerRef.current) {
-          clearTimeout(wakeRestartTimerRef.current);
-          wakeRestartTimerRef.current = null;
-        }
-        if (speechRecognitionRef.current) {
-          speechRecognitionRef.current.onend = null;
-          speechRecognitionRef.current.onerror = null;
-          try { speechRecognitionRef.current.stop(); } catch {}
-          speechRecognitionRef.current = null;
-        }
-        await wakeBridgeRef.current?.stop().catch(() => {});
-        wakeBridgeRef.current = null;
         await invoke('stop_native_wake_listener').catch(() => {});
-
-        // Keep a quiet stream open while the recognizer cycles between short sessions.
-        if (!dummyMicStreamRef.current) {
-          navigator.mediaDevices?.getUserMedia?.({
-            audio: { autoGainControl: false, echoCancellation: false, noiseSuppression: false }
-          }).then(stream => {
-            if (useAvatarState.getState().isSleepMode) {
-              dummyMicStreamRef.current = stream;
-            } else {
-              stream.getTracks().forEach(track => track.stop());
-            }
-          }).catch(error => {
-            logger.add('warning', 'Wake Word', `Could not keep the microphone stream open: ${error?.name || error}`);
-          });
-        }
-
         startWakeWordListenerRef.current();
         logger.add('info', 'Sleep Mode', 'Entering low-RAM sleep mode... Say "Lucy" or "Wake up" to wake me.');
         invoke('enter_sleep_mode');
@@ -683,26 +546,9 @@ export function useCoreEngine() {
         }
 
         nativeWakeActiveRef.current = false;
-        wakeStartingRef.current = false;
-        if (wakeRestartTimerRef.current) {
-          clearTimeout(wakeRestartTimerRef.current);
-          wakeRestartTimerRef.current = null;
-        }
-        if (speechRecognitionRef.current) {
-          speechRecognitionRef.current.onend = null;
-          speechRecognitionRef.current.onerror = null;
-          try { speechRecognitionRef.current.stop(); } catch {}
-          speechRecognitionRef.current = null;
-        }
-        if (dummyMicStreamRef.current) {
-          dummyMicStreamRef.current.getTracks().forEach(track => track.stop());
-          dummyMicStreamRef.current = null;
-        }
 
         if (wakeUpTimeout) clearTimeout(wakeUpTimeout);
         void (async () => {
-          await wakeBridgeRef.current?.stop().catch(() => {});
-          wakeBridgeRef.current = null;
           await invoke('stop_native_wake_listener').catch(() => {});
           wakeUpTimeout = setTimeout(() => {
             initSystemRef.current(true);
@@ -726,19 +572,6 @@ export function useCoreEngine() {
         nativeWakeActiveRef.current = false;
         void invoke('stop_native_wake_listener').catch(() => {});
         if (wakeRequestTimeoutRef.current) clearTimeout(wakeRequestTimeoutRef.current);
-        if (wakeRestartTimerRef.current) clearTimeout(wakeRestartTimerRef.current);
-        if (speechRecognitionRef.current) {
-          speechRecognitionRef.current.onend = null;
-          speechRecognitionRef.current.onerror = null;
-          try { speechRecognitionRef.current.stop(); } catch {}
-          speechRecognitionRef.current = null;
-        }
-        if (dummyMicStreamRef.current) {
-          dummyMicStreamRef.current.getTracks().forEach(track => track.stop());
-          dummyMicStreamRef.current = null;
-        }
-        void wakeBridgeRef.current?.stop().catch(() => {});
-        wakeBridgeRef.current = null;
       };
     }, []);
 

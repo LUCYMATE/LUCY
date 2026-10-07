@@ -197,3 +197,24 @@ commands.allow = ["resolve_mobile_prompt"]
 identifier = "allow-get-lucy-link-status"
 description = "Allows reading local Phone Link connection status"
 commands.allow = ["get_lucy_link_status"]
+
+[[permission]]
+identifier = "allow-start-native-wake-test"
+description = "Allows starting native wake word test mode"
+commands.allow = ["start_native_wake_test"]
+
+[[permission]]
+identifier = "allow-get-stored-license"
+description = "Allows retrieving stored license information"
+commands.allow = ["get_stored_license"]
+
+[[permission]]
+identifier = "allow-setup-wayland-automation"
+description = "Allows configuring Linux Wayland automation tools"
+commands.allow = ["setup_wayland_automation"]
+
+[[permission]]
+identifier = "allow-exit-app"
+description = "Allows cleanly exiting the application"
+commands.allow = ["exit_app"]
+

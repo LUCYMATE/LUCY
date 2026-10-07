@@ -87,6 +87,10 @@
       ]
     },
     "fs:default",
-    "allow-read-3d-asset-bytes"
+    "allow-read-3d-asset-bytes",
+    "allow-start-native-wake-test",
+    "allow-get-stored-license",
+    "allow-setup-wayland-automation",
+    "allow-exit-app"
   ]
 }

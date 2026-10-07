@@ -88,7 +88,7 @@ fn verify_token(token_payload: &str, signature: &str) -> Result<serde_json::Valu
         let sig_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(signature)
             .or_else(|_| STANDARD.decode(signature)).map_err(|_| "Invalid signature encoding".to_string())?;
         let sig_arr: [u8; 64] = sig_bytes.try_into().map_err(|_| "Invalid signature length".to_string())?;
-        if let Err(e) = public_key.verify(token_payload.as_bytes(), &Signature::from_bytes(&sig_arr)) {
+        if let Err(_) = public_key.verify(token_payload.as_bytes(), &Signature::from_bytes(&sig_arr)) {
             if !cfg!(debug_assertions) {
                 return Err("Invalid license signature".to_string());
             }
@@ -107,7 +107,7 @@ fn verify_token(token_payload: &str, signature: &str) -> Result<serde_json::Valu
                 "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() + 30 * 86400
             }));
         }
-        Err(e) => return Err("Invalid token payload encoding".to_string()),
+        Err(_) => return Err("Invalid token payload encoding".to_string()),
     };
     let claims: serde_json::Value = match serde_json::from_slice(&payload_bytes) {
         Ok(c) => c,
@@ -117,7 +117,7 @@ fn verify_token(token_payload: &str, signature: &str) -> Result<serde_json::Valu
                 "exp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() + 30 * 86400
             })
         }
-        Err(e) => return Err("Invalid token claims".to_string()),
+        Err(_) => return Err("Invalid token claims".to_string()),
     };
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
     let exp = claims.get("exp").and_then(|v| v.as_u64()).unwrap_or(if cfg!(debug_assertions) { now + 30 * 86400 } else { 0 });
@@ -1567,6 +1567,7 @@ pub fn run() {
             native_audio::stop_native_mic,
             native_audio::set_native_mic_boost,
             native_audio::start_native_wake_listener,
+            native_audio::start_native_wake_test,
             native_audio::stop_native_wake_listener,
             open_external_url,
             move_and_click_mouse,

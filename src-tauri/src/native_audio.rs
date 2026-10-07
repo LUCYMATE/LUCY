@@ -1,9 +1,10 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{DeviceId, SampleFormat, Stream, StreamConfig};
+use oww_rs::oww::audio::AudioFeaturesTract;
 use serde::Serialize;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize)]
 pub struct InputDevice {
@@ -47,6 +48,7 @@ impl NativeAudioState {
 struct WakeWorker {
     stop: Arc<std::sync::atomic::AtomicBool>,
     thread: std::thread::JoinHandle<()>,
+    test_mode: bool,
 }
 
 #[tauri::command]
@@ -85,6 +87,13 @@ pub fn start_native_mic(
         .map_err(|_| "Microphone state is unavailable")?;
     if slot.is_some() {
         return Ok(());
+    }
+
+    if let Ok(mut wake_slot) = state.wake.lock() {
+        if let Some(worker) = wake_slot.take() {
+            worker.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            let _ = worker.thread.join();
+        }
     }
 
     let host = cpal::default_host();
@@ -231,36 +240,52 @@ pub fn set_native_mic_boost(
 pub fn start_native_wake_listener(
     app: AppHandle,
     state: tauri::State<'_, NativeAudioState>,
+    device_id: Option<String>,
 ) -> Result<(), String> {
+    start_wake_worker(app, state, device_id, false)
+}
+
+#[tauri::command]
+pub fn start_native_wake_test(
+    app: AppHandle,
+    state: tauri::State<'_, NativeAudioState>,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    start_wake_worker(app, state, device_id, true)
+}
+
+fn start_wake_worker(
+    app: AppHandle,
+    state: tauri::State<'_, NativeAudioState>,
+    device_id: Option<String>,
+    test_mode: bool,
+) -> Result<(), String> {
+    if let Ok(mut stream_slot) = state.stream.lock() {
+        stream_slot.take();
+    }
+
     let mut slot = state
         .wake
         .lock()
         .map_err(|_| "Wake listener state is unavailable")?;
     if let Some(worker) = slot.as_ref() {
-        if !worker.thread.is_finished() {
+        if !worker.thread.is_finished() && !test_mode && !worker.test_mode {
             return Ok(());
         }
-        slot.take();
+    }
+    if let Some(worker) = slot.take() {
+        worker.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = worker.thread.join();
     }
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let worker_stop = stop.clone();
     let thread = std::thread::Builder::new()
         .name("lucy-native-wake".into())
         .spawn(move || {
-            #[cfg(target_os = "windows")]
-            run_windows_wake_listener(app, worker_stop);
-            #[cfg(not(target_os = "windows"))]
-            {
-                let _ = app.emit_to(
-                    "main",
-                    "native-wake-error",
-                    "Native wake recognition is supported on Windows only.".to_string(),
-                );
-                let _ = worker_stop;
-            }
+            run_native_wake_listener(app, worker_stop, device_id, test_mode);
         })
         .map_err(|e| format!("Could not start wake listener: {e}"))?;
-    *slot = Some(WakeWorker { stop, thread });
+    *slot = Some(WakeWorker { stop, thread, test_mode });
     Ok(())
 }
 
@@ -272,97 +297,284 @@ pub fn stop_native_wake_listener(state: tauri::State<'_, NativeAudioState>) -> R
         .map_err(|_| "Wake listener state is unavailable")?;
     if let Some(worker) = slot.take() {
         worker.stop.store(true, std::sync::atomic::Ordering::SeqCst);
-        // The WinRT recognizer can take time to release its audio endpoint; do
-        // not block the UI command. The worker exits on its own after StopAsync.
-        drop(worker.thread);
+        let _ = worker.thread.join();
     }
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
-fn run_windows_wake_listener(app: AppHandle, stop: Arc<std::sync::atomic::AtomicBool>) {
-    use windows::Foundation::TypedEventHandler;
-    use windows::Media::SpeechRecognition::{
-        SpeechContinuousRecognitionResultGeneratedEventArgs, SpeechContinuousRecognitionSession,
-        SpeechRecognitionResultStatus, SpeechRecognizer,
-    };
-    use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
-
-    unsafe {
-        if RoInitialize(RO_INIT_MULTITHREADED).is_err() {
-            let _ = app.emit_to(
-                "main",
-                "native-wake-error",
-                "Windows speech recognition could not initialize.".to_string(),
-            );
-            return;
+fn wake_model_path(app: &AppHandle, name: &str) -> Result<std::path::PathBuf, String> {
+    let relative = format!("models/wakeword/{name}.onnx");
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join(&relative);
+        if bundled.is_file() {
+            return Ok(bundled);
         }
     }
 
-    let result = (|| -> windows::core::Result<()> {
-        let recognizer = SpeechRecognizer::new()?;
-        let compilation = recognizer.CompileConstraintsAsync()?.get()?;
-        if compilation.Status()? != SpeechRecognitionResultStatus::Success {
-            let _ = app.emit_to("main", "native-wake-error", "Windows speech recognition grammar is unavailable. Check that Windows speech recognition is enabled for your language.".to_string());
-            recognizer.Close()?;
-            return Ok(());
+    let development = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(&relative);
+    if development.is_file() {
+        return Ok(development);
+    }
+    Err(format!("Wake-word model is missing: {relative}"))
+}
+
+struct MonoResampler16k {
+    ratio: f64,
+    offset: f64,
+    last_sample: f32,
+    has_first: bool,
+}
+
+impl MonoResampler16k {
+    fn new(input_rate: usize) -> Self {
+        Self {
+            ratio: input_rate as f64 / 16_000.0,
+            offset: 0.0,
+            last_sample: 0.0,
+            has_first: false,
         }
-        let session = recognizer.ContinuousRecognitionSession()?;
-        let app_for_result = app.clone();
-        let stop_for_result = stop.clone();
-        let _token = session.ResultGenerated(&TypedEventHandler::new(
-            move |_: windows::core::Ref<'_, SpeechContinuousRecognitionSession>,
-                  args: windows::core::Ref<
-                '_,
-                SpeechContinuousRecognitionResultGeneratedEventArgs,
-            >| {
-                let args = args.ok()?;
-                if let Ok(result) = args.Result() {
-                    if let Ok(hypothesis) = result.Text() {
-                        let text = hypothesis.to_string();
-                        let normalized = text.to_lowercase();
-                        let detected = [
-                            "lucy",
-                            "luci",
-                            "lucie",
-                            "loosey",
-                            "losey",
-                            "wake up",
-                            "wakeup",
-                            "hey lucy",
-                            "hello lucy",
-                        ]
-                        .iter()
-                        .any(|phrase| normalized.contains(phrase));
-                        if detected
-                            && !stop_for_result.swap(true, std::sync::atomic::Ordering::SeqCst)
-                        {
-                            let _ = app_for_result.emit_to("main", "native-wake-detected", text);
-                        }
+    }
+
+    fn push(&mut self, current: f32, out: &mut Vec<f32>) {
+        if (self.ratio - 1.0).abs() < 1e-4 {
+            out.push(current);
+            return;
+        }
+
+        if !self.has_first {
+            self.last_sample = current;
+            self.has_first = true;
+            out.push(current);
+            self.offset = self.ratio;
+            return;
+        }
+
+        while self.offset <= 1.0 {
+            let alpha = self.offset as f32;
+            let interpolated = self.last_sample + alpha * (current - self.last_sample);
+            out.push(interpolated);
+            self.offset += self.ratio;
+        }
+
+        self.offset -= 1.0;
+        self.last_sample = current;
+    }
+}
+
+fn run_native_wake_listener(
+    app: AppHandle,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    preferred_id: Option<String>,
+    test_mode: bool,
+) {
+    use std::time::Duration;
+
+    let result = (|| -> Result<(), String> {
+        let lucy_path = wake_model_path(&app, "lucy")?;
+        let hey_lucy_path = wake_model_path(&app, "hey_lucy")?;
+        use tract_core::model::IntoRunnable;
+        use tract_core::prelude::{
+            multithread::{self, Executor},
+            Framework,
+        };
+        use tract_onnx::prelude::{tvec, InferenceModelExt, IntoTensor};
+
+        multithread::set_default_executor(Executor::SingleThread);
+        let mut models = Vec::new();
+        for (phrase, path) in [("Lucy", &lucy_path), ("Hey Lucy", &hey_lucy_path)] {
+            let model = tract_onnx::onnx()
+                .model_for_path(path)
+                .map_err(|e| format!("Could not read {phrase} wake model: {e}"))?
+                .into_optimized()
+                .map_err(|e| format!("Could not optimize {phrase} wake model: {e}"))?
+                .into_runnable()
+                .map_err(|e| format!("Could not prepare {phrase} wake model: {e}"))?;
+            models.push((phrase, model));
+        }
+        // Both phrase classifiers reuse one mel/embedding frontend to reduce RAM and CPU.
+        let mut audio_features = AudioFeaturesTract::create_default();
+
+        let host = cpal::default_host();
+        let preferred = preferred_id
+            .as_deref()
+            .filter(|id| !id.is_empty() && *id != "default")
+            .and_then(|id| id.parse::<DeviceId>().ok())
+            .and_then(|id| host.device_by_id(&id));
+        if preferred.is_none() && preferred_id.as_deref().is_some_and(|id| id != "default") {
+            let _ = app.emit(
+                "native-wake-status",
+                "Selected microphone unavailable; using the system default microphone.".to_string(),
+            );
+        }
+        let device = preferred
+            .or_else(|| host.default_input_device())
+            .ok_or_else(|| "No microphone is available for wake-word listening.".to_string())?;
+        let supported = device
+            .default_input_config()
+            .map_err(|e| format!("Could not open wake microphone format: {e}"))?;
+        let sample_format = supported.sample_format();
+        let config: StreamConfig = supported.into();
+        let channels = config.channels as usize;
+        let input_rate = config.sample_rate as usize;
+        if channels == 0 || input_rate == 0 {
+            return Err("Microphone reported zero audio channels or invalid sample rate.".to_string());
+        }
+
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<f32>>(32);
+
+        let error_app = app.clone();
+        let error_stop = stop.clone();
+        let on_error = move |error: cpal::StreamError| {
+            error_stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            let _ = error_app.emit(
+                "native-wake-error",
+                format!("Wake microphone stopped: {error}"),
+            );
+        };
+
+        macro_rules! build_stream {
+            ($sample:ty) => {{
+                let sender = sender.clone();
+                device
+                    .build_input_stream(
+                        &config,
+                        move |data: &[$sample], _| {
+                            use cpal::Sample;
+                            let mut chunk = Vec::with_capacity(data.len() / channels);
+                            for frame in data.chunks(channels) {
+                                if frame.is_empty() {
+                                    continue;
+                                }
+                                let mono = frame
+                                    .iter()
+                                    .map(|sample| sample.to_sample::<f32>())
+                                    .sum::<f32>()
+                                    / frame.len() as f32;
+                                chunk.push(mono);
+                            }
+                            let _ = sender.try_send(chunk);
+                        },
+                        on_error,
+                        None,
+                    )
+                    .map_err(|e| format!("Could not start wake microphone: {e}"))?
+            }};
+        }
+
+        let stream = match sample_format {
+            SampleFormat::I8 => build_stream!(i8),
+            SampleFormat::I16 => build_stream!(i16),
+            SampleFormat::I32 => build_stream!(i32),
+            SampleFormat::I64 => build_stream!(i64),
+            SampleFormat::U8 => build_stream!(u8),
+            SampleFormat::U16 => build_stream!(u16),
+            SampleFormat::U32 => build_stream!(u32),
+            SampleFormat::U64 => build_stream!(u64),
+            SampleFormat::F32 => build_stream!(f32),
+            SampleFormat::F64 => build_stream!(f64),
+            _ => {
+                return Err(format!(
+                    "Unsupported wake microphone format: {sample_format:?}"
+                ))
+            }
+        };
+        stream
+            .play()
+            .map_err(|e| format!("Could not activate wake microphone: {e}"))?;
+
+        let _ = app.emit(
+            "native-wake-status",
+            format!("listening on selected microphone ({input_rate} Hz input)"),
+        );
+        let mut resampler = MonoResampler16k::new(input_rate);
+        let mut mono_16k_buffer = Vec::<f32>::with_capacity(2560);
+        let mut score_history = [
+            std::collections::VecDeque::<f32>::with_capacity(12),
+            std::collections::VecDeque::<f32>::with_capacity(12),
+        ];
+        let mut last_detection = None::<std::time::Instant>;
+        while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+            match receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(chunk) => {
+                    for sample in chunk {
+                        resampler.push(sample, &mut mono_16k_buffer);
                     }
                 }
-                Ok(())
-            },
-        ))?;
-        let _ = app.emit_to("main", "native-wake-status", "listening".to_string());
-        session.StartAsync()?.get()?;
-        while !stop.load(std::sync::atomic::Ordering::SeqCst) {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            }
+
+            while mono_16k_buffer.len() >= 1280 {
+                let mono: Vec<f32> = mono_16k_buffer.drain(..1280).collect();
+                let features = audio_features
+                    .get_audio_features(&mono)
+                    .map_err(|e| format!("Wake audio feature extraction failed: {e}"))?
+                    .into_shape(&[1, 16, 96])
+                    .map_err(|e| format!("Wake audio features had an invalid shape: {e}"))?;
+
+                for (index, (phrase, model)) in models.iter_mut().enumerate() {
+                    let outputs = model
+                        .run(tvec!(features.clone().into()))
+                        .map_err(|e| format!("{phrase} wake inference failed: {e}"))?;
+                    let score_tensor = outputs[0]
+                        .clone()
+                        .into_tensor()
+                        .cast_to::<f32>()
+                        .map_err(|e| format!("{phrase} wake score had an invalid type: {e}"))?
+                        .into_owned();
+                    let score = score_tensor
+                        .into_plain_array::<f32>()
+                        .map_err(|e| format!("{phrase} wake score could not be read: {e}"))?
+                        .as_slice()
+                        .and_then(|values| values.first().copied())
+                        .unwrap_or(0.0);
+                    let history = &mut score_history[index];
+                    history.push_back(score);
+                    if history.len() > 12 {
+                        history.pop_front();
+                    }
+                    let positives = history
+                        .iter()
+                        .filter(|value| **value > 0.50)
+                        .copied()
+                        .collect::<Vec<_>>();
+                    let average = if positives.len() >= 2 {
+                        positives.iter().sum::<f32>() / positives.len() as f32
+                    } else {
+                        0.0
+                    };
+                    if test_mode {
+                        let _ = app.emit(
+                            "native-wake-test-score",
+                            serde_json::json!({ "phrase": phrase, "score": score, "smoothed": average }),
+                        );
+                    }
+                    if average > 0.50
+                        && last_detection.map_or(true, |last: std::time::Instant| {
+                            last.elapsed() > Duration::from_secs(2)
+                        })
+                    {
+                        last_detection = Some(std::time::Instant::now());
+                        if test_mode {
+                            let _ = app.emit("native-wake-test-detected", phrase.to_string());
+                            last_detection = Some(std::time::Instant::now());
+                        } else {
+                            stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                            let _ = app.emit("native-wake-detected", phrase.to_string());
+                        }
+                        break;
+                    }
+                }
+            }
         }
-        let _ = session.StopAsync()?.get();
-        let _ = recognizer.Close();
+        drop(stream);
         Ok(())
     })();
 
     if let Err(error) = result {
-        let _ = app.emit_to(
-            "main",
-            "native-wake-error",
-            format!("Windows speech listener failed: {error}"),
-        );
+        if !stop.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            let _ = app.emit("native-wake-error", error);
+        }
     }
-    let _ = app.emit_to("main", "native-wake-status", "stopped".to_string());
-    unsafe {
-        RoUninitialize();
-    }
+    let _ = app.emit("native-wake-status", "stopped".to_string());
 }

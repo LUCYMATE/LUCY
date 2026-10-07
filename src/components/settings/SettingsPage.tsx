@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video, Brain, User, ShieldCheck, Download, Sparkles, ExternalLink, Info, RefreshCw, Smartphone } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Settings as SettingsIcon, Box, ArrowLeft, Volume2, Mic, Key, Keyboard, Video, Brain, User, ShieldCheck, Download, Sparkles, ExternalLink, Info, RefreshCw, Smartphone, Activity, Play, Square, Check, X, RotateCcw } from 'lucide-react';
 import { AssetLibrary } from './AssetLibrary';
 import { PhoneLinkTab } from './PhoneLinkTab';
 import { logger } from '../../lib/store/logger';
@@ -12,9 +12,10 @@ import { emitCrossWindow, listenCrossWindow } from '../../lib/events/crossWindow
 import { AVATAR_CONFIGURATION_CHANGED, type AvatarConfigurationChange } from '../../lib/store/avatarConfiguration';
 import { LIVE2D_MODELS } from '../../config/live2d-models';
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
-  const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'link' | 'api' | 'shortcuts' | 'assets' | 'personalized' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'account' | 'devices' | 'link' | 'api' | 'shortcuts' | 'assets' | 'personalized' | 'about' | 'wake-test'>('general');
   const [session, setSession] = useState(userAuth.getSession());
   const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -248,6 +249,15 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             }`}
           >
             <Volume2 className="w-5 h-5" /> Devices
+          </button>
+
+          <button
+            onClick={() => setActiveTab('wake-test')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
+              activeTab === 'wake-test' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
+            }`}
+          >
+            <Activity className="w-5 h-5" /> Wake Word Test
           </button>
 
           <button 
@@ -827,6 +837,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        {activeTab === 'wake-test' && <WakeWordTestPage deviceId={micId} />}
+
         {activeTab === 'link' && (
           <PhoneLinkTab />
         )}
@@ -1150,6 +1162,147 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
+    </div>
+  );
+}
+
+type WakeScore = { phrase: 'Lucy' | 'Hey Lucy'; score: number; smoothed: number };
+type WakeTrial = { successes: number; attempts: number; triggers: number; latest: number };
+
+function WakeWordTestPage({ deviceId }: { deviceId: string }) {
+  const [running, setRunning] = useState(false);
+  const runningRef = useRef(false);
+  const [status, setStatus] = useState('Ready to test');
+  const [scores, setScores] = useState<Record<WakeScore['phrase'], number[]>>({ Lucy: [], 'Hey Lucy': [] });
+  const [latest, setLatest] = useState<Record<WakeScore['phrase'], number>>({ Lucy: 0, 'Hey Lucy': 0 });
+  const [trials, setTrials] = useState<Record<WakeScore['phrase'], WakeTrial>>({
+    Lucy: { successes: 0, attempts: 0, triggers: 0, latest: 0 },
+    'Hey Lucy': { successes: 0, attempts: 0, triggers: 0, latest: 0 },
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenScore: UnlistenFn | undefined;
+    let unlistenDetected: UnlistenFn | undefined;
+    let unlistenError: UnlistenFn | undefined;
+    let unlistenStatus: UnlistenFn | undefined;
+
+    void listen<WakeScore>('native-wake-test-score', ({ payload }) => {
+      const phrase = payload.phrase;
+      if (phrase !== 'Lucy' && phrase !== 'Hey Lucy') return;
+      const value = Math.max(0, Math.min(1, payload.smoothed || payload.score || 0));
+      setLatest(current => ({ ...current, [phrase]: value }));
+      setScores(current => ({ ...current, [phrase]: [...current[phrase].slice(-59), value] }));
+    }).then(unlisten => { if (disposed) unlisten(); else unlistenScore = unlisten; });
+
+    void listen<string>('native-wake-test-detected', ({ payload }) => {
+      if (payload !== 'Lucy' && payload !== 'Hey Lucy') return;
+      setTrials(current => ({ ...current, [payload]: { ...current[payload], triggers: current[payload].triggers + 1 } }));
+      setStatus(`Detector triggered: ${payload}`);
+    }).then(unlisten => { if (disposed) unlisten(); else unlistenDetected = unlisten; });
+
+    void listen<string>('native-wake-error', ({ payload }) => {
+      setStatus(`Microphone test error: ${payload}`);
+      setRunning(false);
+      runningRef.current = false;
+    }).then(unlisten => { if (disposed) unlisten(); else unlistenError = unlisten; });
+
+    void listen<string>('native-wake-status', ({ payload }) => {
+      if (payload === 'stopped' && runningRef.current) {
+        setRunning(false);
+        runningRef.current = false;
+        setStatus('Test stopped');
+      }
+    }).then(unlisten => { if (disposed) unlisten(); else unlistenStatus = unlisten; });
+
+    return () => {
+      disposed = true;
+      unlistenScore?.();
+      unlistenDetected?.();
+      unlistenError?.();
+      unlistenStatus?.();
+      if (runningRef.current) {
+        void invoke('stop_native_wake_listener').catch(() => {});
+        if (useAvatarState.getState().isSleepMode) {
+          void invoke('start_native_wake_listener', { deviceId: localStorage.getItem('lucy_mic_id') || 'default' }).catch(() => {});
+        }
+      }
+    };
+  }, []);
+
+  const start = async () => {
+    try {
+      setStatus('Stopping other audio listeners…');
+      // Turn off microphone for the assistant / live engine across windows
+      await emitCrossWindow('lucy-set-mic', { enabled: false });
+      // Stop any active native mic capture and background wake listener
+      await invoke('stop_native_mic').catch(() => {});
+      await invoke('stop_native_wake_listener').catch(() => {});
+
+      setStatus('Starting local model test…');
+      await invoke('start_native_wake_test', { deviceId });
+      runningRef.current = true;
+      setRunning(true);
+      setStatus('Listening. Say "Lucy" or "Hey Lucy" to test recognition.');
+    } catch (error) {
+      setStatus(`Could not start test: ${String(error)}`);
+    }
+  };
+
+  const stop = async () => {
+    try {
+      await invoke('stop_native_wake_listener');
+      runningRef.current = false;
+      setRunning(false);
+      setStatus('Test stopped');
+      if (useAvatarState.getState().isSleepMode) {
+        await invoke('start_native_wake_listener', { deviceId });
+      }
+    } catch (error) {
+      setStatus(`Could not stop test: ${String(error)}`);
+    }
+  };
+
+  const recordTrial = (phrase: WakeScore['phrase'], success: boolean) => {
+    setTrials(current => ({
+      ...current,
+      [phrase]: { ...current[phrase], attempts: current[phrase].attempts + 1, successes: current[phrase].successes + (success ? 1 : 0) },
+    }));
+  };
+
+  const reset = () => {
+    setScores({ Lucy: [], 'Hey Lucy': [] });
+    setLatest({ Lucy: 0, 'Hey Lucy': 0 });
+    setTrials({ Lucy: { successes: 0, attempts: 0, triggers: 0, latest: 0 }, 'Hey Lucy': { successes: 0, attempts: 0, triggers: 0, latest: 0 } });
+    setStatus(running ? 'Listening. Say one wake phrase, then record whether it recognized you.' : 'Ready to test');
+  };
+
+  const scoreLine = (values: number[]) => values.map((value, index) => `${values.length < 2 ? 0 : index / (values.length - 1) * 240},${70 - value * 65}`).join(' ');
+
+  return (
+    <div className="flex flex-col gap-5 max-w-4xl w-full">
+      <div>
+        <h3 className="text-2xl font-black mb-1 text-[#1E1926]">Wake Word Test</h3>
+        <p className="text-[#6B7280] text-xs">Live model confidence and your recorded recognition rate for “Lucy” and “Hey Lucy”. The score is a model signal, not a guaranteed accuracy percentage.</p>
+      </div>
+      <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3"><span className={`w-2.5 h-2.5 rounded-full ${running ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} /><div><div className="text-sm font-bold">{running ? 'Test microphone active' : 'Test microphone stopped'}</div><div className="text-xs text-[#6B7280] mt-0.5">{status}</div></div></div>
+        <div className="flex gap-2">{running ? <button onClick={() => void stop()} className="px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold flex items-center gap-2"><Square className="w-3.5 h-3.5" /> Stop test</button> : <button onClick={() => void start()} className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white text-xs font-bold flex items-center gap-2"><Play className="w-3.5 h-3.5" /> Start test</button>}<button onClick={reset} className="px-3 py-2 rounded-xl border border-[#FCE7F3] text-[#6B7280] text-xs font-bold flex items-center gap-2"><RotateCcw className="w-3.5 h-3.5" /> Reset</button></div>
+      </div>
+      <div className="grid md:grid-cols-2 gap-4">
+        {(['Lucy', 'Hey Lucy'] as const).map(phrase => {
+          const trial = trials[phrase];
+          const recall = trial.attempts ? Math.round(trial.successes / trial.attempts * 100) : 0;
+          const line = scoreLine(scores[phrase]);
+          return <div key={phrase} className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4">
+            <div className="flex items-start justify-between"><div><h4 className="text-lg font-extrabold">{phrase}</h4><p className="text-[11px] text-[#6B7280]">{phrase === 'Lucy' ? 'Lucy model' : 'Hey Lucy model'}</p></div><div className="text-right"><div className="text-2xl font-black text-[#E11D48]">{Math.round(latest[phrase] * 100)}%</div><div className="text-[10px] text-[#6B7280]">current score</div></div></div>
+            <div className="bg-[#FFF7FA] border border-[#FCE7F3] rounded-xl p-3"><div className="flex justify-between text-[10px] text-[#6B7280] mb-1.5"><span>Confidence history</span><span>{scores[phrase].length} samples</span></div><svg viewBox="0 0 240 70" className="w-full h-20 overflow-visible" role="img" aria-label={`${phrase} model confidence graph`}><line x1="0" y1="37.5" x2="240" y2="37.5" stroke="#fbcfe8" strokeDasharray="3 4"/><polyline fill="none" stroke="#e11d48" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" points={line}/></svg><div className="flex justify-between text-[9px] text-[#9CA3AF]"><span>Low</span><span>Trigger region ≈ 50%</span><span>High</span></div></div>
+            <div><div className="flex justify-between text-xs mb-1.5"><span className="font-bold">Your recognition rate</span><span>{trial.successes}/{trial.attempts} · {trial.attempts ? `${recall}%` : 'not measured'}</span></div><div className="h-2 rounded-full bg-pink-100 overflow-hidden"><div className="h-full bg-gradient-to-r from-[#F43F8E] to-[#E11D48] transition-all" style={{ width: `${recall}%` }}/></div><div className="text-[10px] text-[#6B7280] mt-2">Model triggers observed: {trial.triggers}</div></div>
+            <div className="grid grid-cols-2 gap-2"><button disabled={!running} onClick={() => recordTrial(phrase, true)} className="disabled:opacity-40 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold flex items-center justify-center gap-1.5"><Check className="w-3.5 h-3.5"/>Recognized me</button><button disabled={!running} onClick={() => recordTrial(phrase, false)} className="disabled:opacity-40 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-bold flex items-center justify-center gap-1.5"><X className="w-3.5 h-3.5"/>Missed phrase</button></div>
+          </div>;
+        })}
+      </div>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-[11px] text-amber-900"><strong>How to measure:</strong> start the test, say each phrase several times from your usual distance and speaking style, then mark each attempt as recognized or missed. The percentage is your manual hit rate; false triggers from unrelated speech can be counted separately by noting the trigger total. Keep the test active only while using the microphone.</div>
     </div>
   );
 }
