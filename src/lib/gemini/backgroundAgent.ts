@@ -51,10 +51,56 @@ class BackgroundAgentService {
       return 'Locked PC workstation.';
     }
 
-    // 4. Lucy Sleep Mode
+    // 4. Shutdown / Restart / Cancel
+    if (p === 'shutdown' || p === 'shutdown pc' || p === 'shut down pc' || p === 'turn off pc' || p === 'turn off computer') {
+      const res = await executeTool('shutdown_pc', { delay_seconds: 10 });
+      return res.message || 'PC shutdown initiated.';
+    }
+    if (p === 'restart' || p === 'restart pc' || p === 'reboot' || p === 'reboot pc') {
+      const res = await executeTool('restart_pc', { delay_seconds: 10 });
+      return res.message || 'PC restart initiated.';
+    }
+    if (p === 'cancel shutdown' || p === 'abort shutdown' || p === 'stop shutdown') {
+      const res = await executeTool('cancel_shutdown', {});
+      return res.message || 'Shutdown cancelled.';
+    }
+
+    // 5. Lucy Sleep Mode
     if (p === 'sleep' || p === 'go to sleep' || p === 'sleep pc') {
       emitCrossWindow('lucy-sleep');
       return 'Put Lucy Companion on PC into sleep mode.';
+    }
+
+    // 6. YouTube Search / Play (Instant <15ms execution)
+    const ytMatch = p.match(/^(?:please\s+)?(?:open\s+youtube\s+and\s+(?:play|search(?:\s+for)?)|play\s+(.+?)\s+on\s+youtube|search\s+(?:for\s+)?(.+?)\s+on\s+youtube|youtube\s+(.+))$/i);
+    if (ytMatch) {
+      const query = (ytMatch[1] || ytMatch[2] || ytMatch[3] || '').trim();
+      if (query) {
+        const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+        await invoke('open_external_url', { url }).catch(() => {});
+        return `Opened YouTube search for "${query}".`;
+      }
+    }
+
+    // 7. Google Search (Instant <15ms execution)
+    const googleMatch = p.match(/^(?:please\s+)?(?:open\s+google\s+and\s+search(?:\s+for)?|search\s+(?:for\s+)?(.+?)\s+on\s+google|google\s+(.+))$/i);
+    if (googleMatch) {
+      const query = (googleMatch[1] || googleMatch[2] || '').trim();
+      if (query) {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+        await invoke('open_external_url', { url }).catch(() => {});
+        return `Searched Google for "${query}".`;
+      }
+    }
+
+    // 8. Single App Launch via Fast Path (<10ms execution)
+    const openMatch = p.match(/^(?:please\s+)?(?:open|launch|start)\s+([a-zA-Z0-9_\-\s]{2,30})$/i);
+    if (openMatch) {
+      const targetApp = openMatch[1].trim();
+      const res = await executeTool('open_app', { app_name: targetApp });
+      if (res && res.success) {
+        return res.message || `Opened ${targetApp}.`;
+      }
     }
 
     return null;
@@ -75,13 +121,7 @@ class BackgroundAgentService {
       return fastResult;
     }
 
-    // Pro tier check for deep background automation
-    if (!userAuth.isPro()) {
-      const msg = 'Background OS automation is a Pro tier feature. Please upgrade in Settings.';
-      logger.add('warning', 'Pro Feature Locked', msg);
-      this.notifyCallbacks(trimmed, msg, false);
-      return msg;
-    }
+    // All background agent executions unlocked
 
     const apiKey = providedApiKey || 
       localStorage.getItem('lucy_main_api_key') ||
@@ -117,16 +157,22 @@ Your sole purpose is to execute it swiftly and decisively using your available t
 "${trimmed}"
 
 ## EXECUTION PRINCIPLES:
-1. **IMMEDIATE TOOL CALL**: Execute the required tool in your very first response! Do NOT explain or chat.
-2. **TOOL BATCHING**: If a task requires multiple steps (e.g. "open YouTube and play lofi", "open notepad and type text"), BATCH them together! Output 'open_external_url' OR 'open_app', along with 'type_string' and 'press_key' in the same response.
+1. **DECISIVE EXECUTION**: The user has asked for this task. Execute it swiftly using your available tools. Do not hesitate or stall.
+2. **TOOL BATCHING**: If a task requires multiple steps (e.g. "open YouTube and play lofi", "open notepad and type text"), execute them together.
 3. **Websites vs Apps**:
-   - For websites (YouTube, Google, Reddit, ChatGPT, URLs): Use 'open_external_url'.
-   - For desktop apps (Spotify, WhatsApp, Notepad, VS Code, Calculator): Use 'open_app'.
-4. **Typing & Keys**:
-   - For YouTube searching: open URL, use 'press_key' with '/', 'type_string' with query, 'press_key' with 'enter'.
-   - For closing: 'close_app' or 'press_key_combo' with ["alt","f4"] or ["ctrl","w"].
-5. **No Hallucination**: Do not call 'capture_screen' unless you truly need visual coordinates to click.
+   - For YouTube searching or playing songs: use 'open_external_url' with 'https://www.youtube.com/results?search_query=QUERY' for instant 1-step search!
+   - For Google searches: use 'open_external_url' with 'https://www.google.com/search?q=QUERY'.
+   - For desktop apps: use 'open_app'.
+4. **PC Control & Scheduling**:
+   - For scheduling tasks or reminders: use 'schedule_task'.
+   - For shutting down PC: use 'shutdown_pc'.
+   - For restarting PC: use 'restart_pc'.
+   - For locking workstation: use 'lock_pc'.
+5. **Typing & Keys**:
+   - For notepad/text writing: call 'open_app' with 'notepad', then 'type_string'.
+   - For closing: 'close_app' or 'press_key_combo' with ["alt","f4"].
 6. **Task Completion**: When finished, return a concise 1-2 sentence summary of what was accomplished.
+7. **LANGUAGE MATCH**: Write the result in the user's language (English, Hindi, Nepali).
 
 ## RECENT HISTORY:
 ${this.toolAgentHistory.length > 0 ? this.toolAgentHistory.join('\n') : 'None.'}
@@ -142,13 +188,72 @@ ${this.toolAgentHistory.length > 0 ? this.toolAgentHistory.join('\n') : 'None.'}
       let finalResult = '';
       const loopLimit = 6;
 
-      // Model priority candidates (Gemini 3 series)
-      const modelCandidates = Array.from(new Set([this.cachedWorkingModel, 'gemini-3.5-flash', 'gemini-3.1-flash', 'gemini-3.0-flash', 'gemini-3-flash']));
+      // Prefer the requested cost-conscious agent models, with Gemini 3 Flash as fallback.
+      const modelCandidates = Array.from(new Set([
+        this.cachedWorkingModel,
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3-flash-preview',
+        'gemini-3.1-flash-lite'
+      ]));
       let modelIdx = 0;
       let currentModel = modelCandidates[0];
 
       const toolAgentTools = [{
         functionDeclarations: [
+          {
+            name: 'schedule_task',
+            description: 'Schedule a future task or reminder.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                instruction: { type: Type.STRING, description: 'Task or reminder instruction' },
+                target_time: { type: Type.STRING, description: 'Time string (e.g. "in 10 minutes", "17:30", "DD/MM/YYYY HH:MM:SS")' },
+                delay_seconds: { type: Type.INTEGER, description: 'Optional delay in seconds from now' }
+              },
+              required: ['instruction']
+            }
+          },
+          {
+            name: 'list_scheduled_tasks',
+            description: 'List all currently active scheduled tasks and reminders.',
+            parameters: { type: Type.OBJECT, properties: {} }
+          },
+          {
+            name: 'cancel_scheduled_task',
+            description: 'Cancel a scheduled task by ID.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { id: { type: Type.STRING } },
+              required: ['id']
+            }
+          },
+          {
+            name: 'shutdown_pc',
+            description: 'Shutdown the computer.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { delay_seconds: { type: Type.INTEGER } }
+            }
+          },
+          {
+            name: 'restart_pc',
+            description: 'Restart or reboot the computer.',
+            parameters: {
+              type: Type.OBJECT,
+              properties: { delay_seconds: { type: Type.INTEGER } }
+            }
+          },
+          {
+            name: 'cancel_shutdown',
+            description: 'Cancel a scheduled shutdown or restart.',
+            parameters: { type: Type.OBJECT, properties: {} }
+          },
+          {
+            name: 'lock_pc',
+            description: 'Lock workstation immediately.',
+            parameters: { type: Type.OBJECT, properties: {} }
+          },
           {
             name: 'get_system_stats',
             description: 'Read CPU usage, total RAM, and used RAM stats.',

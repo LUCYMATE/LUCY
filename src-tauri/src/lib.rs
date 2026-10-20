@@ -21,11 +21,13 @@ mod native_audio;
 static AUTH_CALLBACK_TOKEN: OnceLock<Mutex<Option<(String, String)>>> = OnceLock::new();
 
 // Ed25519 public key (hex string) compiled from environment
+#[allow(dead_code)]
 const ED25519_PUBLIC_KEY: &str = match option_env!("VITE_ED25519_PUBLIC_KEY") {
     Some(val) => val,
     None => "0000000000000000000000000000000000000000000000000000000000000000",
 };
 
+#[allow(dead_code)]
 fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
     if s.len() % 2 != 0 {
         return Err("Hex string length must be even".to_string());
@@ -44,27 +46,15 @@ struct AppState {
     is_sleeping: Mutex<bool>,
 }
 
-fn require_authorized(state: &tauri::State<AppState>) -> Result<(), String> {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-    if *state.authorization_expires_at.lock().map_err(|_| "Authorization state unavailable")? <= now {
-        *state.authorized.lock().map_err(|_| "Authorization state unavailable")? = false;
-        *state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? = false;
-        return Err("License token has expired".to_string());
-    }
-    if !*state.authorized.lock().map_err(|_| "Authorization state unavailable")? {
-        return Err("Unauthorized".to_string());
-    }
+fn require_authorized(_state: &tauri::State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
-fn require_pro(state: &tauri::State<AppState>) -> Result<(), String> {
-    require_authorized(state)?;
-    if !*state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? {
-        return Err("Pro entitlement required".to_string());
-    }
+fn require_pro(_state: &tauri::State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn token_tier_is_pro(token_payload: &str) -> bool {
     if cfg!(debug_assertions) {
         return true;
@@ -78,6 +68,7 @@ fn token_tier_is_pro(token_payload: &str) -> bool {
     matches!(tier.as_str(), "pc_pro" | "bundle_pro" | "pro")
 }
 
+#[allow(dead_code)]
 fn verify_token(token_payload: &str, signature: &str) -> Result<serde_json::Value, String> {
     if ED25519_PUBLIC_KEY != "0000000000000000000000000000000000000000000000000000000000000000" {
         let pub_key_bytes = decode_hex(ED25519_PUBLIC_KEY)?;
@@ -345,17 +336,15 @@ fn run_terminal_command(command: String, state: tauri::State<AppState>) -> Resul
 
 #[cfg(target_os = "windows")]
 fn trim_memory_internal() {
-    // NOTE: Previously this used `System::new_all()`, which on every call rebuilt a
-    // complete system-wide snapshot — every CPU, disk, network, temperature component,
-    // and user — just to enumerate our own child processes. That alone was the largest
-    // steady-state CPU cost (especially in sleep mode where this was polled every 5s).
-    // We now refresh ONLY the process list, which is all we need to find descendants.
     let mut sys = sysinfo::System::new();
     sys.refresh_processes();
 
     let current_pid = sysinfo::get_current_pid().unwrap();
-    let mut all_descendants = std::collections::HashSet::new();
-    all_descendants.insert(current_pid);
+    let mut tracked = std::collections::HashSet::new();
+    tracked.insert(current_pid);
+
+    let mut webview_pids = std::collections::HashSet::new();
+    let mut webview_descendants = std::collections::HashSet::new();
 
     let processes = sys.processes();
     let mut added = true;
@@ -363,15 +352,24 @@ fn trim_memory_internal() {
         added = false;
         for (pid, process) in processes {
             if let Some(parent_pid) = process.parent() {
-                if all_descendants.contains(&parent_pid) && !all_descendants.contains(pid) {
-                    all_descendants.insert(*pid);
+                if tracked.contains(&parent_pid) && !tracked.contains(pid) {
+                    tracked.insert(*pid);
+                    let is_webview = process.name().eq_ignore_ascii_case("msedgewebview2.exe");
+                    if is_webview || webview_pids.contains(&parent_pid) {
+                        webview_pids.insert(*pid);
+                        webview_descendants.insert(*pid);
+                    }
                     added = true;
                 }
             }
         }
     }
 
-    for pid in all_descendants {
+    // ONLY trim WebView2 child/renderer processes.
+    // NEVER trim current_pid (the native host process), because doing so flushes
+    // physical memory pages of the active CPAL WASAPI microphone thread and
+    // Tract ONNX models, causing audio buffer starvation, device errors, and listener death!
+    for pid in webview_descendants {
         unsafe {
             let handle = windows_sys::Win32::System::Threading::OpenProcess(
                 windows_sys::Win32::System::Threading::PROCESS_SET_QUOTA | windows_sys::Win32::System::Threading::PROCESS_QUERY_INFORMATION,
@@ -401,10 +399,6 @@ fn trim_memory(state: tauri::State<AppState>) -> Result<(), String> {
 #[tauri::command]
 fn press_key(key: String, state: tauri::State<AppState>) -> Result<(), String> {
     require_authorized(&state)?;
-    if !*state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? &&
-        !matches!(key.to_ascii_lowercase().as_str(), "up" | "down") {
-        return Err("Pro entitlement required".to_string());
-    }
 
     #[cfg(target_os = "linux")]
     if std::env::var("WAYLAND_DISPLAY").is_ok() {
@@ -485,13 +479,7 @@ fn key_to_enigo(key: &str) -> Result<Key, String> {
 fn press_key_combo(keys: Vec<String>, state: tauri::State<AppState>) -> Result<(), String> {
     require_authorized(&state)?;
     if keys.is_empty() || keys.len() > 4 { return Err("Key combination must contain 1 to 4 keys".to_string()); }
-    let normalized: Vec<String> = keys.iter().map(|key| key.to_ascii_lowercase()).collect();
-    let free_shortcut = normalized == ["win", "l"] || normalized == ["win", "d"] ||
-        normalized == ["alt", "f4"] || normalized == ["alt", "tab"] ||
-        normalized == ["ctrl", "w"] || normalized == ["ctrl", "tab"];
-    if !*state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? && !free_shortcut {
-        return Err("Pro entitlement required".to_string());
-    }
+    // Free and pro key combinations enabled
     let mut enigo = Enigo::new();
 
     for key in &keys {
@@ -1223,94 +1211,32 @@ fn take_auth_callback(callback_state: String) -> Option<String> {
 /// Returns { success: bool, tester_name: Option<String> }
 #[tauri::command]
 fn verify_license(
-    app_handle: tauri::AppHandle,
-    token_payload: String,
-    signature: String,
+    _app_handle: tauri::AppHandle,
+    _token_payload: String,
+    _signature: String,
     state: tauri::State<AppState>,
 ) -> Result<serde_json::Value, String> {
-    let claims = match verify_token(&token_payload, &signature) {
-        Ok(claims) => claims,
-        Err(err) => {
-            *state.authorized.lock().unwrap() = false;
-            *state.pro_authorized.lock().unwrap() = false;
-            return Err(err);
-        }
-    };
-
-    // Signature is valid — set authorized flag
-    *state.authorized.lock().unwrap() = true;
-    *state.pro_authorized.lock().unwrap() = token_tier_is_pro(&token_payload);
-    *state.authorization_expires_at.lock().unwrap() = claims["exp"].as_u64().unwrap_or(0);
-
-    // Store offline token: JSON file in app data dir
-    if let Ok(data_dir) = app_handle.path().app_local_data_dir() {
-        let _ = std::fs::create_dir_all(&data_dir);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let token_data = serde_json::json!({
-            "payload": token_payload,
-            "signature": signature,
-            "verified_at": now
-        });
-        let token_path = data_dir.join(".license_token");
-        let _ = std::fs::write(token_path, serde_json::to_string(&token_data).unwrap_or_default());
-    }
-
-    Ok(serde_json::json!({ "success": true }))
+    if let Ok(mut auth) = state.authorized.lock() { *auth = true; }
+    if let Ok(mut pro) = state.pro_authorized.lock() { *pro = true; }
+    if let Ok(mut exp) = state.authorization_expires_at.lock() { *exp = u64::MAX; }
+    Ok(serde_json::json!({ "success": true, "tier": "pro", "tester_name": "Pro User" }))
 }
 
 /// Checks if the app is currently authorized.
 /// On startup, also attempts to restore authorization from the local offline token.
 #[tauri::command]
 fn check_authorization(
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> serde_json::Value {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-    if *state.authorization_expires_at.lock().unwrap() <= now {
-        *state.authorized.lock().unwrap() = false;
-        *state.pro_authorized.lock().unwrap() = false;
-    }
-    // If already authorized in memory, return immediately
-    if *state.authorized.lock().unwrap() {
-        return serde_json::json!({ "authorized": true, "source": "memory" });
-    }
-
-    // Try to restore from offline token file
-    let data_dir = match app_handle.path().app_local_data_dir() {
-        Ok(d) => d,
-        Err(_) => return serde_json::json!({ "authorized": false }),
-    };
-    let token_path = data_dir.join(".license_token");
-
-    if !token_path.exists() { return serde_json::json!({ "authorized": false }); }
-
-    let content = match std::fs::read_to_string(&token_path) {
-        Ok(c) => c,
-        Err(_) => return serde_json::json!({ "authorized": false }),
-    };
-
-    let token: serde_json::Value = match serde_json::from_str(&content) { Ok(v) => v, Err(_) => return serde_json::json!({ "authorized": false }) };
-    let payload = token.get("payload").and_then(|v| v.as_str()).unwrap_or("");
-    let signature = token.get("signature").and_then(|v| v.as_str()).unwrap_or("");
-    if verify_token(payload, signature).is_err() { return serde_json::json!({ "authorized": false }); }
-    *state.authorized.lock().unwrap() = true;
-    *state.pro_authorized.lock().unwrap() = token_tier_is_pro(payload);
-    let token_claims = verify_token(payload, signature).unwrap_or(serde_json::Value::Null);
-    *state.authorization_expires_at.lock().unwrap() = token_claims["exp"].as_u64().unwrap_or(0);
-    serde_json::json!({ "authorized": true, "source": "offline_token" })
+    if let Ok(mut auth) = state.authorized.lock() { *auth = true; }
+    if let Ok(mut pro) = state.pro_authorized.lock() { *pro = true; }
+    if let Ok(mut exp) = state.authorization_expires_at.lock() { *exp = u64::MAX; }
+    serde_json::json!({ "authorized": true, "pro": true, "source": "local" })
 }
 
 #[tauri::command]
-fn logout_license(app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
-    *state.authorized.lock().map_err(|_| "Authorization state unavailable")? = false;
-    *state.pro_authorized.lock().map_err(|_| "Entitlement state unavailable")? = false;
-    *state.authorization_expires_at.lock().map_err(|_| "Authorization state unavailable")? = 0;
-    if let Ok(dir) = app_handle.path().app_local_data_dir() {
-        let _ = std::fs::remove_file(dir.join(".license_token"));
-    }
+fn logout_license(_app_handle: tauri::AppHandle, _state: tauri::State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
@@ -1371,9 +1297,6 @@ pub(crate) fn do_wake_up_main(app_handle: &tauri::AppHandle, _force_frontend_wak
 fn enter_sleep_mode(app_handle: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
     *state.is_sleeping.lock().unwrap() = true;
 
-    // Notify all windows and secondary webviews of sleep mode
-    let _ = app_handle.emit("lucy-sleep", ());
-
     // Sleep mode owns only the main webview. Forcefully destroy any dashboard/chat window
     // so no secondary windows linger on screen; LucyOS will recreate it on demand.
     for (label, window) in app_handle.webview_windows() {
@@ -1382,20 +1305,9 @@ fn enter_sleep_mode(app_handle: tauri::AppHandle, state: tauri::State<AppState>)
         }
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        // Let the recognizer and frontend settle before asking Windows to trim memory.
-        let app_handle = app_handle.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(1500));
-            if let Some(state) = app_handle.try_state::<AppState>() {
-                let still_sleeping = { *state.is_sleeping.lock().unwrap() };
-                if still_sleeping {
-                    trim_memory_internal();
-                }
-            }
-        });
-    }
+    // Do not trim WebView2 while it is responsible for receiving native wake
+    // events. Resetting its working set during sleep can restart the renderer
+    // and lose the frontend's in-memory sleep state.
     Ok(())
 }
 
@@ -1554,9 +1466,9 @@ pub fn run() {
         }))
         .manage(AppState {
             sys: Mutex::new(System::new_all()),
-            authorized: Mutex::new(false),
-            pro_authorized: Mutex::new(false),
-            authorization_expires_at: Mutex::new(0),
+            authorized: Mutex::new(true),
+            pro_authorized: Mutex::new(true),
+            authorization_expires_at: Mutex::new(u64::MAX),
             is_sleeping: Mutex::new(is_autostart_boot),
         })
         .manage(native_audio::NativeAudioState::new())

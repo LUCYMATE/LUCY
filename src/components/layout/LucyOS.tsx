@@ -69,8 +69,12 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
       cleanups.push(unsubLogs);
 
       listen('lucy-chat-send', (e: any) => {
-        if (typeof e?.payload === 'string' && e.payload.trim()) {
-          useEngineStore.getState().sendText(e.payload as string);
+        const raw = e?.payload;
+        const text = typeof raw === 'string'
+          ? raw
+          : (raw && typeof raw === 'object' && typeof raw.payload === 'string' ? raw.payload : '');
+        if (text && text.trim()) {
+          useEngineStore.getState().sendText(text.trim());
         }
       }).then(unsub => {
         if (isDisposed) unsub();
@@ -104,22 +108,19 @@ export function LucyOS({ isAuthorized = false }: { isAuthorized?: boolean }) {
   }, []);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
     if (isSleepMode) {
       clearVrmCache();
       clearFbxCache();
-      setTimeout(() => trimMemory(), 500);
-      interval = setInterval(() => {
-        trimMemory();
-      }, 300000);
-    } else {
-      setTimeout(() => trimMemory(), 10000);
-      interval = setInterval(() => {
-        trimMemory();
-      }, 300000);
+      // Keep the WebView alive while it owns the native wake detector. Trimming
+      // its working set during sleep can restart the renderer and reset the
+      // in-memory sleep state, which looks like Lucy woke herself up.
+      return;
     }
+    const initialTrim = setTimeout(() => trimMemory(), 10000);
+    const interval = setInterval(() => trimMemory(), 300000);
     return () => {
-      if (interval) clearInterval(interval);
+      clearTimeout(initialTrim);
+      clearInterval(interval);
     };
   }, [isSleepMode]);
 

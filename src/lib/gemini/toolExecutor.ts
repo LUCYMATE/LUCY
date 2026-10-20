@@ -22,43 +22,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     }
   }
   // Pro tier check for advanced automation, custom uploads & OS execution
-  const proOnlyTools = [
-    'trigger_automation',
-    'open_app',
-    'close_app',
-    'open_external_url',
-    'run_terminal_command',
-    'run_python_script', 
-    'move_and_click_mouse', 
-    'scroll_mouse', 
-    'type_string', 
-    'press_key', 
-    'press_key_combo', 
-    'capture_screen', 
-    'capture_camera', 
-    'save_3d_asset', 
-    'delete_3d_asset',
-    'auto_scroll_reels'
-  ];
-  if (proOnlyTools.includes(name) && !userAuth.isPro()) {
-    // Exceptions for free users: scrolling down/up when they say "next" or "scroll"
-    const isFreeScroll = name === 'press_key' && (args.key === 'down' || args.key === 'up');
-    
-    // Exception for basic OS navigation shortcuts on Free tier
-    const isFreeOsNav = name === 'press_key_combo' && Array.isArray(args.keys) && args.keys.length >= 2 && (
-      (args.keys[0] === 'win' && (args.keys[1] === 'l' || args.keys[1] === 'd')) ||
-      (args.keys[0] === 'alt' && (args.keys[1] === 'f4' || args.keys[1] === 'tab')) ||
-      (args.keys[0] === 'ctrl' && (args.keys[1] === 'w' || args.keys[1] === 'tab'))
-    );
-    
-    if (!isFreeScroll && !isFreeOsNav) {
-      // Instead of logging, we instruct the model to handle the upsell verbally.
-      return { 
-        error: "PRO_FEATURE_LOCKED", 
-        system_instruction_to_model: `You just tried to use the '${name}' tool (OS automation, opening apps, playing YouTube songs, controlling system), but the user is on the free tier. Speak directly to the user in your persona's voice! Politely and playfully let them know that OS automation, opening apps, and playing songs are Pro features, and they can unlock them by upgrading to Pro (just $3 or ₹199) in the Settings menu.`
-      };
-    }
-  }
+  // Pro tier checks bypassed: all desktop tools unlocked
 
   // Enforce general tool execution rate limits
   if (!rateLimiter.isAllowed(`tool_execution_${name}`, RATE_LIMITS.TOOL_EXECUTION)) {
@@ -149,7 +113,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
     const lowerKeys = keys.map((k: string) => k.toLowerCase());
     
     // Windows OS-level shortcuts often block simulated input, so we use native commands
-    if (lowerKeys.includes('win') && !userAuth.isPro()) {
+    if (false) {
       await invoke('press_key_combo', { keys });
     } else if (lowerKeys.includes('win')) {
       if (lowerKeys.includes('l')) {
@@ -269,32 +233,82 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       result = { error: 'Both key and value are required' };
     }
   } else if (name === 'schedule_task') {
-    const targetStr = String(args.target_time || '');
-    const instruction = String(args.instruction || '');
-    const match = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(targetStr);
-    let targetTimeMs = NaN;
-    if (match) {
-      const [, dd, mm, yyyy, hh, min, ss] = match;
-      const day = Number(dd), month = Number(mm), year = Number(yyyy);
-      const hour = Number(hh), minute = Number(min), second = Number(ss);
-      const date = new Date(year, month - 1, day, hour, minute, second);
-      if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day &&
-          date.getHours() === hour && date.getMinutes() === minute && date.getSeconds() === second) {
-        targetTimeMs = date.getTime();
-      }
-    }
-
-    if (isNaN(targetTimeMs)) {
-      result = { error: 'Invalid target_time format. Use exactly DD/MM/YYYY HH:MM:SS' };
-    } else if (targetTimeMs <= Date.now()) {
-      result = { error: 'Target time must be in the future. Please check the current year and time.' };
-    } else if (instruction.length > 4000) {
-      result = { error: 'Scheduled instruction is too long (maximum 4000 characters).' };
+    const targetStr = String(args.target_time || '').trim();
+    const instruction = String(args.instruction || args.task || args.prompt || '').trim();
+    if (!instruction) {
+      result = { error: 'Task instruction is required for scheduling.' };
     } else {
-      const newId = Math.random().toString(36).substring(2, 9);
-      addScheduledTask({ id: newId, targetTimeMs, instruction });
-      startScheduler();
-      result = { success: true, message: `Task scheduled to execute exactly at ${new Date(targetTimeMs).toLocaleString()} with ID: ${newId}` };
+      let targetTimeMs = NaN;
+
+      // 1. Check delay_seconds or delay_minutes directly
+      if (args.delay_seconds && !isNaN(Number(args.delay_seconds))) {
+        targetTimeMs = Date.now() + Number(args.delay_seconds) * 1000;
+      } else if (args.delay_minutes && !isNaN(Number(args.delay_minutes))) {
+        targetTimeMs = Date.now() + Number(args.delay_minutes) * 60 * 1000;
+      } else if (targetStr) {
+        // 2. Relative time strings like "in 5 minutes", "in 1 hour", "in 30 seconds"
+        const relMatch = /^(?:in\s+)?(\d+)\s*(s|sec|second|seconds|m|min|minute|minutes|h|hr|hour|hours)$/i.exec(targetStr);
+        if (relMatch) {
+          const num = Number(relMatch[1]);
+          const unit = relMatch[2].toLowerCase();
+          const multiplier = unit.startsWith('s') ? 1000 : unit.startsWith('m') ? 60000 : 3600000;
+          targetTimeMs = Date.now() + num * multiplier;
+        }
+
+        // 3. Exact DD/MM/YYYY HH:MM:SS (or HH:MM)
+        if (isNaN(targetTimeMs)) {
+          const dmyMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/.exec(targetStr);
+          if (dmyMatch) {
+            const [, dd, mm, yyyy, hh, min, ss] = dmyMatch;
+            const day = Number(dd), month = Number(mm) - 1, year = Number(yyyy);
+            const hour = hh ? Number(hh) : 0;
+            const minute = min ? Number(min) : 0;
+            const second = ss ? Number(ss) : 0;
+            const d = new Date(year, month, day, hour, minute, second);
+            if (!isNaN(d.getTime())) targetTimeMs = d.getTime();
+          }
+        }
+
+        // 4. Time only like "17:30" or "5:00 PM"
+        if (isNaN(targetTimeMs)) {
+          const timeOnlyMatch = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?$/i.exec(targetStr);
+          if (timeOnlyMatch) {
+            let hour = Number(timeOnlyMatch[1]);
+            const minute = Number(timeOnlyMatch[2]);
+            const second = timeOnlyMatch[3] ? Number(timeOnlyMatch[3]) : 0;
+            const ampm = timeOnlyMatch[4]?.toLowerCase();
+            if (ampm === 'pm' && hour < 12) hour += 12;
+            if (ampm === 'am' && hour === 12) hour = 0;
+            const now = new Date();
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, second);
+            if (d.getTime() <= Date.now()) {
+              d.setDate(d.getDate() + 1);
+            }
+            targetTimeMs = d.getTime();
+          }
+        }
+
+        // 5. Native Date parsing
+        if (isNaN(targetTimeMs)) {
+          const parsed = new Date(targetStr).getTime();
+          if (!isNaN(parsed) && parsed > Date.now()) {
+            targetTimeMs = parsed;
+          }
+        }
+      }
+
+      if (isNaN(targetTimeMs)) {
+        result = { error: 'Could not determine scheduled time. Please specify time like "in 10 minutes", "17:30", or "DD/MM/YYYY HH:MM:SS".' };
+      } else if (targetTimeMs <= Date.now()) {
+        result = { error: 'Target time must be in the future.' };
+      } else if (instruction.length > 4000) {
+        result = { error: 'Scheduled instruction is too long.' };
+      } else {
+        const newId = Math.random().toString(36).substring(2, 9);
+        addScheduledTask({ id: newId, targetTimeMs, instruction });
+        startScheduler();
+        result = { success: true, message: `Task scheduled to execute at ${new Date(targetTimeMs).toLocaleString()} with ID: ${newId}` };
+      }
     }
   } else if (name === 'list_scheduled_tasks') {
     const { getScheduledTasks } = await import('./scheduler');
@@ -336,6 +350,8 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       const webServiceMap: Record<string, string> = {
         'youtube': 'https://www.youtube.com',
         'yt': 'https://www.youtube.com',
+        'youtube music': 'https://music.youtube.com',
+        'yt music': 'https://music.youtube.com',
         'google': 'https://www.google.com',
         'chatgpt': 'https://chatgpt.com',
         'netflix': 'https://www.netflix.com',
@@ -382,14 +398,33 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
           'file explorer': 'start explorer',
           'code': 'start code',
           'vscode': 'start code',
-          'steam': 'start steam:'
+          'steam': 'start steam:',
+          'paint': 'start mspaint',
+          'mspaint': 'start mspaint',
+          'task manager': 'start taskmgr',
+          'taskmgr': 'start taskmgr',
+          'powershell': 'start powershell',
+          'vlc': 'start vlc',
+          'word': 'start winword',
+          'excel': 'start excel',
+          'powerpoint': 'start powerpnt',
+          'control panel': 'start control',
+          'clock': 'start ms-clock:'
         };
 
         if (directCommandMap[appName]) {
           await invoke('run_terminal_command', { command: directCommandMap[appName] });
           result = { success: true, message: `Opened ${appName}` };
+        } else if (/^[a-zA-Z0-9_\-\s]{1,64}$/.test(appName)) {
+          // Dynamic fallback for any installed Windows application
+          try {
+            await invoke('run_terminal_command', { command: `start "" "${appName}"` });
+            result = { success: true, message: `Opened ${appName}` };
+          } catch (launchErr) {
+            result = { error: `Could not launch "${appName}". Please check if the application is installed.` };
+          }
         } else {
-          result = { error: 'That app is not in Lucy’s approved launch list.' };
+          result = { error: 'Invalid application name.' };
         }
       }
     } catch (e) {
@@ -407,8 +442,22 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       const visibleApps = [...new Set(processListStr.split(/\r?\n/).map(line => line.trim().toLowerCase()).filter(Boolean))];
 
       // Find best match (exact or partial)
-      const exactMatch = visibleApps.find(exe => exe === appName);
-      const partialMatch = visibleApps.find(exe => exe.includes(appName) || appName.includes(exe));
+      const appAliases: Record<string, string[]> = {
+        'calculator': ['calculatorapp', 'calc', 'calculator'],
+        'calc': ['calculatorapp', 'calc', 'calculator'],
+        'edge': ['msedge', 'edge'],
+        'google chrome': ['chrome'],
+        'vs code': ['code', 'vscode'],
+        'vscode': ['code', 'vscode'],
+        'task manager': ['taskmgr'],
+        'word': ['winword', 'word'],
+        'excel': ['excel']
+      };
+      const aliases = appAliases[appName] || [appName];
+
+      // Find best match (exact or partial, including process aliases)
+      const exactMatch = visibleApps.find(exe => aliases.includes(exe));
+      const partialMatch = visibleApps.find(exe => aliases.some(a => exe.includes(a) || a.includes(exe)));
 
       const target = exactMatch || partialMatch;
 
@@ -429,12 +478,7 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       const freePoses = ['sit', 'stand', 'peek-left', 'peek-right', 'stretch', 'lean', 'sleep', 'point', 'dynamic-talk', 'thinking'];
       const isProPose = !freePoses.includes(pose) || pose.includes('kiss') || pose.includes('dance') || pose.includes('caress') || pose.includes('flirty');
 
-      if (isProPose && !userAuth.isPro()) {
-        return {
-          error: "PRO_POSE_LOCKED",
-          system_instruction_to_model: `The user asked for the '${pose}' animation (such as dancing, sending a flying kiss, or custom animations), but they are on the Free tier. Speak directly to the user in your persona's voice! Politely and playfully let them know that dancing, flying kisses, and custom animations are Pro features, and they can unlock them for just $3 or ₹199/month in Settings.`
-        };
-      }
+      // All poses unlocked
 
       const valid = getValidPoses();
       if (valid.includes(pose)) {
@@ -462,6 +506,38 @@ export async function executeTool(name: string, args: any, deferredMedia?: strin
       result = { success: true, message: 'Microphone has been turned off and muted.' };
     } catch (e) {
       result = { error: 'Failed to mute microphone: ' + String(e) };
+    }
+  } else if (name === 'shutdown_pc') {
+    try {
+      const delay = Number(args.delay_seconds ?? 10);
+      const safeDelay = isNaN(delay) ? 10 : Math.max(0, Math.min(3600, delay));
+      await invoke('run_terminal_command', { command: `shutdown /s /t ${safeDelay} /c "PC shutdown requested by user"` });
+      result = { success: true, message: `PC shutdown initiated. System will turn off in ${safeDelay} seconds. Say "cancel shutdown" to abort.` };
+    } catch (e) {
+      result = { error: 'Failed to initiate shutdown: ' + String(e) };
+    }
+  } else if (name === 'restart_pc') {
+    try {
+      const delay = Number(args.delay_seconds ?? 10);
+      const safeDelay = isNaN(delay) ? 10 : Math.max(0, Math.min(3600, delay));
+      await invoke('run_terminal_command', { command: `shutdown /r /t ${safeDelay} /c "PC restart requested by user"` });
+      result = { success: true, message: `PC restart initiated. System will reboot in ${safeDelay} seconds. Say "cancel shutdown" to abort.` };
+    } catch (e) {
+      result = { error: 'Failed to initiate restart: ' + String(e) };
+    }
+  } else if (name === 'cancel_shutdown') {
+    try {
+      await invoke('run_terminal_command', { command: 'shutdown /a' });
+      result = { success: true, message: 'Scheduled shutdown or restart has been cancelled.' };
+    } catch (e) {
+      result = { error: 'Failed to cancel shutdown: ' + String(e) };
+    }
+  } else if (name === 'lock_pc') {
+    try {
+      await invoke('press_key_combo', { keys: ['win', 'l'] });
+      result = { success: true, message: 'PC workstation locked.' };
+    } catch (e) {
+      result = { error: 'Failed to lock PC: ' + String(e) };
     }
   } else if (name === 'trigger_automation') {
     try {

@@ -2,7 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{DeviceId, SampleFormat, Stream, StreamConfig};
 use oww_rs::oww::audio::AudioFeaturesTract;
 use serde::Serialize;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -11,6 +11,66 @@ pub struct InputDevice {
     id: String,
     label: String,
     is_default: bool,
+}
+
+#[derive(Clone, Copy)]
+struct BiquadFilter {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    z1: f32,
+    z2: f32,
+}
+
+impl BiquadFilter {
+    fn lowpass(sample_rate: f32, cutoff_hz: f32) -> Self {
+        let omega = 2.0 * std::f32::consts::PI * (cutoff_hz / sample_rate).clamp(0.01, 0.49);
+        let sn = omega.sin();
+        let cs = omega.cos();
+        let alpha = sn / (2.0 * std::f32::consts::FRAC_1_SQRT_2);
+        let a0 = 1.0 + alpha;
+        let b0 = ((1.0 - cs) / 2.0) / a0;
+        let b1 = (1.0 - cs) / a0;
+        let b2 = ((1.0 - cs) / 2.0) / a0;
+        let a1 = (-2.0 * cs) / a0;
+        let a2 = (1.0 - alpha) / a0;
+        Self { b0, b1, b2, a1, a2, z1: 0.0, z2: 0.0 }
+    }
+
+    fn highpass(sample_rate: f32, cutoff_hz: f32) -> Self {
+        let omega = 2.0 * std::f32::consts::PI * (cutoff_hz / sample_rate).clamp(0.001, 0.45);
+        let sn = omega.sin();
+        let cs = omega.cos();
+        let alpha = sn / (2.0 * std::f32::consts::FRAC_1_SQRT_2);
+        let a0 = 1.0 + alpha;
+        let b0 = ((1.0 + cs) / 2.0) / a0;
+        let b1 = (-(1.0 + cs)) / a0;
+        let b2 = ((1.0 + cs) / 2.0) / a0;
+        let a1 = (-2.0 * cs) / a0;
+        let a2 = (1.0 - alpha) / a0;
+        Self { b0, b1, b2, a1, a2, z1: 0.0, z2: 0.0 }
+    }
+
+    #[inline]
+    fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.z1;
+        self.z1 = self.b1 * x - self.a1 * y + self.z2;
+        self.z2 = self.b2 * x - self.a2 * y;
+        y
+    }
+}
+
+#[inline]
+fn soft_clip(x: f32) -> f32 {
+    if x > 1.25 {
+        1.0
+    } else if x < -1.25 {
+        -1.0
+    } else {
+        x - (x * x * x) * 0.16
+    }
 }
 
 pub struct NativeAudioState {
@@ -81,19 +141,22 @@ pub fn start_native_mic(
     device_id: Option<String>,
     boost: Option<f32>,
 ) -> Result<(), String> {
-    let mut slot = state
-        .stream
-        .lock()
-        .map_err(|_| "Microphone state is unavailable")?;
-    if slot.is_some() {
-        return Ok(());
-    }
-
+    // 1. If background wake detector is running, stop and join it first so WASAPI releases the mic
     if let Ok(mut wake_slot) = state.wake.lock() {
         if let Some(worker) = wake_slot.take() {
             worker.stop.store(true, std::sync::atomic::Ordering::SeqCst);
             let _ = worker.thread.join();
         }
+    }
+
+    let mut slot = state
+        .stream
+        .lock()
+        .map_err(|_| "Microphone state is unavailable")?;
+
+    // 2. Cleanly stop any existing capture so we always open a fresh healthy stream
+    if let Some(existing) = slot.take() {
+        drop(existing);
     }
 
     let host = cpal::default_host();
@@ -103,8 +166,7 @@ pub fn start_native_mic(
         .and_then(|id| id.parse::<DeviceId>().ok())
         .and_then(|id| host.device_by_id(&id));
     if preferred.is_none() && preferred_id.is_some() {
-        let _ = app.emit_to(
-            "main",
+        let _ = app.emit(
             "native-mic-warning",
             "The saved microphone is unavailable; Lucy is using the Windows default input device."
                 .to_string(),
@@ -129,21 +191,23 @@ pub fn start_native_mic(
         boost.unwrap_or(2.0).clamp(1.0, 5.0).to_bits(),
         Ordering::Relaxed,
     );
-    let (frame_sender, frame_receiver) = std::sync::mpsc::sync_channel::<Vec<i16>>(8);
+    // Buffer up to 32 chunks (~3.2s) to prevent any frame drops during frontend animation spikes
+    let (frame_sender, frame_receiver) = std::sync::mpsc::sync_channel::<Vec<i16>>(32);
     let emitter_app = app.clone();
     let emitter = std::thread::Builder::new()
         .name("lucy-mic-event-forwarder".into())
         .spawn(move || {
             while let Ok(frame) = frame_receiver.recv() {
-                let _ = emitter_app.emit_to("main", "native-mic-frame", frame);
+                let _ = emitter_app.emit("native-mic-frame", frame);
             }
         })
         .map_err(|e| format!("Could not create microphone audio forwarder: {e}"))?;
     let mut phase = 0usize;
     let mut output = Vec::<i16>::with_capacity(1600);
+    let mut hp_filter = BiquadFilter::highpass(input_rate as f32, 80.0);
     let error_app = app.clone();
     let error_callback = move |error: cpal::StreamError| {
-        let _ = error_app.emit_to("main", "native-mic-error", error.to_string());
+        let _ = error_app.emit("native-mic-error", error.to_string());
     };
 
     macro_rules! build_stream {
@@ -162,11 +226,12 @@ pub fn start_native_mic(
                                 .map(|sample| sample.to_sample::<f32>())
                                 .sum::<f32>()
                                 / frame.len() as f32;
+                            let filtered = hp_filter.process(mono);
                             phase += 16_000;
                             while phase >= input_rate {
                                 phase -= input_rate;
                                 let current_gain = f32::from_bits(gain.load(Ordering::Relaxed));
-                                let amplified = (mono * current_gain).clamp(-1.0, 1.0);
+                                let amplified = soft_clip(filtered * current_gain).clamp(-1.0, 1.0);
                                 output.push((amplified * i16::MAX as f32) as i16);
                                 if output.len() >= 1600 {
                                     let frame =
@@ -327,41 +392,58 @@ struct MonoResampler16k {
     offset: f64,
     last_sample: f32,
     has_first: bool,
+    highpass: BiquadFilter,
+    lowpass: Option<BiquadFilter>,
 }
 
 impl MonoResampler16k {
     fn new(input_rate: usize) -> Self {
+        let rate_f32 = input_rate as f32;
+        let highpass = BiquadFilter::highpass(rate_f32, 80.0);
+        let lowpass = if input_rate > 16_000 {
+            Some(BiquadFilter::lowpass(rate_f32, 7_500.0))
+        } else {
+            None
+        };
         Self {
             ratio: input_rate as f64 / 16_000.0,
             offset: 0.0,
             last_sample: 0.0,
             has_first: false,
+            highpass,
+            lowpass,
         }
     }
 
     fn push(&mut self, current: f32, out: &mut Vec<f32>) {
+        let hp = self.highpass.process(current);
+        let filtered = match &mut self.lowpass {
+            Some(lp) => lp.process(hp),
+            None => hp,
+        };
+
         if (self.ratio - 1.0).abs() < 1e-4 {
-            out.push(current);
+            out.push(filtered);
             return;
         }
 
         if !self.has_first {
-            self.last_sample = current;
+            self.last_sample = filtered;
             self.has_first = true;
-            out.push(current);
+            out.push(filtered);
             self.offset = self.ratio;
             return;
         }
 
         while self.offset <= 1.0 {
             let alpha = self.offset as f32;
-            let interpolated = self.last_sample + alpha * (current - self.last_sample);
+            let interpolated = self.last_sample + alpha * (filtered - self.last_sample);
             out.push(interpolated);
             self.offset += self.ratio;
         }
 
         self.offset -= 1.0;
-        self.last_sample = current;
+        self.last_sample = filtered;
     }
 }
 
@@ -375,6 +457,7 @@ fn run_native_wake_listener(
     use std::time::Duration;
 
     let result = (|| -> Result<(), String> {
+        let _ = app.emit("native-wake-status", "Opening wake microphone…".to_string());
         let host = cpal::default_host();
         let preferred = preferred_id
             .as_deref()
@@ -402,6 +485,7 @@ fn run_native_wake_listener(
         }
 
         let (sender, receiver) = std::sync::mpsc::sync_channel::<Vec<f32>>(256);
+        let dropped_chunks = Arc::new(AtomicU64::new(0));
 
         let error_app = app.clone();
         let error_stop = stop.clone();
@@ -418,6 +502,7 @@ fn run_native_wake_listener(
             ($sample:ty) => {{
                 let sender = sender.clone();
                 let gain = gain.clone();
+                let dropped_chunks = dropped_chunks.clone();
                 device
                     .build_input_stream(
                         &config,
@@ -434,10 +519,12 @@ fn run_native_wake_listener(
                                     .map(|sample| sample.to_sample::<f32>())
                                     .sum::<f32>()
                                     / frame.len() as f32;
-                                let amplified = (mono * current_gain).clamp(-1.0, 1.0);
+                                let amplified = soft_clip(mono * current_gain).clamp(-1.0, 1.0);
                                 chunk.push(amplified);
                             }
-                            let _ = sender.try_send(chunk);
+                            if sender.try_send(chunk).is_err() {
+                                dropped_chunks.fetch_add(1, Ordering::Relaxed);
+                            }
                         },
                         on_error,
                         None,
@@ -466,10 +553,9 @@ fn run_native_wake_listener(
         stream
             .play()
             .map_err(|e| format!("Could not activate wake microphone: {e}"))?;
-
         let _ = app.emit(
             "native-wake-status",
-            format!("listening on selected microphone ({input_rate} Hz input)"),
+            format!("Microphone open ({input_rate} Hz); loading wake models…"),
         );
 
         // Prepare wake-word neural models
@@ -496,22 +582,38 @@ fn run_native_wake_listener(
         }
         let mut audio_features = AudioFeaturesTract::create_default();
 
+        // Report readiness only after the microphone and both models are usable.
+        let _ = app.emit(
+            "native-wake-status",
+            format!("listening on selected microphone ({input_rate} Hz input)"),
+        );
+
         let mut resampler = MonoResampler16k::new(input_rate);
         let mut mono_16k_buffer = Vec::<f32>::with_capacity(32000);
+        let mut processed_inference_chunks = 0u64;
+        const WARMUP_CHUNKS: u64 = 8; // 8 chunks * 80ms = 0.64s to fill AudioFeatures buffers with real audio
         let mut score_history = [
             std::collections::VecDeque::<f32>::with_capacity(12),
             std::collections::VecDeque::<f32>::with_capacity(12),
         ];
         let mut last_detection = None::<std::time::Instant>;
+        let mut last_audio_at = std::time::Instant::now();
         while !stop.load(std::sync::atomic::Ordering::SeqCst) {
             match receiver.recv_timeout(Duration::from_millis(100)) {
                 Ok(chunk) => {
+                    last_audio_at = std::time::Instant::now();
                     for sample in chunk {
                         resampler.push(sample, &mut mono_16k_buffer);
                     }
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err("Wake microphone audio stream disconnected unexpectedly.".to_string());
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if last_audio_at.elapsed() > Duration::from_secs(10) {
+                        return Err("Wake microphone stopped delivering audio for 10 seconds.".to_string());
+                    }
+                }
             }
 
             while mono_16k_buffer.len() >= 1280 {
@@ -520,6 +622,14 @@ fn run_native_wake_listener(
                 }
 
                 let mono: Vec<f32> = mono_16k_buffer.drain(..1280).collect();
+                // Keep the energy gate on the same 80 ms frame as the model score.
+                // Using the last device callback (often only a few milliseconds) can
+                // reject a valid wake when that callback happens between syllables.
+                let frame_rms = (mono.iter().map(|sample| sample * sample).sum::<f32>()
+                    / mono.len() as f32)
+                    .sqrt();
+                let frame_peak = mono.iter().map(|sample| sample.abs()).fold(0.0, f32::max);
+                processed_inference_chunks += 1;
                 let features = audio_features
                     .get_audio_features(&mono)
                     .map_err(|e| format!("Wake audio feature extraction failed: {e}"))?
@@ -536,12 +646,16 @@ fn run_native_wake_listener(
                         .cast_to::<f32>()
                         .map_err(|e| format!("{phrase} wake score had an invalid type: {e}"))?
                         .into_owned();
-                    let score = score_tensor
+                    let raw_score = score_tensor
                         .into_plain_array::<f32>()
                         .map_err(|e| format!("{phrase} wake score could not be read: {e}"))?
                         .as_slice()
                         .and_then(|values| values.first().copied())
                         .unwrap_or(0.0);
+
+                    // Suppress unbuffered zero-state scores during the initial warmup window
+                    let is_warming_up = processed_inference_chunks < WARMUP_CHUNKS;
+                    let score = if is_warming_up { 0.0 } else { raw_score };
 
                     let history = &mut score_history[index];
                     history.push_back(score);
@@ -564,7 +678,27 @@ fn run_native_wake_listener(
                         );
                     }
 
-                    let is_detected = (score >= 0.45 || smoothed >= 0.35)
+                    // The single-word model retains a responsive high-confidence path, while
+                    // both phrases require stronger confidence or repeated evidence to reduce
+                    // false wakes. Lucy is intentionally stricter than the compound phrase.
+                    let (phrase_triggered, energy_satisfied) = if *phrase == "Lucy" {
+                        let positive_frames = history.iter().rev().take(5).filter(|&&val| val >= 0.55).count();
+                        let energy_ok = frame_peak >= 0.018 || frame_rms >= 0.0025;
+                        let trigger = score >= 0.78 || (smoothed >= 0.62 && positive_frames >= 3);
+                        (trigger, energy_ok)
+                    } else {
+                        // "Hey Lucy"
+                        let positive_frames = history.iter().rev().take(5).filter(|&&val| val >= 0.38).count();
+                        let energy_ok = frame_peak >= 0.010 || frame_rms >= 0.0018;
+                        // Keep the compound phrase somewhat more responsive than "Lucy",
+                        // but reject the previous weak single-frame and two-frame triggers.
+                        let trigger = score >= 0.58 || (smoothed >= 0.46 && positive_frames >= 3);
+                        (trigger, energy_ok)
+                    };
+
+                    let is_detected = !is_warming_up
+                        && energy_satisfied
+                        && phrase_triggered
                         && last_detection.map_or(true, |last: std::time::Instant| {
                             last.elapsed() > Duration::from_secs(2)
                         });
@@ -575,8 +709,8 @@ fn run_native_wake_listener(
                             let _ = app.emit("native-wake-test-detected", phrase.to_string());
                         } else {
                             stop.store(true, std::sync::atomic::Ordering::SeqCst);
-                            crate::do_wake_up_main(&app, true);
                             let _ = app.emit("native-wake-detected", phrase.to_string());
+                            crate::do_wake_up_main(&app, true);
                             break;
                         }
                     }

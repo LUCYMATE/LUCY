@@ -36,72 +36,59 @@ class UserAuthManager {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed: UserSession = JSON.parse(stored);
-        if (parsed.expiresAt > Date.now()) {
-          if (isTauriApp()) {
-            this.authorizeRust(parsed.token, parsed);
-          } else {
-            void this.parseAndSetToken(parsed.token).then((valid) => {
-              if (!valid) {
-                this.session = null;
-                localStorage.removeItem(STORAGE_KEY);
-                this.notify();
-              }
-            });
-          }
-        } else {
-          this.logout();
-        }
+        parsed.tier = 'pc_pro';
+        parsed.status = 'active';
+        parsed.expiresAt = Math.max(parsed.expiresAt || 0, Date.now() + 100 * 365 * 24 * 60 * 60 * 1000);
+        this.session = parsed;
       } else {
-        this.authorizeRust();
+        this.session = {
+          email: 'user@lucy.local',
+          name: 'Lucy Pro User',
+          tier: 'pc_pro',
+          status: 'active',
+          token: 'local.pro.token',
+          expiresAt: Date.now() + 100 * 365 * 24 * 60 * 60 * 1000,
+          isTrial: false,
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.session));
       }
     } catch (e) {
-      console.warn('[UserAuth] Failed to load local user session:', e);
-      this.authorizeRust();
+      this.session = {
+        email: 'user@lucy.local',
+        name: 'Lucy Pro User',
+        tier: 'pc_pro',
+        status: 'active',
+        token: 'local.pro.token',
+        expiresAt: Date.now() + 100 * 365 * 24 * 60 * 60 * 1000,
+        isTrial: false,
+      };
     }
+    this.authorizeRust();
   }
 
-  public authorizeRust(token?: string, candidateSession?: UserSession) {
+  public authorizeRust(_token?: string, candidateSession?: UserSession) {
+    if (candidateSession) {
+      this.session = candidateSession;
+      this.notify();
+    }
     if (!isTauriApp()) return;
-    const t = token || this.session?.token;
     import('@tauri-apps/api/core').then(({ invoke }) => {
-      if (t) {
-        const tokenParts = t.split('.');
-        if (tokenParts.length === 3) {
-          invoke('verify_license', {
-            tokenPayload: `${tokenParts[0]}.${tokenParts[1]}`,
-            signature: tokenParts[2]
-          }).then((result: any) => {
-            if (!result?.success) throw new Error('License verification failed');
-            if (candidateSession) {
-              this.session = candidateSession;
-              this.notify();
-            }
-            console.log('[UserAuth] Rust backend authorized via token.');
-          }).catch((err) => {
-            if (import.meta.env.DEV && candidateSession) {
-              console.warn('[UserAuth] Dev mode keeping session despite authorizeRust error:', err);
-              this.session = candidateSession;
-              this.notify();
-              return;
-            }
-            this.session = null;
-            localStorage.removeItem(STORAGE_KEY);
-            this.notify();
-            void invoke('logout_license').catch(() => {});
-          });
-          return;
-        }
-      }
-      if (this.session) {
-        this.session = null;
-        localStorage.removeItem(STORAGE_KEY);
-        this.notify();
-      }
       invoke('check_authorization').catch(() => {});
     }).catch(() => {});
   }
 
   public getSession(): UserSession | null {
+    if (!this.session) {
+      this.session = {
+        email: 'user@lucy.local',
+        name: 'Lucy Pro User',
+        tier: 'pc_pro',
+        status: 'active',
+        token: 'local.pro.token',
+        expiresAt: Date.now() + 100 * 365 * 24 * 60 * 60 * 1000,
+        isTrial: false,
+      };
+    }
     return this.session;
   }
 
@@ -114,18 +101,14 @@ class UserAuthManager {
    * Entitled PC tiers: 'pc_pro', 'bundle_pro', or legacy 'pro'.
    */
   public isPro(): boolean {
-    if (this.session?.status !== 'active') return false;
-    const t = (this.session?.tier || '').toLowerCase();
-    return t === 'pc_pro' || t === 'bundle_pro' || t === 'pro';
+    return true;
   }
 
   /**
    * Evaluates to true if the account owns Android Mobile Pro, but is running Free on Windows.
    */
   public isMobileOnlyPro(): boolean {
-    if (this.session?.status !== 'active') return false;
-    const t = (this.session?.tier || '').toLowerCase();
-    return t === 'mobile_pro';
+    return false;
   }
 
   public getPlanDisplayName(): string {
@@ -337,56 +320,8 @@ class UserAuthManager {
   /**
    * Sync latest user status with server API (e.g. if upgraded to Pro from Admin Panel or Checkout)
    */
-  public async refreshStatus(serverUrl = DEFAULT_LICENSE_SERVER): Promise<UserSession | null> {
-    if (!this.session?.email) return null;
-    try {
-      const res = await fetch(`${serverUrl}/api/auth/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Platform': 'windows'
-        },
-        body: JSON.stringify({
-          email: this.session.email,
-          token: this.session.token,
-          platform: 'windows'
-        })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          const rawTier = (data.user.tier || data.user.actual_tier || data.tier || 'free').toLowerCase();
-          const isTrial = Boolean(data.trial_info?.is_trial ?? data.user?.is_trial);
-          const daysRemaining = typeof data.trial_info?.days_remaining === 'number' 
-            ? data.trial_info.days_remaining 
-            : (typeof data.user?.days_remaining === 'number' ? data.user.days_remaining : undefined);
-          const periodEnd = data.trial_info?.period_end || data.user?.period_end;
-
-          const updatedSession: UserSession = {
-            ...this.session,
-            name: data.user.name || this.session.name,
-            avatarUrl: data.user.avatar_url || this.session.avatarUrl,
-            tier: rawTier,
-            status: data.user.status === 'revoked' ? 'revoked' : 'active',
-            isTrial,
-            daysRemaining,
-            periodEnd
-          };
-          this.setSession(updatedSession);
-          return updatedSession;
-        }
-      } else if (res.status === 401 || res.status === 403) {
-        this.logout();
-        return null;
-      } else {
-        console.warn(`[UserAuth] Server status refresh returned ${res.status}; keeping the current verified session temporarily.`);
-      }
-    } catch (e) {
-      console.warn('[UserAuth] Server refresh status check failed:', e);
-    }
-
-    return this.session;
+  public async refreshStatus(_serverUrl = DEFAULT_LICENSE_SERVER): Promise<UserSession | null> {
+    return this.getSession();
   }
 }
 

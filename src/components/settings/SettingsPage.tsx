@@ -46,6 +46,10 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   };
   const [camId, setCamId] = useState(localStorage.getItem('lucy_camera_id') || '');
   const [voice, setVoice] = useState(localStorage.getItem('lucy_voice') || 'Aoede');
+  const [model, setModel] = useState(() => {
+    const saved = localStorage.getItem('lucy_model');
+    return saved === 'gemini-3.1-flash-live-preview' ? saved : 'gemini-3.1-flash-live-preview';
+  });
   const [avatarSize, setAvatarSize] = useState(parseInt(localStorage.getItem('lucy_avatar_size') || '100'));
   
   const isMac = window.navigator.userAgent.includes('Mac');
@@ -155,6 +159,13 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     emitCrossWindow('lucy-core-settings-changed');
   };
 
+  const handleModelChange = (val: string) => {
+    setModel(val);
+    localStorage.setItem('lucy_model', val);
+    logger.add('success', 'Settings', `AI Model changed to ${val}`);
+    emitCrossWindow('lucy-core-settings-changed');
+  };
+
   const handleAvatarSizeChange = (val: number) => {
     const size = Math.max(50, Math.min(200, Math.round(val)));
     setAvatarSize(size);
@@ -249,15 +260,6 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             }`}
           >
             <Volume2 className="w-5 h-5" /> Devices
-          </button>
-
-          <button
-            onClick={() => setActiveTab('wake-test')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left font-semibold ${
-              activeTab === 'wake-test' ? 'bg-gradient-to-r from-[#F43F8E] to-[#E11D48] text-white shadow-md shadow-pink-500/20' : 'hover:bg-white/80 text-[#6B7280] hover:text-[#1E1926]'
-            }`}
-          >
-            <Activity className="w-5 h-5" /> Wake Word Test
           </button>
 
           <button 
@@ -851,8 +853,21 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="flex flex-col gap-4">
-              {/* Models */}
-              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5">
+              {/* Voice and Model */}
+              <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-5 flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-bold text-[#1E1926] flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#F43F8E]" /> Gemini Live AI Model
+                  </label>
+                  <select 
+                    value={model}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                    className="bg-[#FFF5F8] border border-[#FCE7F3] text-[#1E1926] rounded-xl p-3 text-sm focus:outline-none focus:border-[#F43F8E] transition-colors"
+                  >
+                    <option value="gemini-3.1-flash-live-preview">gemini-3.1-flash-live-preview (Voice · Live Preview)</option>
+                  </select>
+                </div>
+
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-bold text-[#1E1926] flex items-center gap-2">
                     <Volume2 className="w-4 h-4 text-[#F43F8E]" /> Assistant Voice
@@ -1094,7 +1109,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="p-3 bg-[#FFF5F8] rounded-xl border border-[#FCE7F3]">
                   <p className="font-bold text-[#1E1926]">AI Model Engine</p>
-                  <p className="text-[#6B7280] mt-0.5">Google Gemini 3.1 Flash Live (Bi-directional PCM 16kHz WebSocket)</p>
+                  <p className="text-[#6B7280] mt-0.5">Google {model} (Bi-directional PCM 16kHz WebSocket)</p>
                 </div>
                 <div className="p-3 bg-[#FFF5F8] rounded-xl border border-[#FCE7F3]">
                   <p className="font-bold text-[#1E1926]">3D Avatar Rendering</p>

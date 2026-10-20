@@ -253,11 +253,14 @@ export function AvatarController({ onLoad }: AvatarControllerProps) {
     }
   }, [isSpeaking, setBasePose, setIsWalking]);
 
+  if (isSleepMode) {
+    return null;
+  }
+
   return createPortal(
     <>
       <div
-        className={`fixed inset-0 pointer-events-none z-[50] ${isSleepMode ? 'hidden' : ''}`}
-        style={{ display: isSleepMode ? 'none' : 'block' }}
+        className="fixed inset-0 pointer-events-none z-[50]"
       >
         <AvatarErrorBoundary key={avatarEngine}>
           <Suspense fallback={null}>

@@ -205,13 +205,13 @@ export function Chat({ isVisible, onCloseChat, isSecondaryWindow = false }: { is
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={connectionState === 'connected' ? 'Ask LUCY anything…' : 'Connecting…'}
+            placeholder={connectionState === 'connected' ? 'Ask LUCY anything…' : (connectionState === 'connecting' ? 'Connecting to LUCY…' : 'Ask LUCY anything…')}
             className="flex-1 h-10 bg-[#FFF5F8] border border-[#FCE7F3] rounded-xl px-4 text-xs font-medium text-[#1E1926] placeholder-[#9CA3AF] outline-none focus:border-[#F43F8E] focus:bg-white transition-all"
           />
 
           <button
             type="submit"
-            disabled={!input.trim() || connectionState !== 'connected'}
+            disabled={!input.trim()}
             className="h-10 px-4 shrink-0 rounded-xl bg-gradient-to-r from-[#F43F8E] to-[#8B5CF6] text-white text-xs font-bold flex items-center gap-1.5 hover:opacity-95 disabled:opacity-30 transition-all cursor-pointer cancel-drag shadow-md shadow-pink-500/20"
           >
             <Send className="w-3.5 h-3.5" />

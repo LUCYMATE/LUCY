@@ -14,8 +14,55 @@ import { invoke } from '@tauri-apps/api/core';
 import { checkAppUpdate, markUpdateNotified } from '../lib/system/updateChecker';
 import { emitCrossWindow, listenCrossWindow } from '../lib/events/crossWindowEventBus';
 
+export type WakeDebugLogLevel = 'info' | 'success' | 'warning' | 'error';
+
+export interface WakeDebugSnapshot {
+  detectorStatus: string;
+  audioRms: number;
+  audioPeak: number;
+  audioAgeMs: number | null;
+  sampleRate: number | null;
+  channels: number | null;
+  audioChunks: number;
+  droppedChunks: number;
+  scores: Record<'Lucy' | 'Hey Lucy', number>;
+  lastWakeAt: number | null;
+  events: Array<{ at: number; level: WakeDebugLogLevel; message: string }>;
+}
+
+export interface WakeDebugTelemetry {
+  kind: 'audio' | 'score';
+  phrase?: 'Lucy' | 'Hey Lucy';
+  rms?: number;
+  peak?: number;
+  audioAgeMs?: number;
+  sampleRate?: number;
+  channels?: number;
+  audioChunks?: number;
+  droppedChunks?: number;
+  score?: number;
+  smoothed?: number;
+  threshold?: number;
+  smoothedThreshold?: number;
+}
+
+const initialWakeDebug: WakeDebugSnapshot = {
+  detectorStatus: 'Waiting for sleep mode',
+  audioRms: 0,
+  audioPeak: 0,
+  audioAgeMs: null,
+  sampleRate: null,
+  channels: null,
+  audioChunks: 0,
+  droppedChunks: 0,
+  scores: { Lucy: 0, 'Hey Lucy': 0 },
+  lastWakeAt: null,
+  events: [],
+};
+
 export function useCoreEngine() {
   const [initialized, setInitialized] = useState(false);
+  const [wakeDebug, setWakeDebug] = useState<WakeDebugSnapshot>(initialWakeDebug);
   const geminiRef = useRef<GeminiLive | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
@@ -26,14 +73,29 @@ export function useCoreEngine() {
 
   const wakeRequestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeWakeActiveRef = useRef(false);
+  const nativeWakeEventsReadyRef = useRef(false);
+  const nativeWakeListenerCountRef = useRef(0);
   const isWakingUpRef = useRef(false);
   const initSystemRef = useRef<(isWakeUp?: boolean, autoMic?: boolean) => void>(() => {});
   const startWakeWordListenerRef = useRef<() => void>(() => {});
 
+  const addWakeDebugEvent = useCallback((level: WakeDebugLogLevel, message: string) => {
+    setWakeDebug((current) => ({
+      ...current,
+      events: [{ at: Date.now(), level, message }, ...current.events].slice(0, 30),
+    }));
+  }, []);
+
   const requestWake = useCallback((text: string) => {
-    if (!useAvatarState.getState().isSleepMode || isWakingUpRef.current) return;
+    if (isWakingUpRef.current) return;
     isWakingUpRef.current = true;
     nativeWakeActiveRef.current = false;
+    setWakeDebug((current) => ({
+      ...current,
+      detectorStatus: `Wake phrase detected: ${text}`,
+      lastWakeAt: Date.now(),
+      events: [{ at: Date.now(), level: 'success' as const, message: `Wake event reached UI: ${text}` }, ...current.events].slice(0, 30),
+    }));
     const matcher = /\b(wake\s*up\s*lucy|lucy\s*wake\s*up|wakeup\s*lucy|lucy\s*wakeup|wake\s*up|wakeup|wake|woke\s*up|lucy|luci|lucie|loosey|losey|lusi|lusee|look\s*see|lucian|lucia|losie|loucy|loosy|lusy|hey\s*lucy|hello\s*lucy|hi\s*lucy|ok\s*lucy|okay\s*lucy)\b/i;
     const match = text.match(matcher);
     const pendingQuery = match ? text.slice((match.index || 0) + match[0].length).trim() : '';
@@ -54,26 +116,54 @@ export function useCoreEngine() {
     emitCrossWindow('lucy-wake-up');
 
     const tryWake = (retries = 20) => {
-      invoke('wake_up_main').catch((error) => {
+      invoke('wake_up_main').then(() => {
+        addWakeDebugEvent('success', 'Window restore command completed.');
+      }).catch((error) => {
         if (retries > 0) setTimeout(() => tryWake(retries - 1), 250);
-        else logger.add('error', 'Wake Word', `Could not restore the main window: ${String(error)}`);
+        else {
+          setWakeDebug((current) => ({ ...current, detectorStatus: `Window restore failed: ${String(error)}` }));
+          addWakeDebugEvent('error', `Could not restore the main window: ${String(error)}`);
+          logger.add('error', 'Wake Word', `Could not restore the main window: ${String(error)}`);
+        }
       });
     };
     tryWake();
-  }, []);
+  }, [addWakeDebugEvent]);
 
   const startWakeWordListener = useCallback(() => {
     if (!useAvatarState.getState().isSleepMode || isWakingUpRef.current) return;
+    // Native startup errors/status are emitted immediately by Rust. Do not start
+    // the worker until the UI has subscribed, or the only useful failure detail
+    // can be lost and the panel will look like the microphone is simply idle.
+    if (!nativeWakeEventsReadyRef.current) {
+      setWakeDebug((current) => ({ ...current, detectorStatus: 'Waiting for wake diagnostics to connect…' }));
+      return;
+    }
     if (nativeWakeActiveRef.current) return;
     nativeWakeActiveRef.current = true;
+    setWakeDebug((current) => ({
+      ...current,
+      detectorStatus: 'Starting native detector…',
+      audioRms: 0,
+      audioPeak: 0,
+      audioAgeMs: null,
+      sampleRate: null,
+      channels: null,
+      audioChunks: 0,
+      droppedChunks: 0,
+      scores: { Lucy: 0, 'Hey Lucy': 0 },
+    }));
+    addWakeDebugEvent('info', 'Requested native detector startup.');
     const deviceId = localStorage.getItem('lucy_mic_id') || 'default';
     invoke('start_native_wake_listener', { deviceId }).then(() => {
       logger.add('info', 'Wake Word', 'Starting the local Rust wake-word detector.');
     }).catch((error) => {
       nativeWakeActiveRef.current = false;
+      setWakeDebug((current) => ({ ...current, detectorStatus: `Start failed: ${String(error)}` }));
+      addWakeDebugEvent('error', `Start command failed: ${String(error)}`);
       logger.add('error', 'Wake Word', `Could not start local detector: ${String(error)}`);
     });
-  }, []);
+  }, [addWakeDebugEvent]);
 
   const isMicPendingRef = useRef(false);
   const lastToggleTimeRef = useRef<number>(0);
@@ -123,29 +213,33 @@ export function useCoreEngine() {
     modelBubbleIdRef.current = '';
   }, [setSpeaking]);
 
-  const setMicEnabled = async (targetOn: boolean) => {
+  const setMicEnabled = async (targetOn: boolean, preservePlayback = false) => {
     const currentMicOn = useAvatarState.getState().isMicOn;
-    if (currentMicOn === targetOn) return;
-    await toggleMic();
+    const isCapturing = recorderRef.current?.isActive() ?? false;
+    if (currentMicOn === targetOn && isCapturing === targetOn) return;
+    await toggleMic(preservePlayback, targetOn);
   };
 
-  const toggleMic = async () => {
+  const toggleMic = async (preservePlayback = false, forceState?: boolean) => {
     const now = Date.now();
-    if (now - lastToggleTimeRef.current < 400) {
+    if (forceState === undefined && now - lastToggleTimeRef.current < 250) {
       return;
     }
     if (isMicPendingRef.current) return;
     lastToggleTimeRef.current = now;
 
     const currentMicOn = useAvatarState.getState().isMicOn;
+    const targetOn = forceState !== undefined ? forceState : !currentMicOn;
 
-    if (!currentMicOn) {
+    if (targetOn) {
       isMicPendingRef.current = true;
       try {
-        playerRef.current?.stopCurrentPlayback();
-        setSpeaking(false);
-        stopSpeakingTimer();
-        modelBubbleIdRef.current = ''; 
+        if (!preservePlayback) {
+          playerRef.current?.stopCurrentPlayback();
+          setSpeaking(false);
+          stopSpeakingTimer();
+          modelBubbleIdRef.current = ''; 
+        }
         await recorderRef.current?.start();
         if (recorderRef.current) {
           recorderRef.current.onData = (pcm16) => {
@@ -163,29 +257,32 @@ export function useCoreEngine() {
           };
           recorderRef.current.onMicFrozen = () => {
             if (useAvatarState.getState().isMicOn) {
-              toggleMicRef.current().then(() => {
-                setTimeout(() => toggleMicRef.current(), 500);
+              setMicEnabledRef.current(false).then(() => {
+                setTimeout(() => setMicEnabledRef.current(true, true), 500);
               });
             }
           };
-          try {
-            const ctx = new AudioContext();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
-            gain.gain.setValueAtTime(0.1, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.1);
-            setTimeout(() => ctx.close(), 200);
-          } catch(e) {}
+          if (!preservePlayback) {
+            try {
+              const ctx = new AudioContext();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(800, ctx.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+              gain.gain.setValueAtTime(0.1, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.1);
+              setTimeout(() => ctx.close(), 200);
+            } catch(e) {}
+          }
         }
         setListening(true);
         setIsMicOn(true);
+        logger.add('success', 'Microphone', 'Microphone active and listening.');
       } catch (e) {
         console.error('Mic error:', e);
         const help = navigator.userAgent.includes('Windows')
@@ -200,7 +297,7 @@ export function useCoreEngine() {
     } else {
       isMicPendingRef.current = true;
       try {
-        try { recorderRef.current?.stop(); } catch (e) {}
+        try { await recorderRef.current?.stopAndWait(); } catch (e) {}
 
         // Descending tone for clear mute feedback
         try {
@@ -221,6 +318,7 @@ export function useCoreEngine() {
 
         setListening(false);
         setIsMicOn(false);
+        logger.add('info', 'Microphone', 'Microphone muted.');
       } finally {
         isMicPendingRef.current = false;
       }
@@ -254,10 +352,12 @@ export function useCoreEngine() {
     geminiRef.current?.disconnect();
     playerRef.current?.stopCurrentPlayback();
     recorderRef.current?.stop();
+    setListening(false);
+    setIsMicOn(false);
 
     const gemini = new GeminiLive();
     const player = new AudioPlayer();
-    const recorder = new AudioRecorder();
+    const recorder = recorderRef.current || new AudioRecorder();
 
     geminiRef.current = gemini;
     playerRef.current = player;
@@ -271,6 +371,13 @@ export function useCoreEngine() {
 
     gemini.onStateChange = (state, detail) => {
       setConnectionState(state);
+      if (isWakeUp || useAvatarState.getState().isSleepMode) {
+        const level: WakeDebugLogLevel = state === 'error'
+          ? 'error'
+          : state === 'connected' ? 'success' : 'info';
+        const detailText = detail ? `: ${String(detail)}` : '';
+        addWakeDebugEvent(level, `Assistant connection ${state}${detailText}`);
+      }
 
       if (state === 'connected' && !hasSentGreetingRef.current) {
         hasSentGreetingRef.current = true;
@@ -296,8 +403,10 @@ export function useCoreEngine() {
           const autoMicStr = localStorage.getItem('lucy_auto_mic');
           const shouldAutoMic = autoMicStr === null ? true : autoMicStr === 'true';
           
-          if (shouldAutoMic) {
-            setTimeout(() => toggleMicRef.current(), 500);
+          if (isWakeUp || shouldAutoMic) {
+            setTimeout(() => {
+              void setMicEnabledRef.current(true, true);
+            }, 300);
           }
         }, 1000);
       }
@@ -351,10 +460,15 @@ export function useCoreEngine() {
 
     gemini.connect(apiKey, altApiKey);
 
-    if (autoMic) {
-      setTimeout(() => toggleMicRef.current(), 500);
+    const autoMicSetting = localStorage.getItem('lucy_auto_mic');
+    const isAutoMicOn = autoMicSetting === null ? true : autoMicSetting === 'true';
+
+    if (autoMic || isWakeUp || isAutoMicOn) {
+      setTimeout(() => {
+        void setMicEnabledRef.current(true, true);
+      }, 500);
     }
-  }, [setMessages, resetSpeakingTimer, setConnectionState, setSpeaking, setThinking, setEmotion]);
+  }, [addWakeDebugEvent, setMessages, resetSpeakingTimer, setConnectionState, setSpeaking, setThinking, setEmotion]);
 
   const lastSentRef = useRef<{ text: string; time: number }>({ text: '', time: 0 });
 
@@ -370,8 +484,21 @@ export function useCoreEngine() {
     }
     lastSentRef.current = { text: trimmed, time: now };
 
+    // If Lucy is currently in sleep mode, wake her up so she can converse!
+    if (useAvatarState.getState().isSleepMode) {
+      useAvatarState.getState().setIsSleepMode(false);
+      emitCrossWindow('lucy-wake-up');
+    }
+
     if (!geminiRef.current?.isReady()) {
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'model', text: '⚠️ Not connected yet.' }]);
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', text: trimmed }]);
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'model', text: 'Connecting to Gemini Live…' }]);
+      initSystemRef.current(true, true);
+      setTimeout(() => {
+        if (geminiRef.current?.isReady()) {
+          geminiRef.current.sendText(trimmed);
+        }
+      }, 1500);
       return;
     }
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', text: trimmed }]);
@@ -420,37 +547,125 @@ export function useCoreEngine() {
     let unlistenWake: UnlistenFn | null = null;
     let unlistenWakeError: UnlistenFn | null = null;
     let unlistenWakeStatus: UnlistenFn | null = null;
+    let unlistenWakeDebug: UnlistenFn | null = null;
     let disposed = false;
+    nativeWakeEventsReadyRef.current = false;
+    nativeWakeListenerCountRef.current = 0;
+    const markWakeListenerReady = () => {
+      nativeWakeListenerCountRef.current += 1;
+      if (nativeWakeListenerCountRef.current === 4) {
+        nativeWakeEventsReadyRef.current = true;
+        addWakeDebugEvent('success', 'Native wake diagnostics connected.');
+        if (useAvatarState.getState().isSleepMode) startWakeWordListenerRef.current();
+      }
+    };
     void listen<string>('native-wake-detected', ({ payload }) => {
+      setWakeDebug((current) => ({
+        ...current,
+        detectorStatus: `Detector fired: ${payload}; waking window…`,
+        lastWakeAt: Date.now(),
+        events: [{ at: Date.now(), level: 'success' as const, message: `Detector fired for “${payload}”.` }, ...current.events].slice(0, 30),
+      }));
       requestWake(payload);
     }).then((unlisten) => {
       if (disposed) unlisten(); else unlistenWake = unlisten;
+      if (!disposed) markWakeListenerReady();
     });
     void listen<string>('native-wake-status', ({ payload }) => {
+      setWakeDebug((current) => ({
+        ...current,
+        detectorStatus: payload === 'stopped' && (
+          current.detectorStatus.startsWith('Error:')
+          || (!useAvatarState.getState().isSleepMode && current.lastWakeAt !== null)
+        ) ? current.detectorStatus : payload,
+      }));
+      if (payload === 'stopped') {
+        addWakeDebugEvent(
+          useAvatarState.getState().isSleepMode ? 'warning' : 'info',
+          useAvatarState.getState().isSleepMode ? 'Native detector stopped while still asleep.' : 'Native detector shut down after wake.',
+        );
+      }
       if (payload.startsWith('listening')) {
+        addWakeDebugEvent('success', `Detector ready: ${payload}`);
         logger.add('success', 'Wake Word', `Local detector active: ${payload}`);
       } else if (payload.includes('unavailable')) {
+        addWakeDebugEvent('warning', payload);
         logger.add('warning', 'Wake Word', payload);
       }
     }).then((unlisten) => {
       if (disposed) unlisten(); else unlistenWakeStatus = unlisten;
+      if (!disposed) markWakeListenerReady();
+    });
+    void listen<WakeDebugTelemetry>('native-wake-debug', ({ payload }) => {
+      if (payload.kind === 'audio') {
+        setWakeDebug((current) => ({
+          ...current,
+          audioRms: payload.rms ?? current.audioRms,
+          audioPeak: payload.peak ?? current.audioPeak,
+          audioAgeMs: payload.audioAgeMs ?? current.audioAgeMs,
+          sampleRate: payload.sampleRate ?? current.sampleRate,
+          channels: payload.channels ?? current.channels,
+          audioChunks: payload.audioChunks ?? current.audioChunks,
+          droppedChunks: payload.droppedChunks ?? current.droppedChunks,
+        }));
+      } else if (payload.kind === 'score' && payload.phrase) {
+        setWakeDebug((current) => ({
+          ...current,
+          scores: { ...current.scores, [payload.phrase!]: payload.smoothed ?? payload.score ?? 0 },
+        }));
+      }
+    }).then((unlisten) => {
+      if (disposed) unlisten(); else unlistenWakeDebug = unlisten;
+      if (!disposed) markWakeListenerReady();
     });
     void listen<string>('native-wake-error', ({ payload }) => {
       nativeWakeActiveRef.current = false;
+      setWakeDebug((current) => ({ ...current, detectorStatus: `Error: ${payload}` }));
+      addWakeDebugEvent('error', payload);
       logger.add('error', 'Wake Word', payload);
       if (useAvatarState.getState().isSleepMode && !isWakingUpRef.current) {
+        addWakeDebugEvent('warning', 'Retry scheduled in 5 seconds.');
         setTimeout(() => startWakeWordListenerRef.current(), 5000);
       }
     }).then((unlisten) => {
       if (disposed) unlisten(); else unlistenWakeError = unlisten;
+      if (!disposed) markWakeListenerReady();
     });
     return () => {
       disposed = true;
+      nativeWakeEventsReadyRef.current = false;
       unlistenWake?.();
       unlistenWakeError?.();
       unlistenWakeStatus?.();
+      unlistenWakeDebug?.();
     };
-  }, [requestWake]);
+  }, [addWakeDebugEvent, requestWake]);
+
+  // The sleep event is broadcast across windows and can race hook mounting.
+  // Reconcile directly from the shared sleep state as a backstop so the native
+  // listener always starts when Lucy is asleep, even if that event was missed.
+  useEffect(() => {
+    const unsubscribe = useAvatarState.subscribe((state, previous) => {
+      if (!previous.isSleepMode && state.isSleepMode) {
+        addWakeDebugEvent('info', 'Sleep state observed; shutting down audio/Gemini and starting wake listener.');
+        isWakingUpRef.current = false;
+        geminiRef.current?.disconnect();
+        recorderRef.current?.stop();
+        playerRef.current?.stopCurrentPlayback();
+        playerRef.current?.stop();
+        setListening(false);
+        setSpeaking(false);
+        setThinking(false);
+        setIsMicOn(false);
+        nativeWakeActiveRef.current = false;
+        startWakeWordListenerRef.current();
+      } else if (previous.isSleepMode && !state.isSleepMode) {
+        nativeWakeActiveRef.current = false;
+        void invoke('stop_native_wake_listener').catch(() => {});
+      }
+    });
+    return unsubscribe;
+  }, [addWakeDebugEvent, setListening, setSpeaking, setThinking, setIsMicOn]);
 
   useEffect(() => {
     const handleSettingsChanged = () => {
@@ -511,23 +726,33 @@ export function useCoreEngine() {
       initSystemRef.current = initSystem;
       startWakeWordListenerRef.current = startWakeWordListener;
 
+      let isSleepingTransition = false;
       const handleSleep = async () => {
-        useAvatarState.getState().setIsSleepMode(true);
-        isWakingUpRef.current = false;
-        geminiRef.current?.disconnect();
-        playerRef.current?.stopCurrentPlayback();
-        playerRef.current?.stop();
-        setListening(false);
-        setSpeaking(false);
-        setThinking(false);
-        setIsMicOn(false);
+        if (isSleepingTransition) return;
+        isSleepingTransition = true;
+        try {
+          useAvatarState.getState().setIsSleepMode(true);
+          isWakingUpRef.current = false;
+          geminiRef.current?.disconnect();
+          playerRef.current?.stopCurrentPlayback();
+          playerRef.current?.stop();
+          setListening(false);
+          setSpeaking(false);
+          setThinking(false);
+          setIsMicOn(false);
 
-        await recorderRef.current?.stopAndWait();
-        nativeWakeActiveRef.current = false;
-        await invoke('stop_native_wake_listener').catch(() => {});
-        startWakeWordListenerRef.current();
-        logger.add('info', 'Sleep Mode', 'Entering low-RAM sleep mode... Say "Lucy" or "Wake up" to wake me.');
-        invoke('enter_sleep_mode');
+          await recorderRef.current?.stopAndWait();
+          nativeWakeActiveRef.current = false;
+          startWakeWordListenerRef.current();
+          addWakeDebugEvent('info', 'Sleep transition complete; waiting for microphone and model telemetry.');
+          logger.add('info', 'Sleep Mode', 'Entering low-RAM sleep mode... Say "Lucy" or "Hey Lucy" to wake me.');
+          invoke('enter_sleep_mode').catch((error) => {
+            setWakeDebug((current) => ({ ...current, detectorStatus: `Sleep command failed: ${String(error)}` }));
+            addWakeDebugEvent('error', `Sleep command failed: ${String(error)}`);
+          });
+        } finally {
+          isSleepingTransition = false;
+        }
       };
 
       let lastWakeUpTime = 0;
@@ -539,6 +764,8 @@ export function useCoreEngine() {
         }
         lastWakeUpTime = now;
 
+        setWakeDebug((current) => ({ ...current, detectorStatus: 'Wake event received; restoring the assistant…' }));
+        addWakeDebugEvent('success', 'Wake event reached the main window.');
         useAvatarState.getState().setIsSleepMode(false);
         if (wakeRequestTimeoutRef.current) {
           clearTimeout(wakeRequestTimeoutRef.current);
@@ -551,7 +778,8 @@ export function useCoreEngine() {
         void (async () => {
           await invoke('stop_native_wake_listener').catch(() => {});
           wakeUpTimeout = setTimeout(() => {
-            initSystemRef.current(true);
+            initSystemRef.current(true, true);
+            addWakeDebugEvent('info', 'Assistant core reinitialization requested.');
             setTimeout(() => {
               isWakingUpRef.current = false;
             }, 1500);
@@ -573,7 +801,7 @@ export function useCoreEngine() {
         void invoke('stop_native_wake_listener').catch(() => {});
         if (wakeRequestTimeoutRef.current) clearTimeout(wakeRequestTimeoutRef.current);
       };
-    }, []);
+    }, [addWakeDebugEvent]);
 
-  return { initialized };
+  return { initialized, wakeDebug };
 }

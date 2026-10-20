@@ -1,7 +1,6 @@
 import { logger } from '../store/logger';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { BOT_NAME, getValidPoses } from '../../config/bot-profile';
-import { useAvatarState } from '../store/avatarState';
 import { executeTool } from './toolExecutor';
 import { setGlobalScheduleCallback, startScheduler, getScheduledTasks, cancelScheduledTaskById, ScheduledTask } from './scheduler';
 import { rateLimiter, RATE_LIMITS } from '../utils/rateLimiter';
@@ -17,6 +16,32 @@ import { backgroundAgent } from './backgroundAgent';
 
 let activeGeminiLiveInstance: GeminiLive | null = null;
 let pendingMobileNotifications: { text: string; timestamp: number }[] = [];
+
+function isBlockedActionIntent(text: string): boolean {
+  const input = text.toLocaleLowerCase().trim();
+  if (!input) return false;
+
+  // 1. Explicit negation: "don't open", "do not launch", "stop opening", "never open", "without opening"
+  const isNegated = /\b(?:don't|do not|dont|never|stop|prevent|avoid|without)\b.{0,40}\b(?:open|launch|start|run|play|khol|chala|youtube|spotify|browser|app|chrome|notepad|website|shutdown|restart)\b/i.test(input);
+  if (isNegated) return true;
+
+  // 2. Pure informational / conceptual questions WITHOUT action verbs:
+  // e.g. "what is spotify?", "who created youtube?", "tell me about chrome", "explain what an operating system is"
+  const isPureQuestion = /^(?:what is|what's|who (?:is|made|created)|tell me about|explain|describe|define)\b/i.test(input);
+  const hasActionVerb = /\b(?:open|launch|start|run|play|search|browse|khol|chala|baja|type|write|click|find|show|take|screen|calc|schedule|remind|shutdown|restart|turn off|lock|reboot)\b/i.test(input);
+  if (isPureQuestion && !hasActionVerb) {
+    return true;
+  }
+
+  // 3. Casual past storytelling without any action request:
+  // e.g. "i was watching youtube earlier", "yesterday i used spotify"
+  const isCasualPastStory = /^(?:i was|yesterday i|earlier i|last night i)\b/i.test(input) && !hasActionVerb;
+  if (isCasualPastStory) {
+    return true;
+  }
+
+  return false;
+}
 
 // Module-level cross-window listener so task completion results from mobile are never dropped
 listenCrossWindow<{ prompt: string; success: boolean; summary?: string; error?: string }>('lucy-mobile-task-finished', (payload) => {
@@ -45,6 +70,9 @@ export class GeminiLive {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private retryCount = 0;
   private connectionId = 0;
+  private latestUserRequestText = '';
+  private latestUserRequestAt = 0;
+  private latestAudioSentAt = 0;
 
   // --- Callbacks ---
   public onStateChange: ((state: ConnectionState, detail?: string) => void) | null = null;
@@ -59,6 +87,9 @@ export class GeminiLive {
   }
 
   async connect(apiKey: string, altApiKey?: string, isAutoRetry = false, useAltKey = false) {
+    this.latestUserRequestText = '';
+    this.latestUserRequestAt = 0;
+    this.latestAudioSentAt = 0;
     if (!rateLimiter.isAllowed('gemini_connect', RATE_LIMITS.GEMINI_CONNECT)) {
       logger.add('warning', 'Rate Limit', 'Connection attempts throttled. Retrying shortly...');
       if (!isAutoRetry) {
@@ -102,8 +133,12 @@ export class GeminiLive {
       const activeKey = this.currentlyUsingAlt && this.altApiKey ? this.altApiKey : apiKey;
       let ai = new GoogleGenAI({ apiKey: activeKey });
 
-      // Gemini 3 Flash Live model suite
-      const savedModel = localStorage.getItem('lucy_model') || 'gemini-3.1-flash-live-preview';
+      // Keep voice processing on the requested low-latency Live model.
+      let savedModel = localStorage.getItem('lucy_model');
+      if (savedModel !== 'gemini-3.1-flash-live-preview') {
+        savedModel = 'gemini-3.1-flash-live-preview';
+        localStorage.setItem('lucy_model', savedModel);
+      }
       const savedVoice = localStorage.getItem('lucy_voice') || 'Aoede';
 
       const now = new Date();
@@ -136,7 +171,8 @@ CRITICAL IDENTITY RULES:
       const coreInstruction = `
 ## VOICE PERSONALITY
 - Speak like a cute, close, and trusted companion — sweet, natural, and highly expressive!
-- Speak English with a natural, warm South Asian conversational accent and phrasing.
+- Respond in the same language the user is speaking in this turn. Understand and reply naturally in English, Hindi, or Nepali, including code-switching. Do not translate the user's words or your answer into another language unless explicitly asked.
+- Keep replies within English, Hindi, and Nepali, matching the main language of the current user turn and mirroring natural code-switching. Switch to another language only when the user explicitly requests it. When speech recognition is uncertain, use the clearest language in the user's words; if still unclear, ask a short clarification in the last clearly understood language.
 - Keep casual spoken replies short, charming, and bubbly by default. Do not make awkward conversational blunders or over-explain how you are doing things.
 - ULTRA-FAST RESPONSE: Answer immediately the moment the user finishes speaking. Do not hesitate, pause, or stall before answering. Begin your spoken answer right away.
 - DYNAMIC REPLY LENGTH: If the user explicitly asks for a description, explanation, screen analysis, details, or search results (e.g. "what is on screen", "explain in detail", "describe this"), provide a comprehensive, detailed spoken response. Do NOT artificially truncate explanations when details are requested!
@@ -147,20 +183,25 @@ CRITICAL IDENTITY RULES:
 - If you receive silence, background static, fan noise, room noise, or unintelligible breathing, REMAIN COMPLETELY SILENT. Do NOT respond with "Yes?", "What?", "I'm listening", or generate random chatter unless clear human speech is directed at you.
 - NEVER respond to your own words or echo. If input is empty or unintelligible noise, ignore it completely.
 
-## STRICT CONVERSATION VS COMMAND GUARD (ZERO ACCIDENTAL ACTIONS)
-- You must STRICTLY distinguish between CASUAL CONVERSATION and EXPLICIT COMMANDS:
-  * NEVER trigger tools or open any website/application if the user is merely chatting, telling a story, mentioning a site/service in conversation, or asking a conceptual question (e.g. "I love YouTube", "I was watching a movie", "Do you know who created YouTube?", "What is Spotify?", "Can you explain how Chrome works?", "Tell me a joke"). In all these conversational cases, simply reply naturally with your cute voice — NEVER call a tool!
-  * ONLY call action tools ('open_app', 'open_external_url', 'trigger_automation', etc.) when the user issues an EXPLICIT, IMPERATIVE COMMAND (e.g. "Open YouTube", "Launch Spotify", "Open Calculator", "Play Shape of You on Spotify", "Go to sleep").
+## CONVERSATION VS COMMAND HANDLING
+- When the user is merely conversing ABOUT an app or topic (e.g. "I love YouTube", "What is Spotify?", "YouTube podcasts are great", "Do you like songs?"), simply reply naturally with your spoken voice. Do NOT randomly open apps or websites when no action was requested.
+- When the user asks you to perform an action (e.g. open an app, play a song, schedule a task/reminder, shut down or restart PC, lock workstation, or run an automation), execute the corresponding tool immediately, smoothly, and decisively!
 
 ## DUAL-ENGINE ARCHITECTURE: INSTANT TOOLS + BACKGROUND AUTOMATION AGENT
 You operate with a two-layer execution model:
 
 Layer 1: INSTANT SINGLE-STEP TOOLS (<100ms — Execute directly without delegating):
-- open_app → Use when user EXPLICITLY asks to open ANY desktop application or popular web service (e.g. "open calculator" -> open_app({ app_name: "calculator" }), "open spotify" -> open_app({ app_name: "spotify" }), "open chrome" -> open_app({ app_name: "chrome" }), "open notepad" -> open_app({ app_name: "notepad" }), "open youtube" -> open_app({ app_name: "youtube" })).
-- open_external_url → Use when user provides a specific URL link or website domain (e.g. "open github.com" -> open_external_url({ url: "https://github.com" })).
-- close_app → Use when user explicitly asks to close or exit an application.
-- press_key_combo → Use for OS navigation like Win+L (lock PC), Win+D (desktop), Alt+F4 (close), Ctrl+Tab.
-- press_key → If user says "next", "scroll down", "skip", or "scroll up", use press_key({ key: "down" }) or press_key({ key: "up" }).
+- schedule_task → Use when user asks to schedule an action or reminder for later (e.g. "remind me in 10 minutes to...", "at 5pm open youtube", "schedule task to...").
+- list_scheduled_tasks → Use when user asks to check what tasks or reminders are scheduled.
+- cancel_scheduled_task → Use when user asks to cancel a scheduled task.
+- shutdown_pc → Use when user asks to shut down or turn off the computer.
+- restart_pc → Use when user asks to restart or reboot the computer.
+- lock_pc → Use when user asks to lock the PC / workstation.
+- open_app → Use when user asks to open ANY desktop application or popular web service (e.g. "open calculator", "open spotify", "open chrome", "open notepad", "open youtube").
+- open_external_url → Use when user provides a specific URL link or website domain.
+- close_app → Use when user asks to close or exit an application.
+- press_key_combo → Use for OS navigation like Win+D (desktop), Alt+F4 (close), Ctrl+Tab.
+- press_key → If user says "next", "scroll down", "skip", or "scroll up".
 - auto_scroll_reels → Starts/stops hands-free scrolling for short-form video reels or feeds.
 - set_pose → Changes avatar pose/animation when requested.
 - go_to_sleep → MUST be called when user says "go to sleep", "sleep", "hide", or "close yourself".
@@ -168,7 +209,7 @@ Layer 1: INSTANT SINGLE-STEP TOOLS (<100ms — Execute directly without delegati
 
 Layer 2: POWERFUL BACKGROUND AUTOMATION AGENT ('trigger_automation'):
 - You have a silent, ultra-capable Background Automation Agent running in the background!
-- ALWAYS call 'trigger_automation({ request: "..." })' for ANY multi-step, complex, or workflow tasks:
+- Call 'trigger_automation({ request: "..." })' only for a multi-step task the user explicitly asked you to perform:
   * "Open Spotify and play [artist/track]"
   * "Open YouTube and play [song/video name]"
   * "Search the web for [query] and tell me the summary"
@@ -205,6 +246,11 @@ ${userPersonality}` : ''}
 ${petName ? `
 Address the user as "${petName}" naturally when appropriate.` : ''}
 
+## LANGUAGE AND ACTION SAFETY (HIGHEST PRIORITY)
+- Match the language actually spoken in the user's current turn: English, Hindi, Nepali, or their natural mix. Do not translate or randomly switch languages.
+- Treat application and website mentions as conversation unless the user clearly asks you to open, launch, play, search, or interact with them. Questions and stories mentioning YouTube or another app must never open anything.
+- If the user's intent to perform an external action is ambiguous, do not call an action tool; ask a brief clarification.
+
 ## RUNTIME CONTEXT
 - DateTime: ${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}
 - Display: ${window.screen.width}×${window.screen.height}
@@ -231,6 +277,8 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
 
             setGlobalScheduleCallback((taskInstruction) => {
               if (this.session) {
+                this.latestUserRequestText = taskInstruction;
+                this.latestUserRequestAt = Date.now();
                 this.session.sendClientContent({
                   turns: [{ role: 'user', parts: [{ text: `[SYSTEM ABSOLUTE TIME TRIGGER] The computer's clock has exactly reached the target time. You previously scheduled this task: "${taskInstruction}". Execute it now proactively without asking.` }] }],
                   turnComplete: true
@@ -250,6 +298,14 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
             if (this.connectionId !== currentConnectionId) return;
             try {
               const serverContent = message?.serverContent ?? message?.server_content;
+
+              const inputTranscription = serverContent?.inputTranscription ?? serverContent?.input_transcription;
+              const inputText = inputTranscription?.text;
+              if (inputText) {
+                this.latestUserRequestText = inputText;
+                this.latestUserRequestAt = Date.now();
+                this.onTranscript?.(inputText, true);
+              }
 
               if (serverContent?.interrupted) {
                 // Silently handle interruption without spamming logs
@@ -272,37 +328,48 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
 
                   let result: any = null;
                   try {
-                    if (toolName === 'trigger_automation') {
-                      if (!userAuth.isPro()) {
-                        result = {
-                          error: "PRO_FEATURE_LOCKED",
-                          system_instruction_to_model: `The user is on the Free tier and asked for an OS automation/app/song execution action. Speak directly to the user in a friendly, conversational voice! Politely and playfully let them know that OS automation, opening apps, playing songs, and system control are Pro features, and they can unlock them by upgrading to Pro ($3 or ₹199) in Settings.`
-                        };
-                      } else {
-                        const request = args.request || '';
-                        backgroundAgent.executeTask(request, activeKey).then((finalResult) => {
-                          if (this.session && this.setupComplete) {
-                            this.session.sendClientContent({
-                              turns: [{
-                                role: 'user',
-                                parts: [{ text: `[SYSTEM NOTIFICATION: Background Automation Agent completed the request "${request}". Result summary: ${finalResult}. Speak to the user now and confirm that execution is finished. If the user asked for details, a description, or search/screen info, speak out the full description/details clearly!]` }]
-                              }],
-                              turnComplete: true
-                            });
-                          }
-                        }).catch((err) => {
-                          if (this.session && this.setupComplete) {
-                            this.session.sendClientContent({
-                              turns: [{
-                                role: 'user',
-                                parts: [{ text: `[SYSTEM NOTIFICATION: Background Automation Agent failed for request "${request}": ${err}. Please inform the user.]` }]
-                              }],
-                              turnComplete: true
-                            });
-                          }
-                        });
-                        result = { success: true, message: `Automation triggered for: "${request}". Briefly tell the user you are working on it now (e.g. "I'm working on that now!"). Do NOT say it is done or finished until the background task completes.` };
+                    const isRecentAudio = Date.now() - this.latestAudioSentAt < 45_000;
+                    const isRecentText = Date.now() - this.latestUserRequestAt < 45_000;
+                    const isFreshTurn = isRecentAudio || isRecentText;
+
+                    // If user is speaking live right now, don't let stale previous-turn text block the new voice command
+                    const isSpeakingNow = Date.now() - this.latestAudioSentAt < 15_000;
+                    const textIsFromCurrentSpeech = this.latestUserRequestAt >= this.latestAudioSentAt - 2000;
+                    const relevantText = (isSpeakingNow && !textIsFromCurrentSpeech) ? '' : this.latestUserRequestText;
+
+                    const needsExplicitIntent = ['open_app', 'open_external_url', 'trigger_automation'].includes(toolName);
+                    if (needsExplicitIntent) {
+                      if (!isFreshTurn) {
+                        logger.add('warning', 'Action Blocked', `Blocked ${toolName}: no active user speech or command in this turn.`);
+                        result = { blocked: true, message: 'No action was taken because there was no active command in the current turn. Reply conversationally or ask how you can help.' };
+                      } else if (relevantText && isBlockedActionIntent(relevantText)) {
+                        logger.add('warning', 'Action Blocked', `Blocked ${toolName}: request "${relevantText}" is conversational or negated.`);
+                        result = { blocked: true, message: 'No action was taken because the user did not clearly request an external action. Reply normally, or ask what the user wants opened.' };
                       }
+                    } else if (toolName === 'trigger_automation') {
+                      const request = args.request || '';
+                      backgroundAgent.executeTask(request, activeKey).then((finalResult) => {
+                        if (this.session && this.setupComplete) {
+                          this.session.sendClientContent({
+                            turns: [{
+                              role: 'user',
+                              parts: [{ text: `[SYSTEM NOTIFICATION: Background Automation Agent completed the request "${request}". Result summary: ${finalResult}. Speak to the user now and confirm that execution is finished. If the user asked for details, a description, or search/screen info, speak out the full description/details clearly!]` }]
+                            }],
+                            turnComplete: true
+                          });
+                        }
+                      }).catch((err) => {
+                        if (this.session && this.setupComplete) {
+                          this.session.sendClientContent({
+                            turns: [{
+                              role: 'user',
+                              parts: [{ text: `[SYSTEM NOTIFICATION: Background Automation Agent failed for request "${request}": ${err}. Please inform the user.]` }]
+                            }],
+                            turnComplete: true
+                          });
+                        }
+                      });
+                      result = { success: true, message: `Automation triggered for: "${request}". Briefly tell the user you are working on it now (e.g. "I'm working on that now!"). Do NOT say it is done or finished until the background task completes.` };
                     } else {
                       result = await executeTool(toolName, args, deferredMedia);
                     }
@@ -357,21 +424,6 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
               const outputText = outputTranscription?.text;
               if (outputText) {
                 this.onTranscript?.(outputText, false);
-              }
-
-              const inputTranscription = serverContent?.inputTranscription ?? serverContent?.input_transcription;
-              const inputText = inputTranscription?.text;
-              if (inputText) {
-                this.onTranscript?.(inputText, true);
-                
-                if (/\b(wake\s*up|wakeup|lucy|hey\s*lucy|hello\s*lucy|wake\s*up\s*lucy)\b/i.test(inputText)) {
-                  if (useAvatarState.getState().isSleepMode) {
-                    logger.add('success', 'Wake Word', `Detected wake word: "${inputText}"! Waking up system...`);
-                    import('@tauri-apps/api/core').then(({ invoke }) => {
-                      invoke('wake_up_main').catch(err => logger.add('warning', 'Wake Word', `Native wake failed: ${String(err)}`));
-                    });
-                  }
-                }
               }
 
               if (serverContent?.interrupted) {
@@ -439,6 +491,8 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
         },
         config: {
           responseModalities: [Modality.AUDIO],
+          // The Gemini Developer API only accepts automatic language detection
+          // for this Live transcription config; languageCodes is Enterprise-only.
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           speechConfig: {
@@ -452,6 +506,63 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
           tools: [
             {
               functionDeclarations: [
+                {
+                  name: 'schedule_task',
+                  description: 'Schedules an action or reminder to run at a future time. Use when user says "remind me at...", "schedule X at...", "in 10 minutes do X", etc.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      instruction: { type: 'STRING', description: 'The task description or action to execute when the scheduled time arrives' },
+                      target_time: { type: 'STRING', description: 'When to execute (e.g. "in 10 minutes", "17:30", "5:00 PM", or "DD/MM/YYYY HH:MM:SS")' },
+                      delay_seconds: { type: 'INTEGER', description: 'Optional delay in seconds from now (e.g. 600 for 10 minutes)' }
+                    },
+                    required: ['instruction']
+                  }
+                },
+                {
+                  name: 'list_scheduled_tasks',
+                  description: 'List all currently active scheduled tasks and reminders.',
+                  parameters: { type: 'OBJECT', properties: {} }
+                },
+                {
+                  name: 'cancel_scheduled_task',
+                  description: 'Cancel a scheduled task by its task ID.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: { id: { type: 'STRING', description: 'The task ID to cancel' } },
+                    required: ['id']
+                  }
+                },
+                {
+                  name: 'shutdown_pc',
+                  description: 'Initiate a shutdown of the computer. Use when the user asks to shut down the PC or turn off the computer.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      delay_seconds: { type: 'INTEGER', description: 'Seconds to wait before shutting down (default 10)' }
+                    }
+                  }
+                },
+                {
+                  name: 'restart_pc',
+                  description: 'Initiate a restart of the computer. Use when the user asks to restart or reboot the PC.',
+                  parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                      delay_seconds: { type: 'INTEGER', description: 'Seconds to wait before restarting (default 10)' }
+                    }
+                  }
+                },
+                {
+                  name: 'lock_pc',
+                  description: 'Instantly lock the PC workstation.',
+                  parameters: { type: 'OBJECT', properties: {} }
+                },
+                {
+                  name: 'cancel_shutdown',
+                  description: 'Cancel an upcoming scheduled shutdown or restart.',
+                  parameters: { type: 'OBJECT', properties: {} }
+                },
                 {
                   name: 'set_pose',
                   description: `Change your avatar pose. Use when the user asks you to do a pose or animation. Valid Free tier options: sit, stand, peek-left, peek-right, stretch, lean, sleep, point, dynamic-talk. (Note: dance, flirty, kiss, and custom animations are Pro features). All Valid options: ${getValidPoses().join(', ')}`,
@@ -719,16 +830,32 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
     }
     this.onThinking?.(true);
 
+    if (!/^system instruction:/i.test(text.trim())) {
+      this.latestUserRequestText = text.trim();
+      this.latestUserRequestAt = Date.now();
+    } else {
+      const wakingRequest = text.match(/said this immediately:\s*["“](.+?)["”]/i);
+      if (wakingRequest?.[1]) {
+        this.latestUserRequestText = wakingRequest[1].trim();
+        this.latestUserRequestAt = Date.now();
+      }
+    }
+
     try {
-      this.session.sendClientContent({
-        turns: [{
-          role: 'user',
-          parts: [{ text }]
-        }],
-        turnComplete: true
-      });
+      this.session.sendRealtimeInput({ text });
     } catch (err) {
-      console.error('[GeminiLive] Could not send text', err);
+      console.warn('[GeminiLive] sendRealtimeInput text failed, trying sendClientContent fallback:', err);
+      try {
+        this.session.sendClientContent({
+          turns: [{
+            role: 'user',
+            parts: [{ text }]
+          }],
+          turnComplete: true
+        });
+      } catch (err2) {
+        console.error('[GeminiLive] Could not send text', err2);
+      }
     }
   }
 
@@ -738,6 +865,7 @@ Address the user as "${petName}" naturally when appropriate.` : ''}
 
   sendAudio(pcm16: Int16Array) {
     if (!this.isReady()) return;
+    this.latestAudioSentAt = Date.now();
     const base64 = this._toBase64(new Uint8Array(pcm16.buffer));
 
     this.audioChunksSent++;

@@ -38,7 +38,6 @@ function FpsLimiter() {
     const loop = (time: number) => {
       // Zero WebGL rendering when window is minimized, hidden, or in sleep mode
       if ((typeof document !== 'undefined' && document.hidden) || useAvatarState.getState().isSleepMode) {
-        frameId = requestAnimationFrame(loop);
         return;
       }
 

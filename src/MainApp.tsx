@@ -240,6 +240,13 @@ export default function MainApp() {
       win.setIgnoreCursorEvents(true).catch(() => {});
     };
 
+    const handleWakeDebugInteractive = (event: Event) => {
+      if (!useAvatarState.getState().isSleepMode) return;
+      const interactive = (event as CustomEvent<boolean>).detail === true;
+      lastIgnore = !interactive;
+      win.setIgnoreCursorEvents(!interactive).catch(() => {});
+    };
+
     const handleWakeUp = () => {
       lastIgnore = false; // Force re-evaluation
 
@@ -285,10 +292,13 @@ export default function MainApp() {
 
     const unsubSleep = listenCrossWindow('lucy-sleep', handleSleepEvent);
     const unsubWake = listenCrossWindow('lucy-wake-up', handleWakeUpEvent);
+    window.addEventListener('lucy-wake-debug-interactive', handleWakeDebugInteractive);
 
     // Don't even start the loop if we boot directly into sleep mode.
     if (!useAvatarState.getState().isSleepMode) {
       checkMouse();
+    } else if (document.querySelector('[data-wake-debug-overlay="true"]')) {
+      handleWakeDebugInteractive(new CustomEvent('lucy-wake-debug-interactive', { detail: true }));
     }
     return () => {
       active = false;
@@ -296,6 +306,7 @@ export default function MainApp() {
       unsubStore();
       unsubSleep();
       unsubWake();
+      window.removeEventListener('lucy-wake-debug-interactive', handleWakeDebugInteractive);
       win.setIgnoreCursorEvents(false).catch(() => {});
     };
   }, [licenseStatus]);
