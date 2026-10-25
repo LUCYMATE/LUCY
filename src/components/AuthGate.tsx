@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Minus, X as XIcon } from 'lucide-react';
 import { userAuth } from '../lib/auth/userAuth';
-import { openExternalUrl } from '../lib/system/tauriBridge';
+import { isTauriApp, openExternalUrl } from '../lib/system/tauriBridge';
 
 export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
   const [stage, setStage] = useState<'checking' | 'locked' | 'authorized'>('checking');
@@ -27,24 +27,19 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
 
   useEffect(() => {
     checkAuth();
-    
-    // Listen for auth state changes from deep link or other sources
-    const handleAuthError = (e: any) => {
-      setAuthError(e.detail || 'Authentication failed.');
-      if (pollingRef.current) clearTimeout(pollingRef.current);
-    };
-    window.addEventListener('soltini-auth-error', handleAuthError);
 
     const unsub = userAuth.subscribe((session) => {
       if (session && session.status !== 'revoked') {
         setStage('authorized');
         setAuthError(null);
         if (pollingRef.current) clearTimeout(pollingRef.current);
-        
+
         // Restore alwaysOnTop when authorized
-        import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-          getCurrentWindow().setAlwaysOnTop(true).catch(() => {});
-        }).catch(() => {});
+        if (isTauriApp()) {
+          import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+            try { getCurrentWindow().setAlwaysOnTop(true).catch(() => { }); } catch (_) {}
+          }).catch(() => { });
+        }
 
         setTimeout(onAuthorized, 800);
       } else {
@@ -54,40 +49,87 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         } else {
           setAuthError(null);
         }
-        
+
         // Ensure the window behaves like a normal window again if they are logged out
-        import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
-          const win = getCurrentWindow();
-          win.setAlwaysOnTop(false).catch(() => {});
-          win.setIgnoreCursorEvents(false).catch(() => {});
-          win.unmaximize().catch(() => {});
-          win.setSkipTaskbar(false).catch(() => {});
-          import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
-            win.setSize(new LogicalSize(1000, 700)).catch(() => {});
-            win.center().catch(() => {});
-          }).catch(() => {});
-        }).catch(() => {});
+        if (isTauriApp()) {
+          import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+            try {
+              const win = getCurrentWindow();
+              win.setAlwaysOnTop(false).catch(() => { });
+              win.setIgnoreCursorEvents(false).catch(() => { });
+              win.unmaximize().catch(() => { });
+              import('@tauri-apps/api/dpi').then(({ LogicalSize }) => {
+                win.setSize(new LogicalSize(1000, 700)).catch(() => { });
+                win.center().catch(() => { });
+              }).catch(() => { });
+            } catch (_) {}
+          }).catch(() => { });
+        }
       }
     });
-    return () => { 
-      unsub(); 
-      window.removeEventListener('soltini-auth-error', handleAuthError);
+    return () => {
+      unsub();
       if (pollingRef.current) clearTimeout(pollingRef.current);
     };
   }, [checkAuth, onAuthorized]);
 
   const handleSignIn = async () => {
-    const sessionId = crypto.randomUUID();
-
     // Drop alwaysOnTop so the browser opens in front of the app
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      await getCurrentWindow().setAlwaysOnTop(false);
-    } catch (e) {
-      console.warn("Failed to drop alwaysOnTop", e);
+    if (isTauriApp()) {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().setAlwaysOnTop(false);
+      } catch (e) {
+        console.warn("Failed to drop alwaysOnTop", e);
+      }
     }
 
     setAuthError(null);
+
+    if (isTauriApp()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const callback = await invoke<{ port: number; state: string }>('start_auth_callback');
+        if (!Number.isInteger(callback.port) || callback.port < 1 || callback.port > 65535 || !/^[a-f0-9]{64}$/.test(callback.state)) {
+          throw new Error('The local sign-in callback could not be initialized.');
+        }
+
+        if (pollingRef.current) clearTimeout(pollingRef.current);
+        let attempts = 0;
+        const pollCallback = async () => {
+          try {
+            const token = await invoke<string | null>('take_auth_callback', { callbackState: callback.state });
+            if (token) {
+              const success = await userAuth.parseAndSetToken(token);
+              if (!success) setAuthError(userAuth.getLastTokenError() || 'We couldn’t complete sign-in. Please try again.');
+              return;
+            }
+          } catch (error) {
+            console.warn('[UserAuth] Local sign-in callback check failed:', error);
+          }
+          attempts++;
+          if (attempts >= 600) {
+            setAuthError('Sign-in timed out. Please return to LUCY and try again.');
+            return;
+          }
+          pollingRef.current = setTimeout(pollCallback, 500) as any;
+        };
+        void pollCallback();
+
+        const authUrl = new URL('https://lucymate.vercel.app/auth/google');
+        authUrl.searchParams.set('desktop', '1');
+        authUrl.searchParams.set('callback_port', String(callback.port));
+        authUrl.searchParams.set('callback_state', callback.state);
+        await openExternalUrl(authUrl.toString());
+      } catch (error) {
+        console.error('[UserAuth] Could not start browser sign-in:', error);
+        setAuthError(error instanceof Error ? error.message : 'Could not start sign-in. Please try again.');
+      }
+      return;
+    }
+
+    // Browser-only fallback retains the existing PKCE polling flow.
+    const sessionId = crypto.randomUUID();
 
     // Generate PKCE code verifier and challenge
     const generateVerifier = () => {
@@ -95,9 +137,9 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
       window.crypto.getRandomValues(array);
       return btoa(String.fromCharCode.apply(null, Array.from(array))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     };
-    
+
     const codeVerifier = generateVerifier();
-    
+
     // Hash it for the challenge
     const encoder = new TextEncoder();
     const data = encoder.encode(codeVerifier);
@@ -105,66 +147,80 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const codeChallenge = btoa(String.fromCharCode.apply(null, hashArray)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-    const stateParam = crypto.randomUUID();
-    localStorage.setItem('soltini_auth_state', stateParam);
-
     // Start polling the backend for the session token with exponential backoff
     if (pollingRef.current) clearTimeout(pollingRef.current);
     let attempts = 0;
-    
+    let consecutiveNotFound = 0;
+    let sessionRouteMissing = false;
+
     const poll = async () => {
       try {
-        const res = await fetch(`https://soltini.vercel.app/api/auth/session?id=${sessionId}&code_verifier=${codeVerifier}`);
-        const data = await res.json();
-        if (data.success && data.status === 'authenticated' && data.token) {
-          const success = await userAuth.parseAndSetToken(data.token);
-          if (!success) {
-            setAuthError('Invalid token received. Signature verification failed.');
+        const res = await fetch('https://lucymate.vercel.app/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: sessionId, code_verifier: codeVerifier }),
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          consecutiveNotFound = 0;
+          const data = await res.json();
+          if (data.success && data.status === 'authenticated' && data.token) {
+            const success = await userAuth.parseAndSetToken(data.token);
+            if (!success) {
+              setAuthError(userAuth.getLastTokenError() || 'We couldn’t complete sign-in. Please try again.');
+            }
+            return;
           }
-          return;
+        } else if (res.status === 404) {
+          consecutiveNotFound++;
+          sessionRouteMissing ||= !(res.headers.get('content-type') || '').includes('application/json');
+        } else {
+          throw new Error(`Authentication session check failed (${res.status}).`);
         }
       } catch (err) {
         console.warn("Session polling failed", err);
       }
-      
+
       attempts++;
-      if (attempts === 8) {
+      if (attempts === 8 && consecutiveNotFound < 5) {
         setAuthError('Still waiting for authentication...');
+      }
+
+      if (consecutiveNotFound >= 5) {
+        setAuthError(sessionRouteMissing
+          ? 'The sign-in API route is missing from the license server deployment.'
+          : 'The license server did not create this sign-in session. Check its database and OAuth setup.');
       }
 
       if (attempts < 20) {
         const nextDelay = Math.min(2000 * Math.pow(1.5, Math.floor(attempts / 3)), 10000);
         pollingRef.current = setTimeout(poll, nextDelay) as any;
       } else {
-        setAuthError('Login timed out — try again.');
+        if (consecutiveNotFound < 5) setAuthError('Sign-in timed out. Please try again.');
       }
     };
     poll();
 
     // Open the authentication portal with the session ID and PKCE challenge
-    openExternalUrl(`https://soltini.vercel.app/auth/google?session_id=${sessionId}&code_challenge=${codeChallenge}&state=${stateParam}`);
+    openExternalUrl(`https://lucymate.vercel.app/auth/google?session_id=${sessionId}&code_challenge=${codeChallenge}`);
   };
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
         @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulse-glow {
-          0%, 100% { box-shadow: 0 0 20px rgba(129,140,248,0.15), 0 0 60px rgba(129,140,248,0.05); }
-          50% { box-shadow: 0 0 30px rgba(129,140,248,0.25), 0 0 80px rgba(129,140,248,0.1); }
-        }
-        .activate-btn:hover:not(:disabled) { background: linear-gradient(135deg, #6366f1, #7c3aed) !important; transform: translateY(-1px); box-shadow: 0 8px 25px rgba(99,102,241,0.35); }
+        .activate-btn:hover:not(:disabled) { background: linear-gradient(135deg, #f43f8e, #e11d48) !important; transform: translateY(-1px); box-shadow: 0 10px 25px rgba(244,63,142,0.35); }
         .activate-btn:active:not(:disabled) { transform: translateY(0); }
       `}</style>
 
       {/* Full-screen overlay */}
       <div style={{
         position: 'fixed', inset: 0, zIndex: 99999,
-        background: stage === 'locked' ? 'rgba(2,6,23,0.97)' : 'transparent',
+        background: stage === 'locked' ? 'rgba(255,245,248,0.96)' : 'transparent',
         backdropFilter: stage === 'locked' ? 'blur(20px)' : 'none',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: "'Inter', -apple-system, sans-serif",
+        fontFamily: "'Plus Jakarta Sans', 'Inter', -apple-system, sans-serif",
         userSelect: 'none' as const,
         pointerEvents: stage === 'locked' ? 'auto' : 'none',
       }}>
@@ -173,14 +229,14 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         {stage === 'locked' && (
           <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
             <div style={{
-              position: 'absolute', top: '-20%', left: '20%',
-              width: 600, height: 600, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)',
+              position: 'absolute', top: '-15%', left: '15%',
+              width: 500, height: 500, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(244,63,142,0.12) 0%, transparent 70%)',
             }} />
             <div style={{
-              position: 'absolute', bottom: '-10%', right: '15%',
+              position: 'absolute', bottom: '-15%', right: '15%',
               width: 500, height: 500, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)',
+              background: 'radial-gradient(circle, rgba(139,92,246,0.10) 0%, transparent 70%)',
             }} />
           </div>
         )}
@@ -189,53 +245,61 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
         {stage === 'locked' && (
           <div className="pointer-events-auto" style={{
             position: 'relative',
-            width: '100%', maxWidth: 460,
+            width: '100%', maxWidth: 440,
             margin: '0 20px',
-            background: 'rgba(13,17,40,0.9)',
-            border: '1px solid rgba(99,102,241,0.2)',
-            borderRadius: 24,
-            padding: '40px 40px',
-            boxShadow: '0 0 25px rgba(129,140,248,0.15)',
+            background: '#FFFFFF',
+            border: '1.5px solid #FCE7F3',
+            borderRadius: 28,
+            padding: '36px 36px',
+            boxShadow: '0 20px 45px -10px rgba(244,63,142,0.15), 0 0 0 1px #FCE7F3',
             animation: 'fadeIn 0.4s ease',
             pointerEvents: 'auto',
           }}>
-          
-            <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 8, zIndex: 10 }}>
-              <button 
-                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().minimize())} 
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 }}
-                title="Minimize"
-              >
-                <Minus size={18} />
-              </button>
-              <button 
-                onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().close())} 
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 }}
-                title="Close"
-              >
-                <XIcon size={18} />
-              </button>
-            </div>
 
-            <div style={{ textAlign: 'center', marginBottom: 32 }}>
+            {isTauriApp() && (
+              <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 6, zIndex: 10 }}>
+                <button
+                  onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+                    try { getCurrentWindow().minimize(); } catch (_) {}
+                  })}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
+                  title="Minimize"
+                >
+                  <Minus size={18} />
+                </button>
+                <button
+                  onClick={() => import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+                    try { getCurrentWindow().close(); } catch (_) {}
+                  })}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 6, borderRadius: 8 }}
+                  title="Close"
+                >
+                  <XIcon size={18} />
+                </button>
+              </div>
+            )}
+
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
               <div style={{
-                width: 56, height: 56, borderRadius: 16,
-                background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.2))',
-                border: '1px solid rgba(99,102,241,0.3)',
+                width: 64, height: 64, borderRadius: 22,
+                background: 'linear-gradient(135deg, rgba(244,63,142,0.15), rgba(139,92,246,0.15))',
+                border: '1.5px solid #FCE7F3',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 margin: '0 auto 16px',
-                fontSize: 24,
-              }}>🔒</div>
-              <h1 style={{
-                fontSize: 22, fontWeight: 700, margin: '0 0 8px',
-                background: authError ? 'linear-gradient(90deg, #ef4444, #f87171)' : 'linear-gradient(90deg, #818cf8, #c084fc)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
+                overflow: 'hidden',
+                boxShadow: '0 8px 20px rgba(244,63,142,0.15)'
               }}>
-                {authError ? 'Access Revoked' : 'Sign in to Soltini'}
+                <img src="/lucy-logo.png" alt="LUCY Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+              <h1 style={{
+                fontSize: 22, fontWeight: 800, margin: '0 0 8px',
+                color: authError ? '#E11D48' : '#1E1926',
+                letterSpacing: '-0.02em',
+              }}>
+                {authError ? 'Sign-In Notice' : 'Sign in to LUCY'}
               </h1>
-              <p style={{ color: authError ? '#fca5a5' : '#475569', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
-                {authError || 'You must sign in with Google to use Soltini on this device.'}
+              <p style={{ color: authError ? '#E11D48' : '#6B7280', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+                {authError || 'Sign in to continue to LUCY.'}
               </p>
             </div>
 
@@ -244,16 +308,17 @@ export function AuthGate({ onAuthorized }: { onAuthorized: () => void }) {
               onClick={handleSignIn}
               style={{
                 width: '100%', padding: '13px',
-                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                border: 'none', borderRadius: 12,
+                background: 'linear-gradient(135deg, #F43F8E, #8B5CF6)',
+                border: 'none', borderRadius: 14,
                 color: '#fff',
-                fontSize: 14, fontWeight: 600,
+                fontSize: 14, fontWeight: 700,
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                boxShadow: '0 4px 15px rgba(244,63,142,0.25)'
               }}
             >
-              Sign In with Google
+              Continue with Google
             </button>
           </div>
         )}

@@ -3,17 +3,21 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "main",
+    "settings"
   ],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
     "core:window:default",
     "core:window:allow-close",
     "core:window:allow-minimize",
+    "core:window:allow-unminimize",
     "core:window:allow-maximize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "core:window:allow-show",
+    "core:window:allow-set-focus",
     "core:window:allow-set-size",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-ignore-cursor-events",
@@ -26,10 +30,13 @@
     "core:window:allow-set-resizable",
     "core:window:allow-hide",
     "core:webview:allow-clear-all-browsing-data",
-    "shell:default",
-    "opener:default",
     "allow-start-native-mic",
+    "allow-open-dashboard-window-command",
     "allow-stop-native-mic",
+    "allow-start-native-wake-listener",
+    "allow-stop-native-wake-listener",
+    "allow-set-native-mic-boost",
+    "allow-list-native-microphones",
     "allow-check-microphone-permission",
     "allow-open-microphone-privacy-settings",
     "allow-get-system-stats",
@@ -50,45 +57,40 @@
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "allow-get-device-hwid",
+    "allow-start-auth-callback",
+    "allow-take-auth-callback",
     "allow-verify-license",
     "allow-check-authorization",
+    "allow-logout-license",
     "allow-trim-memory",
     "allow-enter-sleep-mode",
     "allow-wake-up-main",
     "allow-is-autostart",
     "allow-get-desktop-rectangles",
+    "allow-get-lucy-link-pairing-data",
+    "allow-send-prompt-to-phone",
+    "allow-resolve-mobile-prompt",
+    "allow-get-lucy-link-status",
     "autostart:default",
     {
       "identifier": "http:default",
       "allow": [
         {
-          "url": "https://**"
+          "url": "https://api.tavily.com/**"
         },
         {
-          "url": "http://**"
+          "url": "https://generativelanguage.googleapis.com/**"
+        },
+        {
+          "url": "https://lucymate.vercel.app/**"
         }
       ]
     },
     "fs:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "powershell",
-          "cmd": "powershell",
-          "args": true
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "powershell",
-          "cmd": "powershell",
-          "args": true
-        }
-      ]
-    }
+    "allow-read-3d-asset-bytes",
+    "allow-start-native-wake-test",
+    "allow-get-stored-license",
+    "allow-setup-wayland-automation",
+    "allow-exit-app"
   ]
 }

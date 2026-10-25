@@ -1,4 +1,9 @@
 [[permission]]
+identifier = "allow-open-dashboard-window-command"
+description = "Allows opening the dashboard window and waking the main avatar"
+commands.allow = ["open_dashboard_window_command"]
+
+[[permission]]
 identifier = "allow-start-native-mic"
 description = "Allows starting native microphone capture"
 commands.allow = ["start_native_mic"]
@@ -7,6 +12,26 @@ commands.allow = ["start_native_mic"]
 identifier = "allow-stop-native-mic"
 description = "Allows stopping native microphone capture"
 commands.allow = ["stop_native_mic"]
+
+[[permission]]
+identifier = "allow-start-native-wake-listener"
+description = "Allows starting native sleep-mode speech recognition"
+commands.allow = ["start_native_wake_listener"]
+
+[[permission]]
+identifier = "allow-stop-native-wake-listener"
+description = "Allows stopping native sleep-mode speech recognition"
+commands.allow = ["stop_native_wake_listener"]
+
+[[permission]]
+identifier = "allow-set-native-mic-boost"
+description = "Allows updating native microphone gain"
+commands.allow = ["set_native_mic_boost"]
+
+[[permission]]
+identifier = "allow-list-native-microphones"
+description = "Allows listing native microphone devices"
+commands.allow = ["list_native_microphones"]
 
 [[permission]]
 identifier = "allow-check-microphone-permission"
@@ -94,6 +119,11 @@ description = "Allows getting absolute paths of 3D assets"
 commands.allow = ["get_3d_asset_path"]
 
 [[permission]]
+identifier = "allow-read-3d-asset-bytes"
+description = "Allows reading stored 3D asset bytes"
+commands.allow = ["read_3d_asset_bytes"]
+
+[[permission]]
 identifier = "allow-get-device-hwid"
 description = "Allows retrieving the device hardware ID for license verification"
 commands.allow = ["get_device_hwid"]
@@ -104,9 +134,24 @@ description = "Allows verifying the license signature from the server"
 commands.allow = ["verify_license"]
 
 [[permission]]
+identifier = "allow-start-auth-callback"
+description = "Allows starting a one-shot loopback sign-in callback"
+commands.allow = ["start_auth_callback"]
+
+[[permission]]
+identifier = "allow-take-auth-callback"
+description = "Allows retrieving a token received by the loopback sign-in callback"
+commands.allow = ["take_auth_callback"]
+
+[[permission]]
 identifier = "allow-check-authorization"
 description = "Allows checking and restoring authorization state"
 commands.allow = ["check_authorization"]
+
+[[permission]]
+identifier = "allow-logout-license"
+description = "Allows clearing the current license authorization"
+commands.allow = ["logout_license"]
 
 [[permission]]
 identifier = "allow-trim-memory"
@@ -132,3 +177,44 @@ commands.allow = ["is_autostart"]
 identifier = "allow-get-desktop-rectangles"
 description = "Allows getting desktop windows and taskbar coordinates"
 commands.allow = ["get_desktop_rectangles"]
+
+[[permission]]
+identifier = "allow-get-lucy-link-pairing-data"
+description = "Allows starting local Phone Link pairing and retrieving its QR data"
+commands.allow = ["get_lucy_link_pairing_data"]
+
+[[permission]]
+identifier = "allow-send-prompt-to-phone"
+description = "Allows sending a task to an authenticated paired phone"
+commands.allow = ["send_prompt_to_phone"]
+
+[[permission]]
+identifier = "allow-resolve-mobile-prompt"
+description = "Allows returning a desktop task result to the paired phone"
+commands.allow = ["resolve_mobile_prompt"]
+
+[[permission]]
+identifier = "allow-get-lucy-link-status"
+description = "Allows reading local Phone Link connection status"
+commands.allow = ["get_lucy_link_status"]
+
+[[permission]]
+identifier = "allow-start-native-wake-test"
+description = "Allows starting native wake word test mode"
+commands.allow = ["start_native_wake_test"]
+
+[[permission]]
+identifier = "allow-get-stored-license"
+description = "Allows retrieving stored license information"
+commands.allow = ["get_stored_license"]
+
+[[permission]]
+identifier = "allow-setup-wayland-automation"
+description = "Allows configuring Linux Wayland automation tools"
+commands.allow = ["setup_wayland_automation"]
+
+[[permission]]
+identifier = "allow-exit-app"
+description = "Allows cleanly exiting the application"
+commands.allow = ["exit_app"]
+

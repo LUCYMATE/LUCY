@@ -1,5 +1,6 @@
 import { VRM, VRMExpressionPresetName } from '@pixiv/three-vrm';
 import { Emotion } from './core';
+import { getActiveAudioPlayer } from '../../../lib/audio/audio-player';
 
 // Cache previous expression values to avoid calling setValue when nothing changed.
 // This prevents the VRM expression manager from doing unnecessary GPU updates.
@@ -44,10 +45,11 @@ export function applyExpressions(
     setVal(vrm, VRMExpressionPresetName.Blink, blink);
   }
 
-  // 2. Lip Sync
+  // 2. Lip Sync (Audio-reactive)
   if (isSpeaking) {
-    const aa = Math.min(1.0, Math.max(0, Math.sin(t * 15.0) * 1.4 + Math.sin(t * 8.5) * 0.5));
-    const ih = Math.min(1.0, Math.max(0, Math.sin(t * 11.2) * 0.7));
+    const audioVol = getActiveAudioPlayer()?.getSpeechVolume() ?? 0;
+    const aa = audioVol > 0.02 ? audioVol : Math.min(0.6, Math.max(0, Math.sin(t * 14.0) * 0.7));
+    const ih = audioVol > 0.02 ? audioVol * 0.4 : Math.min(0.3, Math.max(0, Math.sin(t * 11.2) * 0.4));
     setVal(vrm, VRMExpressionPresetName.Aa, aa);
     setVal(vrm, VRMExpressionPresetName.Ih, ih);
   } else {

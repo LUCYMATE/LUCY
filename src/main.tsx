@@ -36,7 +36,7 @@ function showCustomAlert(msg: string) {
   popup.style.fontFamily = 'system-ui, -apple-system, sans-serif';
 
   const title = document.createElement('h3');
-  title.textContent = 'Soltini says';
+  title.textContent = 'LUCY says';
   title.style.margin = '0 0 12px 0';
   title.style.color = '#38bdf8';
   title.style.fontSize = '18px';
@@ -78,15 +78,13 @@ function showCustomAlert(msg: string) {
 }
 
 window.addEventListener('error', (e) => {
-  showCustomAlert('Global error: ' + e.message + ' at ' + e.filename + ':' + e.lineno);
+  console.error('Global error:', e.message, 'at', e.filename + ':' + e.lineno);
 });
 
 window.addEventListener('unhandledrejection', (e) => {
-  showCustomAlert('Unhandled Promise Rejection: ' + (e.reason?.message || e.reason || 'Unknown error'));
+  console.warn('Unhandled promise rejection:', e.reason);
 });
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+  <App />
 );

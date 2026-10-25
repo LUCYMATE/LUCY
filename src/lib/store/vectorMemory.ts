@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { logger } from './logger';
 import { userAuth } from '../auth/userAuth';
+import { emitCrossWindow } from '../events/crossWindowEventBus';
 
 export interface MemoryFact {
   id: string;
@@ -11,7 +12,7 @@ export interface MemoryFact {
 
 export class VectorMemoryManager {
   private memories: MemoryFact[] = [];
-  private readonly STORAGE_KEY = 'soltini_vector_memory';
+  private readonly STORAGE_KEY = 'lucy_vector_memory';
   
   constructor() {
     this.loadFromStorage();
@@ -21,7 +22,14 @@ export class VectorMemoryManager {
     try {
       const data = localStorage.getItem(this.STORAGE_KEY);
       if (data) {
-        this.memories = JSON.parse(data);
+        const parsed: unknown = JSON.parse(data);
+        this.memories = Array.isArray(parsed) ? parsed.filter((memory): memory is MemoryFact =>
+          !!memory && typeof memory.id === 'string' && memory.id.length <= 200 &&
+          typeof memory.text === 'string' && memory.text.length <= 10_000 &&
+          Number.isFinite(memory.createdAt) && Array.isArray(memory.embedding) &&
+          memory.embedding.length > 0 && memory.embedding.length <= 2048 &&
+          memory.embedding.every((value: unknown) => typeof value === 'number' && Number.isFinite(value))
+        ).slice(-500) : [];
       }
     } catch (e) {
       console.error('Failed to load vector memory:', e);
@@ -32,7 +40,7 @@ export class VectorMemoryManager {
   private saveToStorage() {
     try {
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.memories));
-      window.dispatchEvent(new CustomEvent('soltini-memory-updated'));
+      emitCrossWindow('lucy-memory-updated');
     } catch (e) {
       console.error('Failed to save vector memory:', e);
       // In case localStorage is full due to embeddings, we might want to log a warning
@@ -71,25 +79,53 @@ export class VectorMemoryManager {
   }
 
   private async generateEmbedding(text: string, apiKey: string): Promise<number[] | string> {
+    const ai = new GoogleGenAI({ apiKey });
+
+    // 1. Primary: gemini-embedding-2 (multimodal native embedding)
     try {
-      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.embedContent({
         model: 'gemini-embedding-2',
+        contents: text,
+      });
+      if (response.embeddings && response.embeddings.length > 0 && response.embeddings[0].values) {
+        return response.embeddings[0].values;
+      }
+    } catch (err: any) {
+      console.warn('[VectorMemory] gemini-embedding-2 attempt failed, trying text-embedding-004 fallback:', err?.message || err);
+    }
+
+    // 2. Resilient fallback: text-embedding-004
+    try {
+      const response = await ai.models.embedContent({
+        model: 'text-embedding-004',
         contents: text
       });
-      if (response.embeddings && response.embeddings.length > 0) {
-        return response.embeddings[0].values || 'Embedding values array is empty';
+      if (response.embeddings && response.embeddings.length > 0 && response.embeddings[0].values) {
+        return response.embeddings[0].values;
+      }
+    } catch (err: any) {
+      console.warn('[VectorMemory] text-embedding-004 fallback failed, trying gemini-embedding-001:', err?.message || err);
+    }
+
+    // 3. Fallback: gemini-embedding-001
+    try {
+      const response = await ai.models.embedContent({
+        model: 'gemini-embedding-001',
+        contents: text
+      });
+      if (response.embeddings && response.embeddings.length > 0 && response.embeddings[0].values) {
+        return response.embeddings[0].values;
       }
       return 'No embeddings returned from Gemini';
     } catch (err: any) {
-      console.error('Failed to generate embedding:', err);
+      console.error('Failed to generate embedding fallback:', err);
       return err.message || String(err);
     }
   }
 
   public async saveFact(text: string, apiKey: string): Promise<{ success: boolean, error?: string }> {
-    if (!text) {
-      return { success: false, error: 'Fact text was empty' };
+    if (!text.trim() || text.length > 10_000) {
+      return { success: false, error: 'Fact text must contain 1 to 10,000 characters' };
     }
 
     const embeddingResult = await this.generateEmbedding(text, apiKey);
@@ -126,6 +162,7 @@ export class VectorMemoryManager {
       embedding,
       createdAt: Date.now()
     };
+    if (this.memories.length >= 500) this.memories.shift();
     this.memories.push(memory);
     this.saveToStorage();
     logger.add('success', 'Memory System', `Saved new fact: "${text}"`);

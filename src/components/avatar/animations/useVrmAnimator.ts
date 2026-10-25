@@ -152,7 +152,7 @@ export function useVrmAnimator({
     const shouldSpeak = isSpeaking && !isFbxPose;
 
     // ── Step 3: Upper-body gestures (arms, head, neck) ────────────────────
-    if (!shouldSkipProcedural) {
+    if (!shouldSkipProcedural && !isPeeking) {
       applyGestures(
         vrm, rest, t,
         isGreeting, shouldSpeak, isThinking, actuallyHearing,

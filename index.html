@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Soltini AI - The Chulbuli Desktop Companion</title>
+    <title>LUCY AI - Intelligent 3D Desktop Companion</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <style>
       body {
@@ -17,7 +17,9 @@
   </head>
   <body>
     <script>
-      window.process = { env: { NODE_ENV: 'development' } };
+      if (window.location.hash.startsWith('#settings')) {
+        document.body.style.backgroundColor = '#FFF5F8';
+      }
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

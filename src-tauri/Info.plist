@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
     <key>NSCameraUsageDescription</key>
-    <string>Soltini requires camera access for vision processing.</string>
+    <string>LUCY requires camera access for vision processing.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Soltini requires microphone access to listen to your voice commands.</string>
+    <string>LUCY requires microphone access to listen to your voice commands.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Soltini requires screen capture access to analyze your screen when asked.</string>
+    <string>LUCY requires screen capture access to analyze your screen when asked.</string>
 </dict>
 </plist>

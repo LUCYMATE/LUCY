@@ -4,6 +4,11 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // Keep React-based dependencies (including qrcode.react) on the same React
+  // instance as the renderer. Duplicate React instances break hook dispatch.
+  resolve: {
+    dedupe: ['react', 'react-dom']
+  },
   plugins: [
     tailwindcss(),
     react()
@@ -22,16 +27,24 @@ export default defineConfig({
     }
   },
   build: {
-    chunkSizeWarningLimit: 2000,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'three': ['three'],
-          'three-vrm': ['@pixiv/three-vrm'],
-          'react-three': ['@react-three/fiber', '@react-three/drei'],
-          'genai-vendor': ['@google/genai'],
-          'tauri': ['@tauri-apps/api', '@tauri-apps/plugin-autostart', '@tauri-apps/plugin-deep-link', '@tauri-apps/plugin-fs', '@tauri-apps/plugin-shell', '@tauri-apps/plugin-http']
+        manualChunks(id) {
+          const modulePath = id.replace(/\\/g, '/');
+          if (!modulePath.includes('/node_modules/')) return;
+
+          // Keep shared state outside the 3D renderer chunk. Both renderer and
+          // secondary-window stores use Zustand, but only the main window needs Three.
+          if (/\/node_modules\/zustand\//.test(modulePath)) {
+            return 'state-vendor';
+          }
+          if (/\/node_modules\/(react|react-dom|react-reconciler|scheduler|use-sync-external-store)\//.test(modulePath)) {
+            return 'react-vendor';
+          }
+          if (modulePath.includes('/node_modules/@google/genai/')) {
+            return 'genai-vendor';
+          }
         }
       }
     }

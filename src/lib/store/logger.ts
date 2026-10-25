@@ -14,6 +14,8 @@ class Logger {
   private logs: LogEntry[] = [];
   private subscribers: Set<Subscriber> = new Set();
 
+  getLogs() { return this.logs; }
+
   add(level: LogLevel, action: string, detail?: string) {
     const entry: LogEntry = {
       id: crypto.randomUUID(),

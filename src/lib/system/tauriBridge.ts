@@ -6,9 +6,10 @@ export const isTauriApp = (): boolean => {
   const tauriWindow = window as Window & {
     __TAURI_INTERNALS__?: unknown;
     __TAURI__?: unknown;
+    isTauri?: unknown;
   };
 
-  return Boolean(tauriWindow.__TAURI_INTERNALS__ || tauriWindow.__TAURI__);
+  return Boolean(tauriWindow.__TAURI_INTERNALS__ || tauriWindow.__TAURI__ || tauriWindow.isTauri);
 };
 
 export const getSystemStats = async (): Promise<{ cpu_usage: number; total_memory: number; used_memory: number; app_memory: number } | null> => {

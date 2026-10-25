@@ -5,6 +5,7 @@ import { logger } from '../../lib/store/logger';
 import { useAvatarState } from '../../lib/store/avatarState';
 import { userAuth } from '../../lib/auth/userAuth';
 import { useEngineStore } from '../../lib/store/engineStore';
+import { emitCrossWindow } from '../../lib/events/crossWindowEventBus';
 
 export function AssetLibrary() {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -27,7 +28,7 @@ export function AssetLibrary() {
       
       // Update local storage so the AI prompt builder can read it immediately
       const fbxSlugs = all.filter(a => a.type === 'fbx' || a.type === 'bvh').map(a => a.id);
-      localStorage.setItem('soltini_custom_animations', JSON.stringify(fbxSlugs));
+      localStorage.setItem('lucy_custom_animations', JSON.stringify(fbxSlugs));
     } catch (e) {
       logger.add('error', 'Asset DB', 'Failed to load assets');
     }
@@ -58,7 +59,7 @@ export function AssetLibrary() {
       loadAssets();
 
       // Notify the live avatar scene to reload with the new model immediately
-      window.dispatchEvent(new CustomEvent('soltini-vrm-changed'));
+      emitCrossWindow('lucy-vrm-changed');
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to upload avatar: ${error}`);
     }
@@ -99,8 +100,8 @@ export function AssetLibrary() {
       await loadAssets();
 
       // Notify the live AI session about the new animation so it can use it immediately
-      window.dispatchEvent(new CustomEvent('soltini-animation-added', { detail: { slug } }));
-      window.dispatchEvent(new CustomEvent('soltini-settings-changed'));
+      emitCrossWindow('lucy-animation-added', { slug });
+      emitCrossWindow('lucy-settings-changed');
     } catch (error) {
       logger.add('error', 'Asset DB', `Failed to save animation: ${error}`);
     }
@@ -116,14 +117,12 @@ export function AssetLibrary() {
       if (id === 'custom-avatar') {
         logger.add('info', 'Asset DB', 'Restored default compiled model');
         setFlipCustomModel(false);
-        localStorage.setItem('soltini_flip_vrm', 'false');
+        localStorage.setItem('lucy_flip_vrm', 'false');
       }
       
       await loadAssets();
       // Notify live scene: if we deleted the avatar, reload the model; otherwise just refresh
-      window.dispatchEvent(new CustomEvent(
-        id === 'custom-avatar' ? 'soltini-vrm-changed' : 'soltini-settings-changed'
-      ));
+      emitCrossWindow(id === 'custom-avatar' ? 'lucy-vrm-changed' : 'lucy-settings-changed');
     } catch (e) {
       logger.add('error', 'Asset DB', `Failed to delete asset`);
     }
@@ -133,33 +132,33 @@ export function AssetLibrary() {
   const animations = assets.filter(a => a.type === 'fbx' || a.type === 'bvh');
 
   return (
-    <div className="flex flex-col gap-8 w-full max-w-3xl text-white pb-12">
+    <div className="flex flex-col gap-6 w-full max-w-3xl text-[#1E1926] pb-12">
       <div>
-        <h3 className="text-2xl font-bold mb-2 flex items-center gap-2">
-          <Box className="w-6 h-6 text-pink-400" /> Asset Library
+        <h3 className="text-2xl font-black mb-1 flex items-center gap-2 text-[#1E1926]">
+          <Box className="w-6 h-6 text-[#F43F8E]" /> Asset Library
         </h3>
-        <p className="text-white/60 text-sm">
-          Customize your Soltini experience. Upload your own VRM model or teach the AI new animations (FBX/BVH).
+        <p className="text-[#6B7280] text-xs">
+          Customize your LUCY experience. Upload your own 3D VRM model or teach the AI new animations (FBX/BVH).
         </p>
       </div>
 
       {/* --- AVATAR UPLOAD SECTION --- */}
-      <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-4 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+      <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex flex-col gap-4 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-[#8B5CF6]"></div>
         
         <div className="flex justify-between items-start">
           <div>
-            <h4 className="font-semibold text-lg text-blue-100 flex items-center gap-2">
-              <Box className="w-5 h-5 text-blue-400" /> Custom Avatar Model
+            <h4 className="font-bold text-base text-[#1E1926] flex items-center gap-2">
+              <Box className="w-5 h-5 text-[#8B5CF6]" /> Custom 3D VRM Avatar
             </h4>
-            <p className="text-xs text-white/50 mt-1 max-w-md">
+            <p className="text-xs text-[#6B7280] mt-1 max-w-md">
               Upload a <b>.vrm</b> file to completely change the character. You can only have 1 custom model at a time. Uploading a new one replaces the old one.
             </p>
           </div>
           
           <div className="shrink-0 flex flex-col items-end gap-2">
              <button 
-                className="bg-blue-600/80 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-2 shadow-lg shadow-blue-500/20"
+                className="bg-[#8B5CF6] hover:opacity-90 text-white px-4 py-2 rounded-xl font-bold transition-all text-xs flex items-center gap-2 shadow-sm"
                 onClick={() => vrmInputRef.current?.click()}
               >
                 <Upload className="w-4 h-4" /> {customAvatar ? 'Replace Avatar' : 'Upload VRM'}
@@ -175,21 +174,21 @@ export function AssetLibrary() {
         </div>
 
         {customAvatar && (
-          <div className="mt-2 flex flex-col gap-3 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3">
+          <div className="mt-2 flex flex-col gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
              <div className="flex items-center justify-between">
                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
+                  <div className="p-2 rounded-lg bg-purple-100 text-[#8B5CF6]">
                     <Box className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className="font-bold text-sm text-blue-100">Currently Active: {customAvatar.name}</p>
-                    <p className="text-[10px] text-blue-200/50">Overrides the default system model</p>
+                    <p className="font-bold text-sm text-[#1E1926]">Currently Active: {customAvatar.name}</p>
+                    <p className="text-[10px] text-[#6B7280]">Overrides the default system model</p>
                   </div>
                </div>
                
                <button 
                  onClick={() => handleDelete(customAvatar.id)}
-                 className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+                 className="p-2 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
                  title="Delete Custom Avatar"
                >
                  <Trash2 className="w-4 h-4" />
@@ -197,20 +196,21 @@ export function AssetLibrary() {
              </div>
              
              {/* Flip Toggle */}
-             <div className="flex items-center justify-between pt-3 border-t border-blue-500/20">
+             <div className="flex items-center justify-between pt-3 border-t border-purple-200">
                <div>
-                 <label className="block text-sm font-medium text-blue-100">Flip Custom Model (180°)</label>
-                 <p className="text-xs text-blue-200/50 mt-1">Enable this if your uploaded model faces backwards.</p>
+                 <label className="block text-sm font-bold text-[#1E1926]">Flip Custom Model (180°)</label>
+                 <p className="text-xs text-[#6B7280]">Enable this if your uploaded model faces backwards.</p>
                </div>
                <button
                  onClick={() => {
                    const next = !flipCustomModel;
                    setFlipCustomModel(next);
-                   localStorage.setItem('soltini_flip_vrm', String(next));
+                   localStorage.setItem('lucy_flip_vrm', String(next));
+                   emitCrossWindow('lucy-vrm-changed');
                  }}
-                 className={`relative w-10 h-5 rounded-full transition-colors ${flipCustomModel ? 'bg-blue-500' : 'bg-black/40 border border-blue-500/20'}`}
+                 className={`relative w-10 h-5 rounded-full transition-colors ${flipCustomModel ? 'bg-[#8B5CF6]' : 'bg-gray-200'}`}
                >
-                 <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${flipCustomModel ? 'translate-x-5' : 'translate-x-0'}`} />
+                 <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${flipCustomModel ? 'translate-x-5' : 'translate-x-0'}`} />
                </button>
              </div>
           </div>
@@ -218,26 +218,26 @@ export function AssetLibrary() {
       </div>
 
       {/* --- ANIMATIONS UPLOAD SECTION --- */}
-      <div className="bg-black/20 border border-white/5 rounded-2xl p-6 flex flex-col gap-6 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-1 h-full bg-pink-500"></div>
+      <div className="bg-white border border-[#FCE7F3] shadow-sm rounded-2xl p-6 flex flex-col gap-5 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1.5 h-full bg-[#F43F8E]"></div>
 
         <div>
-          <h4 className="font-semibold text-lg text-pink-100 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-pink-400" /> AI Animations
+          <h4 className="font-bold text-base text-[#1E1926] flex items-center gap-2">
+            <Activity className="w-5 h-5 text-[#F43F8E]" /> AI Animations
           </h4>
-          <p className="text-xs text-white/50 mt-1 max-w-md">
+          <p className="text-xs text-[#6B7280] mt-1 max-w-md">
             Upload up to 4 custom <b>.fbx</b> or <b>.bvh</b> animations. Assign a simple slug name (e.g. `backflip`), and the AI will automatically learn how to use it!
           </p>
         </div>
 
         {/* Add Animation Form */}
-        <div className="flex gap-4 items-end flex-wrap bg-white/5 p-4 rounded-xl border border-white/5">
+        <div className="flex gap-4 items-end flex-wrap bg-[#FFF5F8] p-4 rounded-xl border border-[#FCE7F3]">
           <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-            <label className="text-[10px] font-bold text-pink-300/80 uppercase tracking-wider">Animation Slug</label>
+            <label className="text-[10px] font-bold text-[#9D174D] uppercase tracking-wider">Animation Slug</label>
             <input 
               type="text" 
               placeholder="e.g. salsa-dance, backflip"
-              className="bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-pink-500 transition-colors"
+              className="bg-white border border-[#FCE7F3] rounded-lg px-4 py-2 text-sm text-[#1E1926] placeholder-[#9CA3AF] focus:outline-none focus:border-[#F43F8E] focus:ring-1 focus:ring-[#F43F8E] transition-colors shadow-xs"
               value={animSlug}
               onChange={e => setAnimSlug(e.target.value.toLowerCase())}
               disabled={animations.length >= 4}
@@ -246,7 +246,7 @@ export function AssetLibrary() {
           
           <div className="flex flex-col gap-1 shrink-0">
             <button 
-              className="bg-pink-600/80 hover:bg-pink-500 text-white px-5 py-2 rounded-lg font-medium transition-colors text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-pink-500/20"
+              className="bg-[#F43F8E] hover:opacity-90 text-white px-5 py-2 rounded-lg font-bold transition-all text-xs flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm cursor-pointer"
               onClick={() => animInputRef.current?.click()}
               disabled={!animSlug.trim() || animations.length >= 4}
             >
@@ -263,37 +263,37 @@ export function AssetLibrary() {
         </div>
 
         {!animSlug.trim() && animations.length < 4 && (
-          <p className="text-[10px] text-yellow-400/80 flex items-center gap-1 -mt-3">
-            <AlertCircle className="w-3 h-3" /> Type a simple slug name first (e.g. `dance2`)
+          <p className="text-xs text-amber-700 font-medium flex items-center gap-1 -mt-2">
+            <AlertCircle className="w-3.5 h-3.5" /> Type a simple slug name first (e.g. `dance2`)
           </p>
         )}
 
         {/* List of Animations */}
         <div className="flex flex-col gap-2 mt-2">
           <div className="flex justify-between items-center mb-1">
-             <h5 className="text-sm font-semibold text-white/80">Stored Animations</h5>
-             <span className="text-xs font-mono bg-black/40 px-2 py-0.5 rounded text-white/50">{animations.length} / 4 Slots</span>
+             <h5 className="text-sm font-bold text-[#1E1926]">Stored Animations</h5>
+             <span className="text-xs font-mono bg-pink-50 border border-pink-200 px-2.5 py-0.5 rounded-full text-[#9D174D] font-bold">{animations.length} / 4 Slots</span>
           </div>
           
           {animations.length === 0 ? (
-            <div className="text-center py-6 text-white/30 italic bg-black/20 rounded-xl border border-white/5 text-sm">
+            <div className="text-center py-6 text-[#6B7280] italic bg-[#FFF5F8] rounded-xl border border-[#FCE7F3] text-sm">
               No custom animations learned yet.
             </div>
           ) : (
             animations.map(a => (
-              <div key={a.id} className="flex items-center justify-between bg-pink-500/5 border border-pink-500/10 hover:bg-pink-500/10 transition-colors rounded-xl px-4 py-3">
+              <div key={a.id} className="flex items-center justify-between bg-[#FFF5F8] border border-[#FCE7F3] hover:border-pink-300 transition-colors rounded-xl px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-pink-500/20 text-pink-400">
+                  <div className="p-2 rounded-lg bg-pink-100 text-[#F43F8E]">
                     <Activity className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className="font-bold text-sm text-pink-100">{a.id}</p>
-                    <p className="text-[10px] text-white/40">{a.name}</p>
+                    <p className="font-bold text-sm text-[#1E1926]">{a.id}</p>
+                    <p className="text-xs text-[#6B7280]">{a.name}</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => handleDelete(a.id)}
-                  className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+                  className="p-2 hover:bg-red-100 text-red-500 rounded-lg transition-colors cursor-pointer"
                   title="Delete Animation"
                 >
                   <Trash2 className="w-4 h-4" />

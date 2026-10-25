@@ -14,8 +14,8 @@ class MemoryStore {
   private facts: UserFacts = {};
   private summaries: ChatSummary[] = [];
   private subscribers: Set<Subscriber> = new Set();
-  private readonly FACTS_KEY = 'soltini_user_facts';
-  private readonly SUMMARIES_KEY = 'soltini_chat_summaries';
+  private readonly FACTS_KEY = 'lucy_user_facts';
+  private readonly SUMMARIES_KEY = 'lucy_chat_summaries';
 
   constructor() {
     this.load();
@@ -24,9 +24,22 @@ class MemoryStore {
   private load() {
     try {
       const factsData = localStorage.getItem(this.FACTS_KEY);
-      if (factsData) this.facts = JSON.parse(factsData);
+      if (factsData) {
+        const parsed: unknown = JSON.parse(factsData);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          this.facts = Object.fromEntries(Object.entries(parsed).filter(([key, value]) =>
+            key.length <= 500 && typeof value === 'string' && value.length <= 10_000
+          ).slice(0, 2000));
+        }
+      }
       const summariesData = localStorage.getItem(this.SUMMARIES_KEY);
-      if (summariesData) this.summaries = JSON.parse(summariesData);
+      if (summariesData) {
+        const parsed: unknown = JSON.parse(summariesData);
+        this.summaries = Array.isArray(parsed) ? parsed.filter((summary): summary is ChatSummary =>
+          !!summary && typeof summary.chatId === 'string' && summary.chatId.length <= 200 &&
+          typeof summary.summary === 'string' && summary.summary.length <= 20_000 && Number.isFinite(summary.updatedAt)
+        ).slice(-500) : [];
+      }
     } catch (e) {
       console.warn('Failed to load memory store:', e);
     }
@@ -43,6 +56,7 @@ class MemoryStore {
   }
 
   setUserFact(key: string, value: string) {
+    if (!key.trim() || key.length > 500 || value.length > 10_000 || Object.keys(this.facts).length >= 2000 && !(key in this.facts)) return;
     this.facts[key] = value;
     this.save();
   }

@@ -1,5 +1,5 @@
 {
-  "name": "Soltini",
+  "name": "Lucy",
   "description": "An autonomous AI assistant with Live Voice, Chat, Image, and Music capabilities.",
   "requestFramePermissions": [
     "camera",
@@ -7,5 +7,7 @@
     "geolocation",
     "display-capture"
   ],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

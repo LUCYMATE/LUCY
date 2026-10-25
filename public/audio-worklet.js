@@ -1,16 +1,10 @@
 class AudioWorklet extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.bufferSize = 4096; // 256ms at 16kHz
+    // 2048 samples = 128ms at 16kHz (delivers audio 2x faster than 4096 for fast response times)
+    this.bufferSize = 2048;
     this.buffer = new Int16Array(this.bufferSize);
     this.bufferIndex = 0;
-    
-    // Voice Activity Detection (VAD) properties
-    // Lowered threshold to 0.0005 to catch quiet speech
-    this.threshold = 0.0005; 
-    this.framesSinceLastLoud = 100000; // Start assumed silent
-    // Set tail to 1.5 seconds as requested for ultra-fast VAD response
-    this.tailFrames = 16000 * 1.5; 
   }
 
   process(inputs, outputs, parameters) {
@@ -18,8 +12,6 @@ class AudioWorklet extends AudioWorkletProcessor {
     if (input && input.length > 0) {
       const channelData = input[0];
       
-      // We no longer use a local VAD or gain multiplier to avoid clipping 
-      // and stuttering. Gemini's server handles VAD natively.
       for (let i = 0; i < channelData.length; i++) {
         let s = channelData[i];
         s = Math.max(-1, Math.min(1, s));
